@@ -1,9 +1,22 @@
-# queries.py (with specimen support)
+
+# queries.py
 from typing import List, Optional, Tuple
 from db import get_conn
 
-# ---------- Helpers ----------
+# ------------------------------------------------------------------
+# Normalization helpers
+# ------------------------------------------------------------------
+NAN_LIKE = {"nan", "none", "-", "—"}
 
+def _norm_text(x: Optional[str]) -> str:
+    if x is None:
+        return ""
+    s = str(x).strip()
+    return "" if s.lower() in NAN_LIKE else s
+
+# ------------------------------------------------------------------
+# Small sqlite helpers
+# ------------------------------------------------------------------
 def _fetchone(cx, query, params=()):
     cur = cx.execute(query, params)
     return cur.fetchone()
@@ -12,21 +25,24 @@ def _fetchall(cx, query, params=()):
     cur = cx.execute(query, params)
     return cur.fetchall()
 
-# ---------- Reference data CRUD ----------
-
+# ------------------------------------------------------------------
+# Reference data CRUD
+# ------------------------------------------------------------------
 def upsert_party(name: str, kind: str = None, contact: str = None) -> Optional[int]:
     if not name:
         return None
     with get_conn() as cx:
-        row = _fetchone(cx, "SELECT id FROM party WHERE name = ?", (name,))
+        row = _fetchone(cx, "SELECT id FROM party WHERE name = ?", (name.strip(),))
         if row:
             return row[0]
-        cur = cx.execute("INSERT INTO party(name, kind, contact) VALUES (?,?,?)", (name, kind, contact))
+        cur = cx.execute("INSERT INTO party(name, kind, contact) VALUES (?,?,?)",
+                         (name.strip(), kind, contact))
         return cur.lastrowid
 
 def upsert_storage(name: str, category: str = None, description: str = None) -> Optional[int]:
     if not name:
         return None
+    name = name.strip()
     with get_conn() as cx:
         row = _fetchone(cx, "SELECT id FROM storage_location WHERE name = ?", (name,))
         if row:
@@ -41,6 +57,9 @@ def upsert_coin_master(country: str, denomination: str, series: str,
                        metal: str = None, fineness: float = None, weight_grams: float = None,
                        diameter_mm: float = None, thickness_mm: float = None, edge: str = None,
                        years_start: int = None, years_end: int = None, notes: str = None) -> int:
+    country = country.strip()
+    denomination = denomination.strip()
+    series = series.strip()
     with get_conn() as cx:
         row = _fetchone(cx, "SELECT id FROM coin_master WHERE country=? AND denomination=? AND series=?",
                         (country, denomination, series))
@@ -60,14 +79,12 @@ def upsert_coin_master(country: str, denomination: str, series: str,
 def upsert_coin_type(master_id: int, year: int, mint_mark: str = None, variety: str = None,
                      mintage: int = None, is_proof: int = 0, designer: str = None,
                      obv_desc: str = None, rev_desc: str = None) -> int:
-    mint_mark = (mint_mark or '').strip()
-    if mint_mark in ('-','—','None','nan','NaN'):
-        mint_mark = ''
-    variety = (variety or '').strip()
+    mint_mark = _norm_text(mint_mark)
+    variety = _norm_text(variety)
     with get_conn() as cx:
         row = _fetchone(cx, """
             SELECT id FROM coin_type
-            WHERE master_id=? AND year=? AND mint_mark=? AND variety=?
+             WHERE master_id=? AND year=? AND mint_mark=? AND variety=?
         """, (master_id, year, mint_mark, variety))
         if row:
             return row[0]
@@ -83,24 +100,34 @@ def upsert_coin_type(master_id: int, year: int, mint_mark: str = None, variety: 
 def list_coin_types() -> List[dict]:
     with get_conn() as cx:
         rows = _fetchall(cx, """
-            SELECT ct.id, cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety
-            FROM coin_type ct JOIN coin_master cm ON cm.id=ct.master_id
-            ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
+            SELECT ct.id,
+                   cm.series, ct.year,
+                   COALESCE(NULLIF(TRIM(ct.mint_mark), ''), '') AS mint_mark,
+                   COALESCE(NULLIF(TRIM(ct.variety), ''), '')   AS variety
+              FROM coin_type ct
+              JOIN coin_master cm ON cm.id = ct.master_id
+             ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
         """)
-        return [dict(row) for row in rows]
+        return [dict(r) for r in rows]
 
-# ---------- Transactions ----------
-
+# ------------------------------------------------------------------
+# Transactions
+# ------------------------------------------------------------------
 def _allocate_buy_costs(lines: List[dict], shipping: float, tax: float, fees: float) -> List[float]:
+    """
+    Proportionally allocate shipping+tax+fees across BUY lines based on line subtotal.
+    Each line dict must contain: quantity, unit_price.
+    Returns a list of per-coin add-ons to unit_price.
+    """
     alloc_total = float(shipping or 0) + float(tax or 0) + float(fees or 0)
-    subtotals = [(l["quantity"] or 0) * (l["unit_price"] or 0.0) for l in lines]
+    subtotals = [(l.get("quantity") or 0) * (l.get("unit_price") or 0.0) for l in lines]
     tx_subtotal = sum(subtotals)
     if alloc_total <= 0 or tx_subtotal <= 0:
         return [0.0 for _ in lines]
     addons = []
     for st, l in zip(subtotals, lines):
         share = alloc_total * (st / tx_subtotal) if tx_subtotal else 0.0
-        per_coin = share / l["quantity"] if l["quantity"] else 0.0
+        per_coin = share / (l.get("quantity") or 1)
         addons.append(per_coin)
     return addons
 
@@ -113,7 +140,15 @@ def create_buy_transaction(
     fees: float,
     notes: str,
     items: List[dict],
-):
+) -> bool:
+    """
+    items: list of dicts with keys:
+      coin_type_id, quantity, unit_price,
+      purchase_grade_company, purchase_grade_text, purchase_numeric_grade, slab_cert,
+      estimated_grade_text, estimated_numeric_grade,
+      valuation_method ('AUTO'|'MELT_ONLY'|'GUIDE_ONLY'|'MANUAL'), manual_est_unit_value,
+      storage_location_id, lot_notes
+    """
     party_id = upsert_party(party_name) if party_name else None
     with get_conn() as cx:
         cur = cx.execute(
@@ -166,7 +201,11 @@ def create_sell_transaction(
     notes: str,
     items: List[dict],
     method: str = 'FIFO'
-):
+) -> bool:
+    """
+    items: list of dicts with keys: coin_type_id, quantity, unit_price
+    method: currently supports 'FIFO' only.
+    """
     if method != 'FIFO':
         raise NotImplementedError("Only FIFO is implemented in this starter")
 
@@ -185,11 +224,12 @@ def create_sell_transaction(
             )
             sell_line_id = cur.lastrowid
 
+            # FIFO relieve from oldest OPEN lots
             remaining = abs(line["quantity"])
             lots = _fetchall(cx, """
                 SELECT id, qty_remaining FROM lot
-                WHERE coin_type_id=? AND qty_remaining>0
-                ORDER BY acquired_date ASC, id ASC
+                 WHERE coin_type_id=? AND qty_remaining>0
+                 ORDER BY acquired_date ASC, id ASC
             """, (line["coin_type_id"],))
             for lot_row in lots:
                 if remaining <= 0:
@@ -207,8 +247,136 @@ def create_sell_transaction(
                 raise ValueError("Not enough inventory to sell the requested quantity")
     return True
 
-# ---------- Inventory & dashboard queries ----------
+# ------------------------------------------------------------------
+# Specimen (Flip ID) helpers
+# ------------------------------------------------------------------
+def _ensure_specimen_tables():
+    """Safety: create specimen & series_code tables if schema is older (no-op if already there)."""
+    with get_conn() as cx:
+        cx.execute("""
+        CREATE TABLE IF NOT EXISTS series_code (
+            id INTEGER PRIMARY KEY,
+            series TEXT NOT NULL UNIQUE,
+            prefix TEXT NOT NULL,
+            next_seq INTEGER NOT NULL DEFAULT 1
+        )""")
+        cx.execute("""
+        CREATE TABLE IF NOT EXISTS specimen (
+            id INTEGER PRIMARY KEY,
+            code TEXT NOT NULL UNIQUE,          -- e.g., P1, M23, CB7
+            coin_type_id INTEGER NOT NULL REFERENCES coin_type(id),
+            lot_id INTEGER REFERENCES lot(id),
+            sold_line_id INTEGER REFERENCES tx_line(id),  -- mark when sold
+            notes TEXT
+        )""")
 
+def upsert_series_code(series: str, prefix: str) -> int:
+    _ensure_specimen_tables()
+    series = series.strip()
+    prefix = prefix.strip().upper()[:3]
+    if not series or not prefix:
+        raise ValueError("Series and prefix are required.")
+    with get_conn() as cx:
+        row = _fetchone(cx, "SELECT id FROM series_code WHERE series=?", (series,))
+        if row:
+            cx.execute("UPDATE series_code SET prefix=? WHERE id=?", (prefix, row["id"]))
+            return row["id"]
+        cur = cx.execute("INSERT INTO series_code(series, prefix, next_seq) VALUES (?,?,1)", (series, prefix))
+        return cur.lastrowid
+
+def _allocate_code(series: str, qty: int) -> List[str]:
+    _ensure_specimen_tables()
+    series = series.strip()
+    with get_conn() as cx:
+        sc = _fetchone(cx, "SELECT id, prefix, next_seq FROM series_code WHERE series=?", (series,))
+        if not sc:
+            raise ValueError(f"No prefix set for series '{series}'. Set it in Specimens page.")
+        start = sc["next_seq"]
+        codes = [f"{sc['prefix']}{i}" for i in range(start, start + qty)]
+        cx.execute("UPDATE series_code SET next_seq = ? WHERE id=?", (start + qty, sc["id"]))
+        return codes
+
+def allocate_specimen_code_for_series(series: str) -> str:
+    return _allocate_code(series, 1)[0]
+
+def create_specimens_for_lot(lot_id: int, qty: int, start_code: str = None) -> List[str]:
+    _ensure_specimen_tables()
+    if qty <= 0:
+        return []
+    with get_conn() as cx:
+        lot = _fetchone(cx, """
+            SELECT l.id, l.coin_type_id, cm.series
+              FROM lot l
+              JOIN coin_type ct ON ct.id = l.coin_type_id
+              JOIN coin_master cm ON cm.id = ct.master_id
+             WHERE l.id=?
+        """, (lot_id,))
+        if not lot:
+            raise ValueError("Unknown lot_id")
+        series = lot["series"]
+        coin_type_id = lot["coin_type_id"]
+
+        # Determine codes to create
+        codes: List[str] = []
+        if start_code:
+            # Sequential from a provided starting code prefix+number
+            s = start_code.strip().upper()
+            # find numeric tail
+            import re
+            m = re.match(r"([A-Z]+)(\d+)$", s)
+            if not m:
+                raise ValueError("start_code must look like P101 or CB7 (letters+digits).")
+            prefix, n = m.group(1), int(m.group(2))
+            codes = [f"{prefix}{n+i}" for i in range(qty)]
+        else:
+            codes = _allocate_code(series, qty)
+
+        created = []
+        for code in codes:
+            # skip existing
+            exists = _fetchone(cx, "SELECT 1 FROM specimen WHERE code=?", (code,))
+            if exists:
+                continue
+            cx.execute("INSERT INTO specimen(code, coin_type_id, lot_id) VALUES (?,?,?)",
+                       (code, coin_type_id, lot_id))
+            created.append(code)
+        return created
+
+def get_specimen_by_code(code: str) -> Optional[dict]:
+    _ensure_specimen_tables()
+    code = code.strip().upper()
+    with get_conn() as cx:
+        row = _fetchone(cx, """
+            SELECT s.code, s.notes, s.lot_id, s.sold_line_id,
+                   cm.series, ct.year, ct.mint_mark, ct.variety
+              FROM specimen s
+              JOIN coin_type ct ON ct.id = s.coin_type_id
+              JOIN coin_master cm ON cm.id = ct.master_id
+             WHERE s.code = ?
+        """, (code,))
+        return dict(row) if row else None
+
+def list_specimens_on_hand(filter_series: str = None) -> List[dict]:
+    _ensure_specimen_tables()
+    params: Tuple = tuple()
+    where = "WHERE s.sold_line_id IS NULL"
+    if filter_series and filter_series.strip():
+        where += " AND cm.series LIKE ?"
+        params = (f"%{filter_series.strip()}%",)
+    with get_conn() as cx:
+        rows = _fetchall(cx, f"""
+            SELECT s.code, cm.series, ct.year, ct.mint_mark, ct.variety, s.lot_id
+              FROM specimen s
+              JOIN coin_type ct ON ct.id = s.coin_type_id
+              JOIN coin_master cm ON cm.id = ct.master_id
+              {where}
+             ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, s.code
+        """, params)
+        return [dict(r) for r in rows]
+
+# ------------------------------------------------------------------
+# Queries for pages
+# ------------------------------------------------------------------
 def get_portfolio_summary() -> dict:
     with get_conn() as cx:
         row = _fetchone(cx, "SELECT total_estimated_value_usd, total_coins FROM v_portfolio_value_summary")
@@ -230,142 +398,33 @@ def list_lots() -> List[dict]:
                    l.qty_remaining, l.unit_cost, l.valuation_method,
                    COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade,
                    l.manual_est_unit_value
-            FROM lot l
-            JOIN coin_type ct ON ct.id=l.coin_type_id
-            JOIN coin_master cm ON cm.id=ct.master_id
-            ORDER BY l.acquired_date DESC, l.id DESC
+              FROM lot l
+              JOIN coin_type ct ON ct.id = l.coin_type_id
+              JOIN coin_master cm ON cm.id = ct.master_id
+             ORDER BY l.acquired_date DESC, l.id DESC
         """)
         return [dict(r) for r in rows]
 
 def inventory_by_type() -> List[dict]:
     with get_conn() as cx:
-        rows = _fetchall(cx, "SELECT * FROM v_inventory_by_type ORDER BY series, year")
+        rows = _fetchall(cx, "SELECT * FROM v_inventory_by_type ORDER BY series, year, mint_mark, variety")
         return [dict(r) for r in rows]
 
 def inventory_by_series_summary() -> List[dict]:
+    """Series-level summary: coins & estimated value across all years/mints."""
     with get_conn() as cx:
         rows = _fetchall(cx, """
             SELECT
               series,
               SUM(qty_remaining)                AS coins,
               ROUND(SUM(qty_remaining * COALESCE(chosen_unit_value,0)), 2) AS est_value_usd
-            FROM v_lot_value_details
-            GROUP BY series
-            ORDER BY est_value_usd DESC, series
+              FROM v_lot_value_details
+             GROUP BY series
+             ORDER BY est_value_usd DESC, series
         """)
         return [dict(r) for r in rows]
 
 def list_storage_locations() -> List[dict]:
     with get_conn() as cx:
-        rows = _fetchall(cx, "SELECT id, name, COALESCE(category,'') AS category FROM storage_location ORDER BY name")
-        return [dict(r) for r in rows]
-
-# ---------- NEW: Series codes & specimens ----------
-
-def upsert_series_code(series: str, prefix: str) -> None:
-    """Define or update the prefix for a series (e.g., 'Peace' -> 'P', 'Morgan' -> 'M')."""
-    series = series.strip()
-    prefix = prefix.strip().upper()
-    if not series or not prefix:
-        raise ValueError("series and prefix are required")
-    with get_conn() as cx:
-        row = _fetchone(cx, "SELECT series FROM series_code WHERE series=?", (series,))
-        if row:
-            cx.execute("UPDATE series_code SET prefix=? WHERE series=?", (prefix, series))
-        else:
-            cx.execute("INSERT INTO series_code(series, prefix) VALUES (?,?)", (series, prefix))
-
-def _get_series_for_type(coin_type_id: int) -> str:
-    with get_conn() as cx:
-        row = _fetchone(cx, """
-            SELECT cm.series
-            FROM coin_type ct JOIN coin_master cm ON cm.id = ct.master_id
-            WHERE ct.id = ?
-        """, (coin_type_id,))
-        if not row:
-            raise ValueError("Unknown coin_type_id")
-        return row["series"]
-
-def allocate_specimen_code_for_series(series: str) -> str:
-    """Return next code like 'P17' for a series, incrementing the sequence."""
-    with get_conn() as cx:
-        row = _fetchone(cx, "SELECT prefix, next_seq FROM series_code WHERE series=?", (series,))
-        if not row:
-            # default prefix = first letters of first two words
-            words = [w for w in series.replace('/', ' ').split() if w]
-            default_prefix = ''.join([w[0] for w in words[:2]]).upper() or 'X'
-            cx.execute("INSERT INTO series_code(series, prefix, next_seq) VALUES (?,?,?)",
-                       (series, default_prefix, 1))
-            prefix, seq = default_prefix, 1
-        else:
-            prefix, seq = row["prefix"], row["next_seq"]
-        code = f"{prefix}{seq}"
-        cx.execute("UPDATE series_code SET next_seq = ? WHERE series=?", (seq + 1, series))
-        return code
-
-def create_specimen(coin_type_id: int, lot_id: int = None, code: str = None, notes: str = None) -> Tuple[int, str]:
-    """Create a specimen (per-coin ID). If code is None, allocate from series prefix/sequence."""
-    series = _get_series_for_type(coin_type_id)
-    if code is None:
-        code = allocate_specimen_code_for_series(series)
-    with get_conn() as cx:
-        cur = cx.execute(
-            "INSERT INTO specimen(code, coin_type_id, lot_id, notes) VALUES (?,?,?,?)",
-            (code, coin_type_id, lot_id, notes),
-        )
-        specimen_id = cur.lastrowid
-    return specimen_id, code
-
-def create_specimens_for_lot(lot_id: int, quantity: int, start_code: str = None) -> List[str]:
-    """Create 'quantity' specimens for a lot; returns list of codes. If start_code is given, use it for the first and then auto-allocate the rest from the same series."""
-    if quantity <= 0:
-        return []
-    with get_conn() as cx:
-        row = _fetchone(cx, "SELECT coin_type_id FROM lot WHERE id=?", (lot_id,))
-        if not row:
-            raise ValueError("Unknown lot_id")
-        coin_type_id = row["coin_type_id"]
-    codes = []
-    first_code = start_code
-    for i in range(quantity):
-        code = first_code if (i == 0 and first_code) else None
-        _, c = create_specimen(coin_type_id=coin_type_id, lot_id=lot_id, code=code)
-        codes.append(c)
-    return codes
-
-def get_specimen_by_code(code: str) -> Optional[dict]:
-    with get_conn() as cx:
-        row = _fetchone(cx, """
-            SELECT sp.code,
-                   cm.series, ct.year, ct.mint_mark, ct.variety,
-                   sp.lot_id, sp.sold_line_id,
-                   CASE WHEN sp.sold_line_id IS NULL THEN 'ON_HAND' ELSE 'SOLD' END AS status
-            FROM specimen sp
-            JOIN coin_type ct ON ct.id = sp.coin_type_id
-            JOIN coin_master cm ON cm.id = ct.master_id
-            WHERE sp.code = ?
-        """, (code,))
-        return dict(row) if row else None
-
-def list_specimens_on_hand(series: str = None) -> List[dict]:
-    """List current specimens (not sold). Optional filter by series name."""
-    with get_conn() as cx:
-        if series:
-            rows = _fetchall(cx, """
-                SELECT sp.code, cm.series, ct.year, ct.mint_mark, ct.variety, sp.lot_id
-                FROM specimen sp
-                JOIN coin_type ct ON ct.id = sp.coin_type_id
-                JOIN coin_master cm ON cm.id = ct.master_id
-                WHERE sp.sold_line_id IS NULL AND cm.series = ?
-                ORDER BY sp.code
-            """, (series,))
-        else:
-            rows = _fetchall(cx, """
-                SELECT sp.code, cm.series, ct.year, ct.mint_mark, ct.variety, sp.lot_id
-                FROM specimen sp
-                JOIN coin_type ct ON ct.id = sp.coin_type_id
-                JOIN coin_master cm ON cm.id = ct.master_id
-                WHERE sp.sold_line_id IS NULL
-                ORDER BY cm.series, sp.code
-            """)
+        rows = _fetchall(cx, "SELECT id, name, COALESCE(category,'') AS category, COALESCE(description,'') AS description FROM storage_location ORDER BY name")
         return [dict(r) for r in rows]
