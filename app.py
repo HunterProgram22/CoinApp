@@ -19,4 +19,4 @@ with st.sidebar:
     st.page_link("pages/7_Specimens.py", label="Specimens (Flip IDs)", icon="🏷️")
     st.page_link("pages/8_Admin.py", label="Admin", icon="🛠️")
     st.page_link("pages/9_Coin_Type_Editor.py", label="Coin Type & Guide Prices", icon="🧩")
-
+    st.page_link("pages/10_Type_Sets.py", label="Type Sets", icon="📚")
