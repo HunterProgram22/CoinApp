@@ -8,27 +8,72 @@ st.header("🧩 Coin Type & Guide Price Editor")
 
 # ---------- Helpers ----------
 
+NAN_LIKE = {"nan", "none", "-", "—"}
+
+def _normalize_mm(mm: str) -> str:
+    if mm is None:
+        return ""
+    mm = str(mm).strip()
+    if mm.lower() in NAN_LIKE:
+        return ""
+    return mm
+
+def _normalize_variety(v: str) -> str:
+    if v is None:
+        return ""
+    v = str(v).strip()
+    if v.lower() in NAN_LIKE:
+        return ""
+    return v
+
 def _list_coin_types_for_picker():
+    """Return (labels, ids, meta) while de-duplicating rows where raw variety/mint are 'nan' text."""
     with get_conn() as cx:
         rows = cx.execute(
             '''
             SELECT ct.id,
                    cm.country, cm.denomination, cm.series,
-                   ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety,
+                   ct.year, ct.mint_mark, ct.variety,
                    ct.is_proof
             FROM coin_type ct
             JOIN coin_master cm ON cm.id = ct.master_id
             ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
             '''
         ).fetchall()
-        labels = []
-        ids = []
-        for r in rows:
-            mm = (r['mint_mark'] or '').strip()
-            lab = f"{r['series']} {r['year']}{(' ' + mm) if mm else ''}{(' • ' + r['variety']) if r['variety'] else ''}  (#{r['id']})"
-            labels.append(lab)
-            ids.append(r['id'])
-        return labels, ids
+
+    by_key = {}   # normalized key -> chosen row
+    dups = {}     # normalized key -> all rows (for cleanup UI)
+    for r in rows:
+        mm_norm  = _normalize_mm(r["mint_mark"])
+        var_norm = _normalize_variety(r["variety"])
+        key = (r["series"], int(r["year"]), mm_norm, var_norm)
+
+        rec = dict(r)
+        rec.update({"_mm_norm": mm_norm, "_var_norm": var_norm, "_key": key})
+        dups.setdefault(key, []).append(rec)
+
+        # Prefer a row whose raw values are already clean; tie-breaker: lower id
+        current = by_key.get(key)
+        if current is None:
+            by_key[key] = rec
+        else:
+            cur_bad = (str(current.get("mint_mark") or "").strip().lower() in NAN_LIKE) or                       (str(current.get("variety")   or "").strip().lower() in NAN_LIKE)
+            new_bad = (str(r["mint_mark"] or "").strip().lower() in NAN_LIKE) or                       (str(r["variety"]   or "").strip().lower() in NAN_LIKE)
+            if cur_bad and not new_bad:
+                by_key[key] = rec
+            elif (cur_bad == new_bad) and (r["id"] < current["id"]):
+                by_key[key] = rec
+
+    labels, ids, meta = [], [], {}
+    for key, rec in by_key.items():
+        series, year, mm_norm, var_norm = key
+        mm_part  = f" {mm_norm}" if mm_norm else ""
+        var_part = f" • {var_norm}" if var_norm else ""
+        label = f"{series} {year}{mm_part}{var_part}  (#{rec['id']})"
+        labels.append(label)
+        ids.append(rec["id"])
+        meta[label] = {"key": key, "dups": dups.get(key, [])}
+    return labels, ids, meta
 
 def _load_coin_type(ct_id: int):
     with get_conn() as cx:
@@ -45,8 +90,8 @@ def _load_coin_type(ct_id: int):
     return ct
 
 def _update_coin_type(ct_id: int, mint_mark: str, variety: str, is_proof: int, mintage, designer, obv_desc, rev_desc):
-    mint_mark = (mint_mark or '').strip()
-    variety = (variety or '').strip()
+    mint_mark = _normalize_mm(mint_mark)
+    variety   = _normalize_variety(variety)
     with get_conn() as cx:
         cx.execute(
             '''
@@ -71,7 +116,7 @@ def _list_guide_prices(ct_id: int):
             SELECT id, grade_text, numeric_grade, price_usd, as_of, COALESCE(source,'') AS source
             FROM guide_price
             WHERE coin_type_id = ?
-            ORDER BY as_of DESC, numeric_grade NULLS LAST, grade_text
+            ORDER BY as_of DESC, numeric_grade, grade_text
             ''',
             (ct_id,)
         ).fetchall()
@@ -99,9 +144,58 @@ def _delete_guide_price_by_id(gp_id: int):
     with get_conn() as cx:
         cx.execute("DELETE FROM guide_price WHERE id = ?", (gp_id,))
 
+def _merge_nan_duplicate_for_key(key):
+    """Merge duplicate coin_type rows for a normalized key (handles 'nan/None/-/—' variants).
+    Repoints FKs to the clean row and deletes the duplicate."""
+    series, year, mm_norm, var_norm = key
+    with get_conn() as cx:
+        rows = cx.execute(
+            '''
+            SELECT ct.id, ct.mint_mark, ct.variety
+            FROM coin_type ct
+            JOIN coin_master cm ON cm.id = ct.master_id
+            WHERE cm.series = ? AND ct.year = ?
+              AND (ct.mint_mark = ? OR (LOWER(TRIM(ct.mint_mark)) IN ('nan','none','-','—') AND ? = ''))
+              AND (ct.variety   = ? OR (LOWER(TRIM(ct.variety))   IN ('nan','none','-','—') AND ? = ''))
+            ''',
+            (series, year, mm_norm, mm_norm, var_norm, var_norm)
+        ).fetchall()
+
+        if len(rows) < 2:
+            return "No duplicate to merge for this key."
+
+        clean = None
+        bad = None
+        for r in rows:
+            is_bad = (str(r["variety"] or "").strip().lower() in NAN_LIKE) or (str(r["mint_mark"] or "").strip().lower() in NAN_LIKE)
+            if is_bad:
+                bad = r if bad is None else (bad if bad["id"] < r["id"] else r)
+            else:
+                clean = r if clean is None else (clean if clean["id"] < r["id"] else r)
+
+        if not clean or not bad:
+            return "Nothing to merge (no clear clean/bad pair)."
+
+        good_id = clean["id"]
+        bad_id  = bad["id"]
+
+        cx.execute("BEGIN")
+        try:
+            for table in ["tx_line", "lot", "guide_price", "coin_type_tag", "image", "specimen"]:
+                try:
+                    cx.execute(f"UPDATE {table} SET coin_type_id = ? WHERE coin_type_id = ?", (good_id, bad_id))
+                except Exception:
+                    pass
+            cx.execute("DELETE FROM coin_type WHERE id = ?", (bad_id,))
+            cx.execute("COMMIT")
+        except Exception as e:
+            cx.execute("ROLLBACK")
+            raise e
+    return f"Merged duplicate coin_type #{bad_id} into #{good_id}."
+
 # ---------- UI ----------
 
-labels, ids = _list_coin_types_for_picker()
+labels, ids, meta = _list_coin_types_for_picker()
 if not ids:
     st.info("No coin types found. Add some via Import or Add Transaction (BUY).")
     st.stop()
@@ -110,15 +204,27 @@ pick_label = st.selectbox("Select a coin type", labels, index=0)
 ct_id = ids[labels.index(pick_label)]
 ct = _load_coin_type(ct_id)
 
-st.subheader(f"{ct['series']} — {ct['year']} {(ct['mint_mark'] or '').strip()} {('• ' + ct['variety']) if ct['variety'] else ''}")
+# If key has dup rows, offer a cleanup
+key_info = meta[pick_label]
+if len(key_info['dups']) > 1:
+    with st.expander("⚠️ Duplicate 'nan' variant detected — click to merge"):
+        st.caption("You have multiple coin_type rows for the same Series/Year/Mint/Variety due to 'nan/None'. You can merge them below.")
+        if st.button("Merge duplicates for this coin type key"):
+            try:
+                msg = _merge_nan_duplicate_for_key(key_info['key'])
+                st.success(msg)
+            except Exception as e:
+                st.error(str(e))
+
+st.subheader(f"{ct['series']} — {ct['year']} {(_normalize_mm(ct['mint_mark']))}{(' • ' + _normalize_variety(ct['variety'])) if _normalize_variety(ct['variety']) else ''}")
 
 tab_details, tab_prices = st.tabs(["Coin Type details", "Guide Prices"])
 
 with tab_details:
     st.caption("Edit descriptive fields for this specific year/mint/variety (coin_type).")
     col1, col2 = st.columns(2)
-    mint_mark = col1.text_input("Mint Mark ('' for none)", value=(ct['mint_mark'] or ''))
-    variety   = col2.text_input("Variety", value=(ct['variety'] or ''))
+    mint_mark = col1.text_input("Mint Mark ('' for none)", value=_normalize_mm(ct['mint_mark']))
+    variety   = col2.text_input("Variety", value=_normalize_variety(ct['variety']))
     is_proof  = st.checkbox("Is Proof?", value=bool(ct['is_proof']))
     col3, col4 = st.columns(2)
     mintage   = col3.number_input("Mintage", min_value=0, step=1, value=int(ct['mintage'] or 0))
@@ -167,7 +273,6 @@ with tab_prices:
             except Exception as e:
                 st.error(str(e))
 
-    # Delete section
     with st.expander("Delete a guide price row"):
         if rows:
             id_map = {f"{r['grade_text']} @ {r['as_of']} — ${r['price_usd']} (id {r['id']})": r['id'] for r in rows}
