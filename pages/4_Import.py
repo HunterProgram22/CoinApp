@@ -11,6 +11,13 @@ from queries import (
 st.header("Import from Excel/CSV")
 st.caption("Upload a workbook or CSV, map your columns, preview, then import.")
 
+NAN_LIKE = {"nan","NaN","none","None","-","—"}
+def norm_text(x):
+    if x is None: return ""
+    s = str(x).strip()
+    return "" if s in NAN_LIKE or s.lower() in NAN_LIKE else s
+
+
 uploaded = st.file_uploader("Upload file", type=["xlsx", "csv"])  # requires openpyxl for .xlsx
 
 if uploaded is not None:
