@@ -2,9 +2,157 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-
 from db import get_conn
 from queries import list_lots, list_storage_locations, upsert_coin_master
+import datetime as _dt
+
+
+_METALS = [("Ag","Silver"), ("Au","Gold"), ("Pt","Platinum"), ("Pd","Palladium")]
+
+
+def _now_utc_iso():
+    return _dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+def _mp_insert(metal: str, price_per_oz: float, quoted_at_iso: str | None = None):
+    if not quoted_at_iso:
+        quoted_at_iso = _now_utc_iso()
+    with get_conn() as cx:
+        cx.execute(
+            "INSERT INTO metal_price(metal, price_per_oz_usd, quoted_at_utc) VALUES (?,?,?)",
+            (metal, float(price_per_oz), quoted_at_iso),
+        )
+
+def _mp_latest():
+    with get_conn() as cx:
+        rows = cx.execute("SELECT * FROM v_latest_spot").fetchall()
+        return [dict(r) for r in rows]
+
+def _mp_recent(limit: int = 100):
+    with get_conn() as cx:
+        rows = cx.execute(
+            """
+            SELECT metal, price_per_oz_usd, quoted_at_utc
+            FROM metal_price
+            ORDER BY quoted_at_utc DESC
+            LIMIT ?
+            """, (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+# -------- Live fetchers --------
+def _fetch_yahoo_fast(metal_code: str) -> float | None:
+    """Return last price in USD/oz using Yahoo Finance via yfinance ticker mapping.
+    metal_code: 'Ag','Au','Pt','Pd'
+    """
+    try:
+        import yfinance as yf  # requires: pip install yfinance
+    except Exception:
+        st.error("yfinance is not installed. In Command Prompt:  pip install yfinance")
+        return None
+
+    ticker_map = {
+        "Au": "XAUUSD=X",
+        "Ag": "XAGUSD=X",
+        "Pt": "XPTUSD=X",
+        "Pd": "XPDUSD=X",
+    }
+    tkr = ticker_map.get(metal_code)
+    if not tkr:
+        return None
+
+    try:
+        # Try fast_info first (quick)
+        T = yf.Ticker(tkr)
+        fi = getattr(T, "fast_info", None)
+        if fi and isinstance(fi, dict) and fi.get("last_price"):
+            return float(fi["last_price"])
+        # Fallback: recent history
+        h = T.history(period="1d", interval="1m")
+        if h is not None and not h.empty:
+            return float(h["Close"].dropna().iloc[-1])
+        h2 = yf.download(tkr, period="1d")
+        if h2 is not None and not h2.empty:
+            return float(h2["Close"].dropna().iloc[-1])
+    except Exception as e:
+        st.error(f"Yahoo fetch failed for {metal_code}: {e}")
+    return None
+
+def _safe_rerun():
+    try:
+        st.rerun()
+    except AttributeError:
+        st.experimental_rerun()
+
+def render_admin_metal_prices_tool():
+    st.subheader("🧮 Metal Prices")
+    st.caption("These drive melt valuation when a lot's valuation method is **MELT_ONLY**. Add manual prices or fetch live quotes.")
+
+    # Latest snapshot
+    latest = _mp_latest()
+    if latest:
+        st.write("**Latest spot (per oz, USD)**")
+        df_latest = pd.DataFrame(latest)
+        df_latest = df_latest.rename(columns={"metal":"Metal","price_per_oz_usd":"Price (USD/oz)"})
+        st.dataframe(df_latest, use_container_width=True, hide_index=True)
+    else:
+        st.info("No metal prices yet. Add one below.")
+
+    st.divider()
+
+    # --- Manual add ---
+    with st.form("mp_manual"):
+        st.markdown("**Add Manual Price**")
+        col1, col2, col3 = st.columns([1,1,2])
+        m = col1.selectbox("Metal", [f"{code} — {name}" for code, name in _METALS])
+        price = col2.number_input("Price (USD/oz)", min_value=0.0, step=0.01)
+        when_iso = col3.text_input("Quoted at (UTC, ISO 8601)", value=_now_utc_iso())
+        do_add = st.form_submit_button("Add price", type="primary")
+        if do_add:
+            code = m.split(" — ", 1)[0]
+            try:
+                _mp_insert(code, float(price), when_iso.strip() or None)
+                st.success(f"Added {code} @ ${price:.4f} ({when_iso}).")
+                _safe_rerun()
+            except Exception as e:
+                st.error(f"Insert failed: {e}")
+
+    st.divider()
+
+    # --- Live fetch ---
+    st.markdown("**Fetch Live Quotes (Yahoo Finance via yfinance)**")
+    colA, _ = st.columns([2,1])
+    metals_pick = colA.multiselect(
+        "Select metals to fetch",
+        [f"{code} — {name}" for code, name in _METALS],
+        default=[f"{code} — {name}" for code, name in _METALS[:2]]  # default Au/Ag
+    )
+    if st.button("Fetch & Insert Live Quotes"):
+        missing = []
+        for label in metals_pick:
+            code = label.split(" — ", 1)[0]
+            px = _fetch_yahoo_fast(code)
+            if px is None:
+                missing.append(code)
+                continue
+            _mp_insert(code, px, _now_utc_iso())
+            st.success(f"{code}: inserted live price ${px:.4f}")
+        if missing:
+            st.warning("No price for: " + ", ".join(missing))
+
+    # Recent table
+    rec = _mp_recent(100)
+    if rec:
+        st.write("**Recent quotes (latest 100)**")
+        dfr = pd.DataFrame(rec).rename(columns={"metal":"Metal","price_per_oz_usd":"Price (USD/oz)","quoted_at_utc":"Quoted (UTC)"})
+        st.dataframe(dfr, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    st.caption("Quick links:")
+    st.link_button("LBMA Prices", "https://www.lbma.org.uk/prices-and-data")
+    st.link_button("CME Group Metals", "https://www.cmegroup.com/markets/metals.html")
+    st.link_button("Yahoo Finance XAUUSD", "https://finance.yahoo.com/quote/XAUUSD%3DX")
+    st.link_button("Yahoo Finance XAGUSD", "https://finance.yahoo.com/quote/XAGUSD%3DX")
+# ---- END ADMIN: METAL PRICES ----
 
 
 def _admin_del_safe_rerun():
@@ -440,7 +588,7 @@ def render_admin_void_tool():
 # ---- END VOID ENTIRE TRANSACTION ----
 st.header("🛠️ Admin")
 
-tab_coin_editor, tab_lot, tab_series, tab_storage, tab_void, tab_maint = (
+tab_coin_editor, tab_lot, tab_series, tab_storage, tab_void, tab_maint, tab_prices = (
     st.tabs(
         [
             "Coin Editor",
@@ -449,6 +597,7 @@ tab_coin_editor, tab_lot, tab_series, tab_storage, tab_void, tab_maint = (
             "Storage locations",
             "Void Transaction Tool",
             "Delete Lot Tool",
+            "Metal Prices",
         ]
     ))
 
@@ -654,3 +803,6 @@ with tab_void:
 
 with tab_maint:
     render_admin_delete_lot_tool()
+
+with tab_prices:
+    render_admin_metal_prices_tool()
