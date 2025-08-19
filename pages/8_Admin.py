@@ -333,7 +333,20 @@ def render_admin_void_tool():
 # ---- END VOID ENTIRE TRANSACTION ----
 st.header("🛠️ Admin")
 
-tab_lot, tab_series, tab_storage = st.tabs(["Lots (grades & valuation)", "Series specs (for melt calc)", "Storage locations"])
+tab_coin_editor, tab_lot, tab_series, tab_storage, tab_void = (
+    st.tabs(
+        [
+            "Coin Editor",
+            "Lots (grades & valuation)",
+            "Series specs (for melt calc)",
+            "Storage locations",
+            "Void Tool",
+        ]
+    ))
+
+# -------------------- COIN EDITOR -------------------
+with tab_coin_editor:
+    render_catalog_coin_master_editor()
 
 # -------------------- LOT EDITOR --------------------
 with tab_lot:
@@ -527,6 +540,6 @@ with tab_storage:
                                    (new_name.strip(), new_cat or None, new_desc or None, rec["id"]))
                         st.success("Storage updated.")
 
-render_catalog_coin_master_editor()
-
-render_admin_void_tool()
+# render_catalog_coin_master_editor()
+with tab_void:
+    render_admin_void_tool()
