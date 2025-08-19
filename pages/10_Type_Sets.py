@@ -1,3 +1,4 @@
+
 # pages/10_Type_Sets.py
 import streamlit as st
 import pandas as pd
@@ -5,6 +6,14 @@ import sqlite3
 from db import get_conn
 
 st.header("📚 Type Sets")
+
+def _safe_rerun():
+    # Streamlit >= 1.27: st.rerun()
+    try:
+        st.rerun()
+    except AttributeError:
+        # Older Streamlit: st.experimental_rerun()
+        st.experimental_rerun()
 
 # ------------------------ DB helpers ------------------------
 def list_sets():
@@ -82,10 +91,12 @@ def list_specimens_for_type_on_hand(coin_type_id: int):
 def list_assignments(set_id: int):
     with get_conn() as cx:
         rows = cx.execute("""
-            SELECT coin_type_id, specimen_code, (sold_line_id IS NULL) AS on_hand
-            FROM type_set_fulfillment f
-            JOIN specimen s ON s.code = f.specimen_code
-            WHERE f.set_id=?
+            SELECT f.coin_type_id AS coin_type_id,
+                   f.specimen_code AS specimen_code,
+                   (s.sold_line_id IS NULL) AS on_hand
+            FROM type_set_fulfillment AS f
+            JOIN specimen AS s ON s.code = f.specimen_code
+            WHERE f.set_id = ?
         """, (set_id,)).fetchall()
         return [dict(r) for r in rows]
 
@@ -95,6 +106,7 @@ def assign_specimens(set_id: int, coin_type_id: int, codes: list[str]):
     with get_conn() as cx:
         for code in codes:
             code = code.strip().upper()
+            # Validate specimen is on-hand and matches type
             row = cx.execute("""
                 SELECT code FROM specimen
                  WHERE code=? AND coin_type_id=? AND sold_line_id IS NULL
@@ -125,9 +137,11 @@ def build_missing_df(set_id: int):
     df = pd.DataFrame(rows)
     if df.empty:
         return df
+    # Missing to acquire = required - max(assigned_onhand, on_hand)
     df["assigned_onhand_qty"] = df.get("assigned_onhand_qty", 0).fillna(0)
     df["have_qty"] = df["have_qty"].fillna(0)
     df["missing_qty"] = (df["required_qty"] - df[["assigned_onhand_qty","have_qty"]].max(axis=1)).clip(lower=0)
+    # Pretty columns
     df = df.rename(columns={
         "series":"Series","year":"Year","mint_mark":"Mint Mark","variety":"Variety",
         "is_proof":"Proof","required_qty":"Required","have_qty":"On Hand",
@@ -177,6 +191,7 @@ with tab_browse:
             show_cols = [c for c in ["Series","Year","Mint Mark","Variety","Proof","Required","On Hand","Assigned (on hand)","Assigned Codes"] if c in df.columns]
             st.dataframe(df[show_cols], use_container_width=True)
 
+        # ---- What's Missing (shopping list) ----
         st.subheader("🛒 What's Missing — Shopping List")
         miss_df = build_missing_df(set_id)
         if miss_df.empty or miss_df["Missing"].sum() == 0:
@@ -184,6 +199,7 @@ with tab_browse:
         else:
             tbl = miss_df[miss_df["Missing"] > 0][["Series","Year","Mint Mark","Variety","Proof","Required","On Hand","Assigned (on hand)","Missing"]]
             st.dataframe(tbl, use_container_width=True)
+            # Download button
             out = miss_df[miss_df["Missing"] > 0][["Series","Year","Mint Mark","Variety","Proof","Missing"]].to_csv(index=False).encode("utf-8")
             st.download_button("Download shopping list CSV", out, file_name=f"type_set_shopping_list_{set_id}.csv", mime="text/csv")
 
@@ -214,7 +230,7 @@ with tab_browse:
                         if errs:
                             st.warning("Some items could not be assigned:")
                             for e in errs[:50]: st.write("•", e)
-                        st.experimental_rerun()
+                        _safe_rerun()
             with col2:
                 to_remove = st.multiselect("Flip IDs to **unassign**", [a["specimen_code"] for a in asn_rows])
                 if st.button("Unassign selected"):
@@ -223,7 +239,7 @@ with tab_browse:
                     else:
                         removed = unassign_specimens(set_id, to_remove)
                         st.success(f"Unassigned {removed} Flip ID(s).")
-                        st.experimental_rerun()
+                        _safe_rerun()
 
 # ---- New Set ----
 with tab_new:
