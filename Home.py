@@ -1,4 +1,4 @@
-# app.py
+# Home.py
 import streamlit as st
 from db import init_db
 
