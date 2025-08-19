@@ -1,11 +1,12 @@
 # pages/10_Type_Sets.py
 import streamlit as st
 import pandas as pd
+import sqlite3
 from db import get_conn
 
 st.header("📚 Type Sets")
 
-# ------------------------ Helpers ------------------------
+# ------------------------ DB helpers ------------------------
 def list_sets():
     with get_conn() as cx:
         rows = cx.execute("SELECT id, name, description, mode, created_at FROM type_set ORDER BY created_at DESC").fetchall()
@@ -33,10 +34,11 @@ def add_rule(set_id: int, **kw):
     with get_conn() as cx:
         cx.execute(f"INSERT INTO type_set_rule({','.join(cols)}) VALUES ({ph})", vals)
 
-def get_progress(set_id: int):
+def get_progress(set_id: int, with_assign=False):
+    view = "v_type_set_progress_assign" if with_assign else "v_type_set_progress"
     with get_conn() as cx:
-        rows = cx.execute("""
-            SELECT * FROM v_type_set_progress
+        rows = cx.execute(f"""
+            SELECT * FROM {view}
              WHERE set_id=?
              ORDER BY series, year, mint_mark, variety
         """, (set_id,)).fetchall()
@@ -68,20 +70,76 @@ def list_coin_types_for_picker():
             labels.append(lab); ids.append(r["id"])
         return labels, ids
 
-def export_missing_csv(set_id: int):
-    rows = get_progress(set_id)
+def list_specimens_for_type_on_hand(coin_type_id: int):
+    with get_conn() as cx:
+        rows = cx.execute("""
+            SELECT code FROM specimen
+             WHERE coin_type_id=? AND (sold_line_id IS NULL)
+             ORDER BY code
+        """, (coin_type_id,)).fetchall()
+        return [r["code"] for r in rows]
+
+def list_assignments(set_id: int):
+    with get_conn() as cx:
+        rows = cx.execute("""
+            SELECT coin_type_id, specimen_code, (sold_line_id IS NULL) AS on_hand
+            FROM type_set_fulfillment f
+            JOIN specimen s ON s.code = f.specimen_code
+            WHERE f.set_id=?
+        """, (set_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+def assign_specimens(set_id: int, coin_type_id: int, codes: list[str]):
+    inserted = 0
+    errs = []
+    with get_conn() as cx:
+        for code in codes:
+            code = code.strip().upper()
+            row = cx.execute("""
+                SELECT code FROM specimen
+                 WHERE code=? AND coin_type_id=? AND sold_line_id IS NULL
+            """, (code, coin_type_id)).fetchone()
+            if not row:
+                errs.append(f"{code}: not found, wrong type, or not on-hand")
+                continue
+            try:
+                cx.execute("""
+                    INSERT INTO type_set_fulfillment(set_id, coin_type_id, specimen_code)
+                    VALUES (?,?,?)
+                """, (set_id, coin_type_id, code))
+                inserted += 1
+            except Exception as e:
+                errs.append(f"{code}: {e}")
+    return inserted, errs
+
+def unassign_specimens(set_id: int, codes: list[str]):
+    removed = 0
+    with get_conn() as cx:
+        for code in codes:
+            cx.execute("DELETE FROM type_set_fulfillment WHERE set_id=? AND specimen_code=?", (set_id, code))
+            removed += cx.total_changes
+    return removed
+
+def build_missing_df(set_id: int):
+    rows = get_progress(set_id, with_assign=True)
     df = pd.DataFrame(rows)
     if df.empty:
-        return None
-    missing = df[df["have_qty"] < df["required_qty"]].copy()
-    cols = ["series","year","mint_mark","variety","is_proof","required_qty","have_qty","coin_type_id"]
-    missing = missing[cols]
-    return missing
+        return df
+    df["assigned_onhand_qty"] = df.get("assigned_onhand_qty", 0).fillna(0)
+    df["have_qty"] = df["have_qty"].fillna(0)
+    df["missing_qty"] = (df["required_qty"] - df[["assigned_onhand_qty","have_qty"]].max(axis=1)).clip(lower=0)
+    df = df.rename(columns={
+        "series":"Series","year":"Year","mint_mark":"Mint Mark","variety":"Variety",
+        "is_proof":"Proof","required_qty":"Required","have_qty":"On Hand",
+        "assigned_onhand_qty":"Assigned (on hand)","assigned_codes_csv":"Assigned Codes",
+        "missing_qty":"Missing"
+    })
+    return df
 
 # ------------------------ UI ------------------------
 tab_browse, tab_new, tab_manage = st.tabs(["My Sets", "New Set", "Manage"])
 
-# ---- My Sets (progress) ----
+# ---- My Sets (progress + assignments + shopping list) ----
 with tab_browse:
     sets_ = list_sets()
     if not sets_:
@@ -90,30 +148,82 @@ with tab_browse:
         name_to_id = {f"{s['name']} [{s['mode']}]" : s["id"] for s in sets_}
         sel_name = st.selectbox("Select a set", list(name_to_id.keys()))
         set_id = name_to_id[sel_name]
-        rows = get_progress(set_id)
+
+        try:
+            rows = get_progress(set_id, with_assign=True)
+        except sqlite3.OperationalError as e:
+            st.error("Type Sets schema isn't fully installed. Apply the patch file below, then refresh.")
+            st.markdown("**Patch:** [schema_typesets_fix.sql](sandbox:/mnt/data/schema_typesets_fix.sql)")
+            st.code("sqlite3 data\coinapp.sqlite < schema_typesets_fix.sql", language="bat")
+            st.stop()
+
         total = len(rows)
-        done = sum(1 for r in rows if r["is_complete"] == 1)
-        st.metric("Progress", f"{done}/{total} complete")
+        done_auto = sum(1 for r in rows if r.get("is_complete") == 1)
+        done_assn = sum(1 for r in rows if r.get("is_complete_by_assignment") == 1)
+
+        colA, colB = st.columns(2)
+        colA.metric("Auto Progress (by on-hand qty)", f"{done_auto}/{total}")
+        colB.metric("Assigned Progress (by Flip IDs)", f"{done_assn}/{total}")
 
         if rows:
             df = pd.DataFrame(rows)
             df = df.rename(columns={
                 "series":"Series","year":"Year","mint_mark":"Mint Mark","variety":"Variety",
-                "is_proof":"Proof","required_qty":"Required","have_qty":"On Hand","is_complete":"Done"
+                "is_proof":"Proof","required_qty":"Required","have_qty":"On Hand",
+                "assigned_onhand_qty":"Assigned (on hand)","assigned_codes_csv":"Assigned Codes"
             })
-            df["Done"] = df["Done"].map({0:"❌",1:"✅"})
-            st.dataframe(df[["Series","Year","Mint Mark","Variety","Proof","Required","On Hand","Done"]],
-                         use_container_width=True)
+            if "Assigned Codes" in df.columns:
+                df["Assigned Codes"] = df["Assigned Codes"].fillna("").apply(lambda s: ", ".join([c for c in str(s).split(",") if c]))
+            show_cols = [c for c in ["Series","Year","Mint Mark","Variety","Proof","Required","On Hand","Assigned (on hand)","Assigned Codes"] if c in df.columns]
+            st.dataframe(df[show_cols], use_container_width=True)
 
-            if st.button("Export missing as CSV"):
-                missing = export_missing_csv(set_id)
-                if missing is None or missing.empty:
-                    st.info("Nothing missing—nice!")
-                else:
-                    fn = f"type_set_missing_{set_id}.csv"
-                    missing.to_csv(f"/mnt/data/{fn}", index=False)
-                    st.success(f"Saved: {fn}")
-                    st.markdown(f"[Download {fn}](sandbox:/mnt/data/{fn})")
+        st.subheader("🛒 What's Missing — Shopping List")
+        miss_df = build_missing_df(set_id)
+        if miss_df.empty or miss_df["Missing"].sum() == 0:
+            st.success("Nothing missing—nice!")
+        else:
+            tbl = miss_df[miss_df["Missing"] > 0][["Series","Year","Mint Mark","Variety","Proof","Required","On Hand","Assigned (on hand)","Missing"]]
+            st.dataframe(tbl, use_container_width=True)
+            out = miss_df[miss_df["Missing"] > 0][["Series","Year","Mint Mark","Variety","Proof","Missing"]].to_csv(index=False).encode("utf-8")
+            st.download_button("Download shopping list CSV", out, file_name=f"type_set_shopping_list_{set_id}.csv", mime="text/csv")
+
+        st.divider()
+        st.subheader("Assign / Unassign Flip IDs")
+        if rows:
+            label_map = {}
+            for r in rows:
+                disp = f"{r['series']} {r['year']}{(' ' + r['mint_mark']) if r['mint_mark'] else ''}{(' • ' + r['variety']) if r['variety'] else ''}"
+                label_map[disp] = r["coin_type_id"]
+            pick_label = st.selectbox("Coin Type", list(label_map.keys()))
+            coin_type_id = label_map[pick_label]
+
+            avail = list_specimens_for_type_on_hand(coin_type_id)
+            asn_rows = [a for a in list_assignments(set_id) if a["coin_type_id"] == coin_type_id]
+            assigned_codes = [a["specimen_code"] + ("" if a["on_hand"] else " (sold)") for a in asn_rows]
+            st.caption("Assigned codes: " + (", ".join(assigned_codes) if assigned_codes else "—"))
+
+            col1, col2 = st.columns(2)
+            with col1:
+                picks = st.multiselect("Flip IDs to **assign**", avail, help="Only on-hand specimens of this type appear here.")
+                if st.button("Assign selected"):
+                    if not picks:
+                        st.warning("Pick at least one Flip ID.")
+                    else:
+                        added, errs = assign_specimens(set_id, coin_type_id, picks)
+                        if added: st.success(f"Assigned {added} Flip ID(s).")
+                        if errs:
+                            st.warning("Some items could not be assigned:")
+                            for e in errs[:50]: st.write("•", e)
+                        st.experimental_rerun()
+            with col2:
+                to_remove = st.multiselect("Flip IDs to **unassign**", [a["specimen_code"] for a in asn_rows])
+                if st.button("Unassign selected"):
+                    if not to_remove:
+                        st.warning("Pick at least one Flip ID to unassign.")
+                    else:
+                        removed = unassign_specimens(set_id, to_remove)
+                        st.success(f"Unassigned {removed} Flip ID(s).")
+                        st.experimental_rerun()
 
 # ---- New Set ----
 with tab_new:
