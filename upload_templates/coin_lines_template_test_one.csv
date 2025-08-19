@@ -1,8 +1,10 @@
 tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,series,year,mint_mark,variety,quantity,unit_price,purchase_grade_company,purchase_grade_text,purchase_numeric_grade,estimated_grade_text,estimated_numeric_grade,valuation_method,manual_est_unit_value,storage_location
-3/1/2022,Buy,APMEX,USD,$9.95 ,0,0,,USA,One-Ounce Silver Bar,APMEX Bar,2022,-,,1,29.97,,,,,,,,
-5/4/2024,Buy,Joe Whitehead,USD,$0.00 ,0,0,,USA,Dollar,American Silver Eagle,2024,-,,1,0,,,,,,,,
-6/25/2025,Buy,APMEX,USD,$9.95 ,0,0,,USA,Dollar,American Silver Eagle,2025,-,,2,91.52,,,,,,,,
-6/28/2025,Buy,Buckeye Gold - Westerville,USD,$0.00 ,0,1.17,,USA,Dollar,American Silver Eagle,2015,-,,1,39,,,,,,,,
-6/28/2025,Buy,Buckeye Gold - Westerville,USD,$0.00 ,0,1.17,,USA,Dollar,American Silver Eagle,2016,-,,1,39,,,,,,,,
-6/29/2025,Buy,Kat's Grandparents,USD,$0.00 ,0,0,,USA,Dollar,Morgan,1921,-,,1,0,,,,AU50,50,,,Morgan Box
-6/29/2025,Buy,Kat's Grandparents,USD,$0.00 ,0,0,,USA,Dollar,Peace,1923,-,,1,0,,,,AU50,50,,,Peace Box
+2025-06-29,Buy,Kat's Grandparents,USD,,,,,United States,Half Dollar,Kennedy,1964,,,,,,,,,,,,
+2025-06-29,Buy,Kat's Grandparents,USD,,,,,United States,Half Dollar,Franklin,1953,D,,,,,,,,,,,
+2025-06-29,Buy,Kat's Grandparents,USD,,,,,United States,Half Dollar,Walking Liberty,1945,,,,,,,,,,,,
+2025-06-29,Buy,Kat's Grandparents,USD,,,,,United States,Dime,Mercury,1935,,,,,,,,,,,,
+2025-06-29,Buy,Kat's Grandparents,USD,,,,,United States,Dime,Mercury,1941,,,,,,,,,,,,
+2025-06-29,Buy,Kat's Grandparents,USD,,,,,United States,Dime,Mercury,1942,,,,,,,,,,,,
+2025-06-29,Buy,Kat's Grandparents,USD,,,,,United States,Dime,Mercury,1943,,,,,,,,,,,,
+2025-06-29,Buy,Kat's Grandparents,USD,,,,,United States,Dime,Mercury,1944,D,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,
