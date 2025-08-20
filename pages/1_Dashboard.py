@@ -50,9 +50,26 @@ col2.metric("Coins on Hand", f"{summary['total_coins']:,}")
 st.subheader("Latest Spot Prices")
 spots = get_latest_spot()
 if spots:
-    st.dataframe(pd.DataFrame(spots))
+    df = pd.DataFrame(spots)
+
+    # Optional: sort by a friendly metal order if present
+    if "metal" in df.columns:
+        try:
+            order = pd.Categorical(df["metal"], categories=["Ag","Au","Pt","Pd"], ordered=True)
+            df = df.assign(metal=order).sort_values("metal").assign(metal=df["metal"].astype(str))
+        except Exception:
+            pass
+
+    # Friendly headers
+    df = df.rename(columns={
+        "metal": "Metal",
+        "price_per_oz_usd": "Price Per Oz. (USD)",
+    })
+
+    # Hide the row index and use full width
+    st.dataframe(df, use_container_width=True, hide_index=True)
 else:
-    st.info("No metal prices yet. Add some under Settings or via script.")
+    st.info("No metal prices yet. Add some under Admin → Metal Prices.")
 
 
 render_silver_quick_widget()
