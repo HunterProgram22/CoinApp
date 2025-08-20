@@ -1,25 +1,30 @@
-
-# pages/05_Transactions.py
+# pages/5_Transactions.py
 import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 
 from queries import (
-    # existing add-tx helpers
+    # existing helpers
     list_coin_types, list_storage_locations,
     create_buy_transaction, create_sell_transaction,
 )
 
-# NEW: search helpers (add via queries patch if missing)
+# Optional helpers (patched in)
 try:
     from queries import search_transactions, get_tx_lines
 except Exception:
     search_transactions = None
     get_tx_lines = None
 
+try:
+    from queries import spending_log, spending_log_items
+except Exception:
+    spending_log = None
+    spending_log_items = None
+
 st.header("Transactions")
 
-tab_list, tab_add = st.tabs(["📄 Review / Search", "➕ Add Transaction"])
+tab_list, tab_add, tab_spend = st.tabs(["📄 Review / Search", "➕ Add Transaction", "💵 Spending Log"])
 
 # =====================================================
 # TAB 1: REVIEW / SEARCH
@@ -287,3 +292,86 @@ with tab_add:
                         st.success("SELL saved (FIFO).")
                     except ValueError as e:
                         st.error(str(e))
+
+# =====================================================
+# TAB 3: SPENDING LOG (grouped by Date + Party, BUY only)
+# =====================================================
+with tab_spend:
+    if spending_log is None or spending_log_items is None:
+        st.warning("Spending helpers not found in queries.py. Please apply the provided patch, then reload.")
+    else:
+        today = date.today()
+        colA, colB, colC, colD = st.columns([1.2,1.2,1,1])
+        d_from = colA.date_input("From", value=today - timedelta(days=90))
+        d_to   = colB.date_input("To", value=today)
+        party_q = colC.text_input("Party contains", value="")
+        page_size = colD.selectbox("Results", [25, 50, 100], index=0)
+
+        # pagination
+        if "spend_offset" not in st.session_state:
+            st.session_state.spend_offset = 0
+        colE, colF, colG = st.columns([1,1,6])
+        if colE.button("Search", type="primary"):
+            st.session_state.spend_offset = 0
+        if colF.button("All time"):
+            d_from = None
+            d_to = None
+            st.session_state.spend_offset = 0
+
+        rows = []
+        try:
+            rows = spending_log(
+                date_from=d_from.isoformat() if d_from else None,
+                date_to=d_to.isoformat() if d_to else None,
+                party_query=party_q.strip() or None,
+                limit=int(page_size),
+                offset=int(st.session_state.spend_offset),
+            )
+        except Exception as e:
+            st.error(f"Spending query failed: {e}")
+            rows = []
+
+        if not rows:
+            st.info("No spending found for the current filters.")
+        else:
+            # Build a friendly table
+            friendly = []
+            for r in rows:
+                # Items summary
+                try:
+                    items = spending_log_items(r["tx_date"], r.get("party"))
+                except Exception as e:
+                    items = []
+                if items:
+                    parts = []
+                    for it in items:
+                        qty = int(it.get("qty", 0) or 0)
+                        series = it.get("series") or ""
+                        parts.append(f"{qty} {series}")
+                    items_str = ", ".join(parts)
+                else:
+                    items_str = "—"
+
+                friendly.append({
+                    "Date": r["tx_date"],
+                    "Party": r.get("party") or "—",
+                    "Total Spent (USD)": f"${float(r.get('spent_usd') or 0):,.2f}",
+                    "What was bought": items_str,
+                })
+
+            st.dataframe(pd.DataFrame(friendly), use_container_width=True, hide_index=True)
+
+            # Pager controls
+            colP1, colP2, _ = st.columns([1,1,6])
+            if colP1.button("⬅️ Prev", disabled=st.session_state.spend_offset <= 0):
+                st.session_state.spend_offset = max(0, st.session_state.spend_offset - int(page_size))
+                try:
+                    st.rerun()
+                except Exception:
+                    pass
+            if colP2.button("Next ➡️", disabled=len(rows) < int(page_size)):
+                st.session_state.spend_offset += int(page_size)
+                try:
+                    st.rerun()
+                except Exception:
+                    pass
