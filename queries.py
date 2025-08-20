@@ -484,4 +484,167 @@ def get_tx_lines(tx_id: int) -> List[dict]:
             ORDER BY tl.id
         """, (tx_id,)).fetchall()
         return [dict(r) for r in rows]
-#
+
+def spending_log(date_from: Optional[str] = None,
+                 date_to: Optional[str] = None,
+                 party_query: Optional[str] = None,
+                 limit: int = 25,
+                 offset: int = 0) -> List[dict]:
+    """Return total BUY spending grouped by (tx_date, party).
+    spent_usd = sum(line quantity * unit_price) + shipping + tax + fees, summed across all BUY tx per group.
+    Dates are ISO 'YYYY-MM-DD'. Currency handling assumes USD."""
+    where = ["t.tx_type = 'BUY'"]
+    params = []
+    if date_from:
+        where.append("t.tx_date >= ?")
+        params.append(date_from)
+    if date_to:
+        where.append("t.tx_date <= ?")
+        params.append(date_to)
+    if party_query:
+        where.append("COALESCE(p.name,'') LIKE ?")
+        params.append(f"%{party_query}%")
+    where_sql = "WHERE " + " AND ".join(where)
+
+    sql = f"""
+        WITH buys AS (
+          SELECT t.id, t.tx_date, COALESCE(p.name,'') AS party,
+                 COALESCE(t.shipping,0) AS shipping, COALESCE(t.tax,0) AS tax, COALESCE(t.fees,0) AS fees
+          FROM tx t
+          LEFT JOIN party p ON p.id = t.party_id
+          {where_sql}
+        ),
+        line_sub AS (
+          SELECT tl.tx_id, SUM(ABS(tl.quantity) * COALESCE(tl.unit_price,0)) AS line_subtotal
+          FROM tx_line tl
+          JOIN tx t2 ON t2.id = tl.tx_id AND t2.tx_type = 'BUY'
+          GROUP BY tl.tx_id
+        )
+        SELECT b.tx_date, b.party,
+               ROUND(SUM(COALESCE(ls.line_subtotal,0) + b.shipping + b.tax + b.fees), 2) AS spent_usd
+        FROM buys b
+        LEFT JOIN line_sub ls ON ls.tx_id = b.id
+        GROUP BY b.tx_date, b.party
+        ORDER BY b.tx_date DESC, b.party
+        LIMIT ? OFFSET ?
+    """
+    params.extend([int(limit), int(offset)])
+    with get_conn() as cx:
+        rows = cx.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+def spending_log_items(tx_date: str, party: Optional[str]) -> List[dict]:
+    """Return list of {series, qty} for all BUY lines on a given date+party."""
+    where = ["t.tx_type = 'BUY'", "t.tx_date = ?"]
+    params = [tx_date]
+    if party is None or party == '':
+        where.append("COALESCE(p.name,'') = ''")
+    else:
+        where.append("COALESCE(p.name,'') = ?")
+        params.append(party)
+    where_sql = "WHERE " + " AND ".join(where)
+    sql = f"""
+        SELECT cm.series, SUM(ABS(tl.quantity)) AS qty
+        FROM tx t
+        LEFT JOIN party p ON p.id = t.party_id
+        JOIN tx_line tl ON tl.tx_id = t.id
+        JOIN coin_type ct ON ct.id = tl.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        {where_sql}
+        GROUP BY cm.series
+        ORDER BY cm.series
+    """
+    with get_conn() as cx:
+        rows = cx.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+def list_series_for_filter(only_on_hand: bool = True) -> List[str]:
+    """Distinct coin series, optionally restricted to those with coins on hand."""
+    with get_conn() as cx:
+        if only_on_hand:
+            rows = cx.execute("""
+                SELECT DISTINCT cm.series
+                FROM coin_master cm
+                JOIN coin_type ct ON ct.master_id = cm.id
+                JOIN lot l ON l.coin_type_id = ct.id
+                WHERE l.qty_remaining > 0
+                ORDER BY cm.series
+            """).fetchall()
+        else:
+            rows = cx.execute("""
+                SELECT DISTINCT series FROM coin_master ORDER BY series
+            """).fetchall()
+        return [r[0] for r in rows]
+
+def inventory_details_by_series(series: str) -> List[dict]:
+    """Per-lot detail rows for a given series.
+    Columns returned:
+      acquired_date, series, year, mint_mark, variety, qty_remaining,
+      party, unit_cost_usd, melt_unit_usd, melt_total_usd, grade, flip_ids
+    Notes:
+      - Flip IDs are aggregated per-lot from a 'specimen' table if present
+        with columns (lot_id, specimen_code, sold_line_id).
+      - Melt uses v_latest_spot based on coin_master.metal, fineness, weight_grams.
+    """
+    if not series:
+        return []
+    with get_conn() as cx:
+        # detect whether a 'specimen' table with 'specimen_code' exists
+        has_specimen = bool(cx.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='specimen'"
+        ).fetchone())
+        has_specimen_code = False
+        if has_specimen:
+            try:
+                cx.execute("SELECT specimen_code FROM specimen LIMIT 1")
+                has_specimen_code = True
+            except Exception:
+                has_specimen_code = False
+
+        flip_sql = """
+            LEFT JOIN (
+              SELECT lot_id, GROUP_CONCAT(specimen_code, ', ') AS flip_ids, COUNT(*) AS flip_count
+              FROM specimen
+              WHERE sold_line_id IS NULL
+              GROUP BY lot_id
+            ) sp ON sp.lot_id = l.id
+        """ if has_specimen and has_specimen_code else ""
+
+        sql = f"""
+            WITH melt AS (
+              SELECT metal, price_per_oz_usd FROM v_latest_spot
+            )
+            SELECT
+              l.acquired_date,
+              cm.series,
+              ct.year,
+              ct.mint_mark,
+              COALESCE(ct.variety,'') AS variety,
+              l.qty_remaining,
+              COALESCE(p.name,'') AS party,
+              ROUND(l.unit_cost, 2) AS unit_cost_usd,
+              -- per-coin melt
+              ROUND(
+                (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal),
+              2) AS melt_unit_usd,
+              -- total melt for remaining qty
+              ROUND(
+                l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal),
+              2) AS melt_total_usd,
+              COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade
+              {', sp.flip_ids' if (has_specimen and has_specimen_code) else ''}
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            JOIN tx_line tl ON tl.id = l.acquisition_line_id
+            JOIN tx t ON t.id = tl.tx_id
+            LEFT JOIN party p ON p.id = t.party_id
+            {flip_sql}
+            WHERE l.qty_remaining > 0 AND cm.series = ?
+            ORDER BY ct.year, ct.mint_mark, ct.variety, l.acquired_date
+        """
+        rows = cx.execute(sql, (series,)).fetchall()
+        return [dict(r) for r in rows]
+

@@ -36,13 +36,13 @@ with tab_list:
         # --- Quick presets ---
         col0, col1, col2, col3 = st.columns([2,2,2,2])
         try:
-            preset = col0.segmented_control("Quick range", options=["7d","30d","90d","365d"], default="30d")
+            preset = col0.segmented_control("Quick range", options=["7d","30d","90d","365d"], default="30d", key="tx_preset")
         except AttributeError:
-            preset = col0.selectbox("Quick range", ["7d","30d","90d","365d"], index=1)
-        all_time = col1.checkbox("All time", value=False, help="Ignore date filters and show everything (paginated)")
+            preset = col0.selectbox("Quick range", ["7d","30d","90d","365d"], index=1, key="tx_preset_sel")
+        all_time = col1.checkbox("All time", value=False, help="Ignore date filters and show everything (paginated)", key="tx_all_time")
         types_default = ["BUY","SELL"]
-        tx_types = col2.multiselect("Types", ["BUY","SELL","FEE","ADJUST","GIFT_IN","GIFT_OUT","TRANSFER"], default=types_default)
-        party_q = col3.text_input("Party contains", value="")
+        tx_types = col2.multiselect("Types", ["BUY","SELL","FEE","ADJUST","GIFT_IN","GIFT_OUT","TRANSFER"], default=types_default, key="tx_types")
+        party_q = col3.text_input("Party contains", value="", key="tx_party")
 
         # Compute default dates from preset
         today = date.today()
@@ -51,20 +51,21 @@ with tab_list:
         d_from_default = today - timedelta(days=default_days)
         d_to_default = today
 
-        # Manual overrides
+        # Manual overrides (give unique keys)
         colA, colB, colC = st.columns([1.2,1.2,1])
-        d_from = colA.date_input("From", value=d_from_default, disabled=all_time)
-        d_to   = colB.date_input("To", value=d_to_default, disabled=all_time)
-        page_size = colC.selectbox("Results", [25, 50, 100], index=0)
+        d_from = colA.date_input("From", value=d_from_default, disabled=all_time, key="tx_from")
+        d_to   = colB.date_input("To", value=d_to_default, disabled=all_time, key="tx_to")
+        page_size = colC.selectbox("Results", [25, 50, 100], index=0, key="tx_page_size")
 
         colD, colE, _ = st.columns([1,1,3])
         do_search = colD.button("Search", type="primary")
         if colE.button("Clear filters"):
             # reset to defaults
-            d_from, d_to = d_from_default, d_to_default
-            tx_types = types_default
-            party_q = ""
-            all_time = False
+            st.session_state["tx_from"] = d_from_default
+            st.session_state["tx_to"] = d_to_default
+            st.session_state["tx_types"] = types_default
+            st.session_state["tx_party"] = ""
+            st.session_state["tx_all_time"] = False
             try:
                 st.rerun()
             except Exception:
@@ -176,9 +177,9 @@ with tab_list:
 with tab_add:
     # Fallback if Streamlit version doesn't support segmented_control
     try:
-        mode = st.segmented_control("Transaction Type", options=["BUY","SELL"], default="BUY")
+        mode = st.segmented_control("Transaction Type", options=["BUY","SELL"], default="BUY", key="tx_mode")
     except AttributeError:
-        mode = st.radio("Transaction Type", ["BUY","SELL"], index=0, horizontal=True)
+        mode = st.radio("Transaction Type", ["BUY","SELL"], index=0, horizontal=True, key="tx_mode_radio")
 
     coin_types = list_coin_types()
     if not coin_types:
@@ -189,45 +190,45 @@ with tab_add:
     if mode == "BUY":
         with st.form("buy_form", clear_on_submit=False):
             colA, colB, colC = st.columns(3)
-            tx_date = colA.date_input("Date")
-            party_name = colB.text_input("Counterparty (Dealer/Person)")
-            currency = colC.text_input("Currency", value="USD")
-            shipping = colA.number_input("Shipping", min_value=0.0, step=0.01, value=0.0)
-            tax = colB.number_input("Tax", min_value=0.0, step=0.01, value=0.0)
-            fees = colC.number_input("Fees", min_value=0.0, step=0.01, value=0.0)
-            notes = st.text_area("Notes", height=70)
+            tx_date = colA.date_input("Date", key="buy_date")
+            party_name = colB.text_input("Counterparty (Dealer/Person)", key="buy_party")
+            currency = colC.text_input("Currency", value="USD", key="buy_ccy")
+            shipping = colA.number_input("Shipping", min_value=0.0, step=0.01, value=0.0, key="buy_ship")
+            tax = colB.number_input("Tax", min_value=0.0, step=0.01, value=0.0, key="buy_tax")
+            fees = colC.number_input("Fees", min_value=0.0, step=0.01, value=0.0, key="buy_fees")
+            notes = st.text_area("Notes", height=70, key="buy_notes")
 
             st.subheader("Line Item")
             if coin_types:
                 options = {f"{ct['series']} {ct['year']}{(' ' + ct['mint_mark']) if ct['mint_mark'] else ''}{(' • ' + ct['variety']) if ct['variety'] else ''}  (#{ct['id']})": ct['id'] for ct in coin_types}
-                label = st.selectbox("Coin Type", list(options.keys()))
+                label = st.selectbox("Coin Type", list(options.keys()), key="buy_ct")
                 coin_type_id = options[label]
             else:
                 coin_type_id = None
 
-            quantity = st.number_input("Quantity", min_value=1, step=1, value=1)
-            unit_price = st.number_input("Unit Price (per coin)", min_value=0.0, step=0.01, value=0.0)
+            quantity = st.number_input("Quantity", min_value=1, step=1, value=1, key="buy_qty")
+            unit_price = st.number_input("Unit Price (per coin)", min_value=0.0, step=0.01, value=0.0, key="buy_unit_price")
 
             with st.expander("Grades & Valuation"):
-                purchase_grade_company = st.text_input("Purchase Grade Company (PCGS/NGC/RAW)")
-                purchase_grade_text = st.text_input("Purchase Grade Text (e.g., MS64)")
-                purchase_numeric_grade = st.number_input("Purchase Numeric Grade", min_value=0.0, step=0.5, value=0.0)
-                slab_cert = st.text_input("Slab Cert #")
+                purchase_grade_company = st.text_input("Purchase Grade Company (PCGS/NGC/RAW)", key="buy_pgc")
+                purchase_grade_text = st.text_input("Purchase Grade Text (e.g., MS64)", key="buy_pgt")
+                purchase_numeric_grade = st.number_input("Purchase Numeric Grade", min_value=0.0, step=0.5, value=0.0, key="buy_png")
+                slab_cert = st.text_input("Slab Cert #", key="buy_slab")
 
-                estimated_grade_text = st.text_input("Estimated Grade (your current opinion)")
-                estimated_numeric_grade = st.number_input("Estimated Numeric Grade", min_value=0.0, step=0.5, value=0.0)
-                valuation_method = st.selectbox("Valuation Method", ["AUTO","MELT_ONLY","GUIDE_ONLY","MANUAL"], index=0)
-                manual_est_unit_value = st.number_input("Manual Unit Value (used only if MANUAL)", min_value=0.0, step=0.01, value=0.0)
+                estimated_grade_text = st.text_input("Estimated Grade (your current opinion)", key="buy_egt")
+                estimated_numeric_grade = st.number_input("Estimated Numeric Grade", min_value=0.0, step=0.5, value=0.0, key="buy_eng")
+                valuation_method = st.selectbox("Valuation Method", ["AUTO","MELT_ONLY","GUIDE_ONLY","MANUAL"], index=0, key="buy_val_method")
+                manual_est_unit_value = st.number_input("Manual Unit Value (used only if MANUAL)", min_value=0.0, step=0.01, value=0.0, key="buy_manual_val")
 
             with st.expander("Storage"):
                 if storage_options:
                     names = {f"{s['name']} ({s['category']})".strip(): s['id'] for s in storage_options}
-                    storage_label = st.selectbox("Storage Location", list(names.keys()))
+                    storage_label = st.selectbox("Storage Location", list(names.keys()), key="buy_storage")
                     storage_location_id = names[storage_label]
                 else:
                     st.info("No storage locations yet. Add some in Settings.")
                     storage_location_id = None
-                lot_notes = st.text_input("Lot Notes")
+                lot_notes = st.text_input("Lot Notes", key="buy_lot_notes")
 
             submitted = st.form_submit_button("Save BUY")
             if submitted:
@@ -258,24 +259,24 @@ with tab_add:
     else:  # SELL
         with st.form("sell_form", clear_on_submit=False):
             colA, colB, colC = st.columns(3)
-            tx_date = colA.date_input("Date")
-            party_name = colB.text_input("Counterparty (Buyer)")
-            currency = colC.text_input("Currency", value="USD")
-            shipping = colA.number_input("Shipping", min_value=0.0, step=0.01, value=0.0)
-            tax = colB.number_input("Tax", min_value=0.0, step=0.01, value=0.0)
-            fees = colC.number_input("Fees", min_value=0.0, step=0.01, value=0.0)
-            notes = st.text_area("Notes", height=70)
+            tx_date = colA.date_input("Date", key="sell_date")
+            party_name = colB.text_input("Counterparty (Buyer)", key="sell_party")
+            currency = colC.text_input("Currency", value="USD", key="sell_ccy")
+            shipping = colA.number_input("Shipping", min_value=0.0, step=0.01, value=0.0, key="sell_ship")
+            tax = colB.number_input("Tax", min_value=0.0, step=0.01, value=0.0, key="sell_tax")
+            fees = colC.number_input("Fees", min_value=0.0, step=0.01, value=0.0, key="sell_fees")
+            notes = st.text_area("Notes", height=70, key="sell_notes")
 
             st.subheader("Line Item")
             if coin_types:
                 options = {f"{ct['series']} {ct['year']}{(' ' + ct['mint_mark']) if ct['mint_mark'] else ''}{(' • ' + ct['variety']) if ct['variety'] else ''}  (#{ct['id']})": ct['id'] for ct in coin_types}
-                label = st.selectbox("Coin Type", list(options.keys()))
+                label = st.selectbox("Coin Type", list(options.keys()), key="sell_ct")
                 coin_type_id = options[label]
             else:
                 coin_type_id = None
 
-            quantity = st.number_input("Quantity to SELL", min_value=1, step=1, value=1)
-            unit_price = st.number_input("Unit Price (per coin)", min_value=0.0, step=0.01, value=0.0)
+            quantity = st.number_input("Quantity to SELL", min_value=1, step=1, value=1, key="sell_qty")
+            unit_price = st.number_input("Unit Price (per coin)", min_value=0.0, step=0.01, value=0.0, key="sell_unit_price")
 
             submitted = st.form_submit_button("Save SELL (FIFO)")
             if submitted:
@@ -302,18 +303,18 @@ with tab_spend:
     else:
         today = date.today()
         colA, colB, colC, colD = st.columns([1.2,1.2,1,1])
-        d_from = colA.date_input("From", value=today - timedelta(days=90))
-        d_to   = colB.date_input("To", value=today)
-        party_q = colC.text_input("Party contains", value="")
-        page_size = colD.selectbox("Results", [25, 50, 100], index=0)
+        d_from = colA.date_input("From", value=today - timedelta(days=90), key="sp_from")
+        d_to   = colB.date_input("To", value=today, key="sp_to")
+        party_q = colC.text_input("Party contains", value="", key="sp_party")
+        page_size = colD.selectbox("Results", [25, 50, 100], index=0, key="sp_page_size")
 
         # pagination
         if "spend_offset" not in st.session_state:
             st.session_state.spend_offset = 0
         colE, colF, colG = st.columns([1,1,6])
-        if colE.button("Search", type="primary"):
+        if colE.button("Search", type="primary", key="sp_search"):
             st.session_state.spend_offset = 0
-        if colF.button("All time"):
+        if colF.button("All time", key="sp_alltime"):
             d_from = None
             d_to = None
             st.session_state.spend_offset = 0
@@ -363,13 +364,13 @@ with tab_spend:
 
             # Pager controls
             colP1, colP2, _ = st.columns([1,1,6])
-            if colP1.button("⬅️ Prev", disabled=st.session_state.spend_offset <= 0):
+            if colP1.button("⬅️ Prev", disabled=st.session_state.spend_offset <= 0, key="sp_prev"):
                 st.session_state.spend_offset = max(0, st.session_state.spend_offset - int(page_size))
                 try:
                     st.rerun()
                 except Exception:
                     pass
-            if colP2.button("Next ➡️", disabled=len(rows) < int(page_size)):
+            if colP2.button("Next ➡️", disabled=len(rows) < int(page_size), key="sp_next"):
                 st.session_state.spend_offset += int(page_size)
                 try:
                     st.rerun()
