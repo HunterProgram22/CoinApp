@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from queries import get_portfolio_summary, get_latest_spot
 
+
 _SILVER_ITEMS = [
     ("American Silver Eagle (1 oz)", 1.00000),
     ("Morgan/Peace Dollar",          0.77344),
@@ -40,36 +41,89 @@ def render_silver_quick_widget(title: str = "Silver Melt Quick Reference"):
     ])
     st.dataframe(df, use_container_width=True, hide_index=True)
 
+
+# Optional rollup helper (append its patch to queries.py if missing)
+try:
+    from queries import dashboard_series_rollup
+except Exception:
+    dashboard_series_rollup = None
+
 st.header("Dashboard")
 
-summary = get_portfolio_summary()
-col1, col2 = st.columns(2)
-col1.metric("Estimated Portfolio Value (USD)", f"${summary['total_estimated_value_usd']:,}")
-col2.metric("Coins on Hand", f"{summary['total_coins']:,}")
+tab_overview, tab_series = st.tabs(["📊 Overview", "📚 Series Summary"])
 
-st.subheader("Latest Spot Prices")
-spots = get_latest_spot()
-if spots:
-    df = pd.DataFrame(spots)
+# ========================
+# TAB: OVERVIEW (keep your existing cards here)
+# ========================
+with tab_overview:
+    summary = get_portfolio_summary()
+    col1, col2 = st.columns(2)
+    col1.metric("Estimated Portfolio Value (USD)", f"${summary['total_estimated_value_usd']:,}")
+    col2.metric("Coins on Hand", f"{summary['total_coins']:,}")
 
-    # Optional: sort by a friendly metal order if present
-    if "metal" in df.columns:
-        try:
-            order = pd.Categorical(df["metal"], categories=["Ag","Au","Pt","Pd"], ordered=True)
-            df = df.assign(metal=order).sort_values("metal").assign(metal=df["metal"].astype(str))
-        except Exception:
-            pass
+    # ---- (Optional) Your existing custom cards/widgets (e.g., Silver Summary) ----
+    # Paste your existing custom Dashboard blocks right below this comment so they remain on the Overview tab.
+    # ----------------------------------------------------------------------------
 
-    # Friendly headers
-    df = df.rename(columns={
-        "metal": "Metal",
-        "price_per_oz_usd": "Price Per Oz. (USD)",
-    })
+    st.subheader("Latest Spot Prices")
+    spots = get_latest_spot()
+    if spots:
+        df = pd.DataFrame(spots)
 
-    # Hide the row index and use full width
-    st.dataframe(df, use_container_width=True, hide_index=True)
-else:
-    st.info("No metal prices yet. Add some under Admin → Metal Prices.")
+        # Friendly order: Ag, Au, Pt, Pd (where present)
+        if "metal" in df.columns:
+            try:
+                order = pd.Categorical(df["metal"], categories=["Ag","Au","Pt","Pd"], ordered=True)
+                df = df.assign(metal=order).sort_values("metal").assign(metal=df["metal"].astype(str))
+            except Exception:
+                pass
 
+        # Friendly headers
+        df = df.rename(columns={
+            "metal": "Metal",
+            "price_per_oz_usd": "Price Per Oz. (USD)",
+        })
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No metal prices yet. Add some under Admin → Metal Prices.")
 
-render_silver_quick_widget()
+    render_silver_quick_widget()
+# ========================
+# TAB: SERIES SUMMARY
+# ========================
+with tab_series:
+    if dashboard_series_rollup is None:
+        st.warning("Series rollup helper not found in queries.py. Please apply the provided patch, then reload.")
+    else:
+        rows = dashboard_series_rollup()
+        if not rows:
+            st.info("No inventory yet.")
+        else:
+            df = pd.DataFrame(rows)
+
+            # Compute Unrealized G/L
+            if {'chosen_total_usd','cost_total_usd'}.issubset(df.columns):
+                df['unreal_gl_usd'] = (df['chosen_total_usd'].fillna(0) - df['cost_total_usd'].fillna(0)).round(2)
+            else:
+                df['unreal_gl_usd'] = None
+
+            # Friendly columns
+            rename = {
+                'series': 'Series',
+                'coins': 'Coins',
+                'melt_total_usd': 'Melt Value (USD)',
+                'numi_total_usd': 'Numismatic Value (USD)',
+                'cost_total_usd': 'Total Cost (USD)',
+                'chosen_total_usd': 'Est. Value (USD)',
+                'unreal_gl_usd': 'Unrealized G/L (USD)',
+            }
+            df = df.rename(columns=rename)
+
+            # Order columns
+            order = [c for c in [
+                'Series','Coins','Melt Value (USD)','Numismatic Value (USD)',
+                'Total Cost (USD)','Est. Value (USD)','Unrealized G/L (USD)'
+            ] if c in df.columns]
+            df = df[order]
+
+            st.dataframe(df, use_container_width=True, hide_index=True)

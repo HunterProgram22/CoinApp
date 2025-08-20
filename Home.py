@@ -11,7 +11,7 @@ st.caption("Inventory • Transactions • Storage • Analytics")
 
 # Sidebar navigation (custom order)
 st.page_link("Home.py", label="Home", icon="🏠")
-st.page_link("pages/1_Dashboard.py", label="Dashboard", icon="📊")
+st.page_link("pages/1_Dashboard_Old.py", label="Dashboard", icon="📊")
 st.page_link("pages/2_Inventory.py", label="Inventory", icon="📦")
 st.page_link("pages/3_Type_Sets.py", label="Type Sets", icon="📚")
 st.page_link("pages/4_Specimens.py", label="Specimens", icon="🏷️")
