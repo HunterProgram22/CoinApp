@@ -10,6 +10,7 @@ import datetime as _dt
 _METALS = [("Ag","Silver"), ("Au","Gold"), ("Pt","Platinum"), ("Pd","Palladium")]
 
 
+
 def _now_utc_iso():
     return _dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
@@ -51,10 +52,10 @@ def _fetch_yahoo_fast(metal_code: str) -> float | None:
         return None
 
     ticker_map = {
-        "Au": "XAUUSD=X",
-        "Ag": "XAGUSD=X",
-        "Pt": "XPTUSD=X",
-        "Pd": "XPDUSD=X",
+        "Au": "GC=F",
+        "Ag": "SI=F",
+        "Pt": "PL=F",
+        "Pd": "PA=F",
     }
     tkr = ticker_map.get(metal_code)
     if not tkr:
