@@ -428,3 +428,60 @@ def list_storage_locations() -> List[dict]:
     with get_conn() as cx:
         rows = _fetchall(cx, "SELECT id, name, COALESCE(category,'') AS category, COALESCE(description,'') AS description FROM storage_location ORDER BY name")
         return [dict(r) for r in rows]
+
+def search_transactions(date_from: Optional[str] = None,
+                        date_to: Optional[str] = None,
+                        tx_types: Optional[list] = None,
+                        party_query: Optional[str] = None,
+                        limit: int = 25,
+                        offset: int = 0) -> List[dict]:
+    """Return tx headers with optional filters. Dates are ISO 'YYYY-MM-DD'."""
+    where = []
+    params = []
+    if date_from:
+        where.append("t.tx_date >= ?")
+        params.append(date_from)
+    if date_to:
+        where.append("t.tx_date <= ?")
+        params.append(date_to)
+    if tx_types:
+        qs = ",".join(["?"] * len(tx_types))
+        where.append(f"t.tx_type IN ({qs})")
+        params.extend(tx_types)
+    if party_query:
+        where.append("COALESCE(p.name, '') LIKE ?")
+        params.append(f"%{party_query}%")
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    sql = f"""
+        SELECT
+          t.id, t.tx_date, t.tx_type,
+          p.name AS party,
+          t.currency, t.shipping, t.tax, t.fees, t.notes
+        FROM tx t
+        LEFT JOIN party p ON p.id = t.party_id
+        {where_sql}
+        ORDER BY t.tx_date DESC, t.id DESC
+        LIMIT ? OFFSET ?
+    """
+    params.extend([int(limit), int(offset)])
+    with get_conn() as cx:
+        rows = cx.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+def get_tx_lines(tx_id: int) -> List[dict]:
+    with get_conn() as cx:
+        rows = cx.execute("""
+            SELECT
+              tl.id AS line_id,
+              cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety,
+              ABS(tl.quantity) AS quantity, tl.unit_price,
+              tl.grade_company, tl.grade_text, tl.numeric_grade, tl.slab_cert
+            FROM tx_line tl
+            LEFT JOIN coin_type ct ON ct.id = tl.coin_type_id
+            LEFT JOIN coin_master cm ON cm.id = ct.master_id
+            WHERE tl.tx_id = ?
+            ORDER BY tl.id
+        """, (tx_id,)).fetchall()
+        return [dict(r) for r in rows]
+#
