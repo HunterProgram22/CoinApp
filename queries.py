@@ -679,3 +679,109 @@ def dashboard_series_rollup() -> List[dict]:
     with get_conn() as cx:
         rows = cx.execute(sql).fetchall()
         return [dict(r) for r in rows]
+
+def inventory_details_proof() -> List[dict]:
+    """Per-lot details for all on-hand PROOF coins (coin_type.is_proof=1)."""
+    with get_conn() as cx:
+        # Optional specimen join (flip IDs) if table/column exist
+        has_specimen = bool(cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='specimen'").fetchone())
+        has_specimen_code = False
+        if has_specimen:
+            try:
+                cx.execute("SELECT specimen_code FROM specimen LIMIT 1")
+                has_specimen_code = True
+            except Exception:
+                has_specimen_code = False
+        flip_sql = """
+            LEFT JOIN (
+              SELECT lot_id, GROUP_CONCAT(specimen_code, ', ') AS flip_ids, COUNT(*) AS flip_count
+              FROM specimen
+              WHERE sold_line_id IS NULL
+              GROUP BY lot_id
+            ) sp ON sp.lot_id = l.id
+        """ if (has_specimen and has_specimen_code) else ""
+
+        sql = f"""
+            WITH melt AS (SELECT metal, price_per_oz_usd FROM v_latest_spot)
+            SELECT
+              l.acquired_date,
+              cm.series,
+              ct.year,
+              ct.mint_mark,
+              COALESCE(ct.variety,'') AS variety,
+              l.qty_remaining,
+              COALESCE(p.name,'') AS party,
+              ROUND(l.unit_cost, 2) AS unit_cost_usd,
+              ROUND((cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                    * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 2) AS melt_unit_usd,
+              ROUND(l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                    * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 2) AS melt_total_usd,
+              COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade
+              {', sp.flip_ids' if (has_specimen and has_specimen_code) else ''},
+              ct.is_proof
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            JOIN tx_line tl ON tl.id = l.acquisition_line_id
+            JOIN tx t ON t.id = tl.tx_id
+            LEFT JOIN party p ON p.id = t.party_id
+            {flip_sql}
+            WHERE l.qty_remaining > 0 AND ct.is_proof = 1
+            ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, l.acquired_date
+        """
+        rows = cx.execute(sql).fetchall()
+        return [dict(r) for r in rows]
+
+def inventory_details_slabbed() -> List[dict]:
+    """Per-lot details for all on-hand coins with a slab certificate number."""
+    with get_conn() as cx:
+        # Optional specimen join (flip IDs)
+        has_specimen = bool(cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='specimen'").fetchone())
+        has_specimen_code = False
+        if has_specimen:
+            try:
+                cx.execute("SELECT specimen_code FROM specimen LIMIT 1")
+                has_specimen_code = True
+            except Exception:
+                has_specimen_code = False
+        flip_sql = """
+            LEFT JOIN (
+              SELECT lot_id, GROUP_CONCAT(specimen_code, ', ') AS flip_ids, COUNT(*) AS flip_count
+              FROM specimen
+              WHERE sold_line_id IS NULL
+              GROUP BY lot_id
+            ) sp ON sp.lot_id = l.id
+        """ if (has_specimen and has_specimen_code) else ""
+
+        sql = f"""
+            WITH melt AS (SELECT metal, price_per_oz_usd FROM v_latest_spot)
+            SELECT
+              l.acquired_date,
+              cm.series,
+              ct.year,
+              ct.mint_mark,
+              COALESCE(ct.variety,'') AS variety,
+              l.qty_remaining,
+              COALESCE(p.name,'') AS party,
+              ROUND(l.unit_cost, 2) AS unit_cost_usd,
+              ROUND((cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                    * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 2) AS melt_unit_usd,
+              ROUND(l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                    * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 2) AS melt_total_usd,
+              COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade,
+              l.slab_cert
+              {', sp.flip_ids' if (has_specimen and has_specimen_code) else ''}
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            JOIN tx_line tl ON tl.id = l.acquisition_line_id
+            JOIN tx t ON t.id = tl.tx_id
+            LEFT JOIN party p ON p.id = t.party_id
+            {flip_sql}
+            WHERE l.qty_remaining > 0
+              AND l.slab_cert IS NOT NULL
+              AND TRIM(l.slab_cert) <> ''
+            ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, l.acquired_date
+        """
+        rows = cx.execute(sql).fetchall()
+        return [dict(r) for r in rows]

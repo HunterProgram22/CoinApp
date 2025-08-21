@@ -125,7 +125,7 @@ with tab_series:
                 mime="text/csv",
             )
 
-            # Optional: colorized static table for gains/losses
+            # Colorized static table (now 2 decimals using Styler.format)
             with st.expander("Colorized view (static table)"):
                 def color_gl(val):
                     try:
@@ -136,7 +136,20 @@ with tab_series:
                         return 'color: gray;'
                     return 'color: green;' if v > 0 else 'color: red;'
 
-                styled = df_disp.style.applymap(color_gl, subset=['Unrealized G/L (USD)']).applymap(
-                    color_gl, subset=['Unrealized G/L (%)'])
+                df_round = df_disp.copy()
+                money_cols = ['Melt Value (USD)','Numismatic Value (USD)','Total Cost (USD)','Est. Value (USD)','Unrealized G/L (USD)']
+                pct_cols = ['Unrealized G/L (%)']
+                for c in money_cols:
+                    if c in df_round.columns:
+                        df_round[c] = pd.to_numeric(df_round[c], errors='coerce').round(2)
+                for c in pct_cols:
+                    if c in df_round.columns:
+                        df_round[c] = pd.to_numeric(df_round[c], errors='coerce').round(2)
+
+                styled = df_round.style.applymap(color_gl, subset=['Unrealized G/L (USD)']).applymap(
+                    color_gl, subset=['Unrealized G/L (%)']).format(
+                    {**{c: "${:,.2f}" for c in money_cols},
+                     **{c: "{:,.2f}" for c in pct_cols}}
+                )
 
                 st.table(styled)

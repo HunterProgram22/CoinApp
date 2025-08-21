@@ -1,19 +1,35 @@
-# pages/3_Inventory.py
+# pages/2_Inventory.py
 import streamlit as st
 import pandas as pd
+
 from queries import inventory_by_type, inventory_by_series_summary, list_lots
 
-# Optional (patched) helpers
+# Optional (patched) helpers for detailed and flag views
 try:
     from queries import list_series_for_filter, inventory_details_by_series
-except Exception:
+except Exception:  # pragma: no cover
     list_series_for_filter = None
     inventory_details_by_series = None
 
+try:
+    from queries import inventory_details_proof, inventory_details_slabbed
+except Exception:  # pragma: no cover
+    inventory_details_proof = None
+    inventory_details_slabbed = None
+
 st.header("Inventory")
 
-view = st.radio("View", ["By Type", "By Series (summary)", "Filter by Series (detail)"], horizontal=True, key="inv_view")
+# Four views
+view = st.radio(
+    "View",
+    ["By Type", "By Series (summary)", "Filter by Series (detail)", "Filter by Flags"],
+    horizontal=True,
+    key="inv_view",
+)
 
+# -----------------------------
+# View A: By Type (no money cols)
+# -----------------------------
 if view == "By Type":
     inv = inventory_by_type()
     if inv:
@@ -24,12 +40,17 @@ if view == "By Type":
             df = df.drop(columns=['coin_type_id'])
         first_order = [c for c in ['series','year','mint_mark','variety','coins_on_hand'] if c in df.columns]
         df = df[first_order + [c for c in df.columns if c not in first_order]]
+        # Friendly labels
         rename = {'mint_mark': 'Mint Mark', 'coins_on_hand': 'Qty on Hand', 'series': 'Series', 'year': 'Year'}
         df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, use_container_width=True, hide_index=True,
+                     column_config={'Qty on Hand': st.column_config.NumberColumn(format="%d")})
     else:
         st.info("No inventory yet.")
 
+# ---------------------------------
+# View B: By Series (summary, money)
+# ---------------------------------
 elif view == "By Series (summary)":
     summary = inventory_by_series_summary()
     if summary:
@@ -38,13 +59,20 @@ elif view == "By Series (summary)":
         col_order = [c for c in ['series','coins','est_value_usd'] if c in df.columns]
         df = df[col_order + [c for c in df.columns if c not in col_order]]
         df = df.rename(columns={'series': 'Series', 'coins': 'Coins', 'est_value_usd': 'Est. Value (USD)'})
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, use_container_width=True, hide_index=True,
+                     column_config={
+                         'Coins': st.column_config.NumberColumn(format="%d"),
+                         'Est. Value (USD)': st.column_config.NumberColumn(format="$%.2f"),
+                     })
     else:
         st.info("No inventory yet.")
 
-else:  # Filter by Series (detail)
+# --------------------------------------------------
+# View C: Filter by Series (detail, multiple $ cols)
+# --------------------------------------------------
+elif view == "Filter by Series (detail)":
     if list_series_for_filter is None or inventory_details_by_series is None:
-        st.warning("Series detail helpers not found in queries.py. Please apply the provided patch, then reload.")
+        st.warning("Series detail helpers not found in queries.py. Please apply the inventory detail patch, then reload.")
     else:
         series_list = list_series_for_filter(only_on_hand=True)
         if not series_list:
@@ -66,19 +94,106 @@ else:  # Filter by Series (detail)
                     "melt_total_usd": "Melt×Qty (USD)",
                     "grade": "Grade",
                     "flip_ids": "Flip IDs",
+                    "party": "Party",
                 }
                 df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+
                 # Column order
-                order = [c for c in ["Acquired","Flip IDs","series","year","Mint Mark","variety","Party","Qty","Unit Cost (USD)","Melt/coin (USD)","Melt×Qty (USD)","Grade"] if c in df.columns]
+                order = [c for c in ["Acquired","Flip IDs","series","year","Mint Mark","variety","Party",
+                                     "Qty","Unit Cost (USD)","Melt/coin (USD)","Melt×Qty (USD)","Grade"] if c in df.columns]
                 df = df[[c for c in order if c in df.columns] + [c for c in df.columns if c not in order]]
+
                 # Pretty blanks
-                for c in ["variety","flip_ids","Grade","Party","Mint Mark"]:
+                for c in ["variety","Flip IDs","Grade","Party","Mint Mark"]:
                     if c in df.columns:
                         df[c] = df[c].replace({"": "—", None: "—"})
-                st.dataframe(df, use_container_width=True, hide_index=True)
 
-# Keep Lots section minimal when on Type view (optional)
+                st.dataframe(
+                    df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Qty": st.column_config.NumberColumn(format="%d"),
+                        "Unit Cost (USD)": st.column_config.NumberColumn(format="$%.2f"),
+                        "Melt/coin (USD)": st.column_config.NumberColumn(format="$%.2f"),
+                        "Melt×Qty (USD)": st.column_config.NumberColumn(format="$%.2f"),
+                    },
+                )
+
+# --------------------------------------------------
+# View D: Filter by Flags (Proof / Slabbed)
+# --------------------------------------------------
+else:
+    if inventory_details_proof is None or inventory_details_slabbed is None:
+        st.warning("Flag filter helpers not found in queries.py. Please append the flag filter patch, then reload.")
+    else:
+        try:
+            choice = st.segmented_control("Show", options=["Proof coins","Slabbed (has cert #)"], default="Proof coins", key="inv_flag_choice")
+        except AttributeError:
+            choice = st.selectbox("Show", ["Proof coins","Slabbed (has cert #)"], index=0, key="inv_flag_choice_sel")
+
+        rows = inventory_details_proof() if choice.startswith("Proof") else inventory_details_slabbed()
+        if not rows:
+            st.info("No matching coins on hand.")
+        else:
+            df = pd.DataFrame(rows)
+            # Friendly names
+            rename = {
+                "acquired_date": "Acquired",
+                "mint_mark": "Mint Mark",
+                "qty_remaining": "Qty",
+                "unit_cost_usd": "Unit Cost (USD)",
+                "melt_unit_usd": "Melt/coin (USD)",
+                "melt_total_usd": "Melt×Qty (USD)",
+                "grade": "Grade",
+                "flip_ids": "Flip IDs",
+                "party": "Party",
+                "slab_cert": "Cert #",
+                "is_proof": "Proof",
+            }
+            df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+
+            # Order columns
+            preferred = ["Acquired","Flip IDs","series","year","Mint Mark","variety","Party",
+                         "Qty","Unit Cost (USD)","Melt/coin (USD)","Melt×Qty (USD)","Grade","Cert #","Proof"]
+            df = df[[c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]]
+
+            # Normalize blanks
+            for c in ["variety","Flip IDs","Grade","Party","Mint Mark","Cert #"]:
+                if c in df.columns:
+                    df[c] = df[c].replace({"": "—", None: "—"})
+            if "Proof" in df.columns:
+                df["Proof"] = df["Proof"].map({1: "Yes", 0: "No"}).fillna("—")
+
+            st.dataframe(
+                df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Qty": st.column_config.NumberColumn(format="%d"),
+                    "Unit Cost (USD)": st.column_config.NumberColumn(format="$%.2f"),
+                    "Melt/coin (USD)": st.column_config.NumberColumn(format="$%.2f"),
+                    "Melt×Qty (USD)": st.column_config.NumberColumn(format="$%.2f"),
+                },
+            )
+
+# Optional: basic Lots section remains when on By Type view
 lots = list_lots()
 if lots and view == "By Type":
     st.subheader("Lots")
-    st.dataframe(pd.DataFrame(lots), use_container_width=True, hide_index=True)
+    dfl = pd.DataFrame(lots).rename(columns={
+        "qty_remaining":"Qty",
+        "unit_cost":"Unit Cost (USD)",
+        "valuation_method":"Valuation",
+        "manual_est_unit_value":"Manual Unit (USD)",
+    })
+    st.dataframe(
+        dfl,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Qty": st.column_config.NumberColumn(format="%d"),
+            "Unit Cost (USD)": st.column_config.NumberColumn(format="$%.2f"),
+            "Manual Unit (USD)": st.column_config.NumberColumn(format="$%.2f"),
+        },
+    )
