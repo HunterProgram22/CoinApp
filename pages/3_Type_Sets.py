@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 from db import get_conn
 
-st.header("Type Sets TEST")
+st.header("Type Sets")
 
 # ---------------------------
 # Helpers
