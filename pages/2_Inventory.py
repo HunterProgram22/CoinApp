@@ -1,236 +1,235 @@
+
 # pages/2_Inventory.py
-import io
 import streamlit as st
 import pandas as pd
-
-from queries import inventory_by_type, inventory_by_series_summary, list_lots
-
-# Optional (patched) helpers for detailed and flag views
-try:
-    from queries import list_series_for_filter, inventory_details_by_series
-except Exception:  # pragma: no cover
-    list_series_for_filter = None
-    inventory_details_by_series = None
-
-try:
-    from queries import inventory_details_proof, inventory_details_slabbed
-except Exception:  # pragma: no cover
-    inventory_details_proof = None
-    inventory_details_slabbed = None
+from db import get_conn
 
 st.header("Inventory")
 
-def _download_csv_button(df: pd.DataFrame, filename: str, money_cols=None, int_cols=None, key: str = None):
-    """Render a CSV download button for df, rounding money cols to 2 decimals and casting ints."""
-    money_cols = money_cols or []
-    int_cols = int_cols or []
-    df_export = df.copy()
-    for c in money_cols:
-        if c in df_export.columns:
-            df_export[c] = pd.to_numeric(df_export[c], errors='coerce').round(2)
-    for c in int_cols:
-        if c in df_export.columns:
-            # Cast safely to int, preserving blanks
-            df_export[c] = pd.to_numeric(df_export[c], errors='coerce')
-            if df_export[c].notna().all():
-                df_export[c] = df_export[c].astype(int)
-    csv = df_export.to_csv(index=False).encode('utf-8')
-    st.download_button("Download CSV", data=csv, file_name=filename, mime="text/csv", key=key)
+# ---------------------------
+# Helpers
+# ---------------------------
+def table_exists(cx, name: str) -> bool:
+    return cx.execute(
+        "SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name=?",
+        (name,)
+    ).fetchone() is not None
 
-# Four views
-view = st.radio(
-    "View",
-    ["By Type", "By Series (summary)", "Filter by Series (detail)", "Filter by Flags"],
-    horizontal=True,
-    key="inv_view",
+def list_series():
+    with get_conn() as cx:
+        rows = cx.execute("SELECT DISTINCT series FROM coin_master ORDER BY series").fetchall()
+        return [r[0] for r in rows]
+
+def _fmt_year_cols_for_display(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    yearish = [c for c in out.columns if c.lower() in {"year","years_start","years_end"}]
+    for col in yearish:
+        # Make sure display has no thousands separators
+        out[col] = pd.to_numeric(out[col], errors="coerce").map(lambda x: "" if pd.isna(x) else f"{int(x)}")
+    return out
+
+def _money_cols(df: pd.DataFrame, cols):
+    """Return a display copy with currency formatting; original df stays numeric for CSV."""
+    if df is None or df.empty:
+        return df, df
+    disp = df.copy()
+    for c in cols:
+        if c in disp.columns:
+            disp[c] = pd.to_numeric(disp[c], errors="coerce").fillna(0.0).map(lambda x: f"${x:,.2f}")
+    return disp, df
+
+def download_csv_button(label: str, df: pd.DataFrame, filename: str):
+    st.download_button(
+        label,
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name=filename,
+        mime="text/csv",
+    )
+
+# ---------------------------
+# Views
+# ---------------------------
+tab_type, tab_series, tab_series_detail, tab_flags = st.tabs(
+    ["By Type", "By Series (summary)", "Filter by Series (detail)", "Filter by Flags"]
 )
 
-# -----------------------------
-# View A: By Type (no money cols)
-# -----------------------------
-if view == "By Type":
-    inv = inventory_by_type()
-    if inv:
-        st.subheader("By Type")
-        df = pd.DataFrame(inv)
+# ===== By Type =====
+with tab_type:
+    with get_conn() as cx:
+        # Works even if v_inventory_by_type view is missing
+        sql = """
+        SELECT
+          ct.id AS coin_type_id,
+          cm.series,
+          ct.year,
+          ct.mint_mark,
+          COALESCE(ct.variety,'') AS variety,
+          SUM(l.qty_remaining) AS coins_on_hand
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        WHERE l.qty_remaining > 0
+        GROUP BY ct.id, cm.series, ct.year, ct.mint_mark, ct.variety
+        ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
+        """
+        rows = cx.execute(sql).fetchall()
+    df = pd.DataFrame([dict(r) for r in rows])
+    if df.empty:
+        st.info("No inventory yet.")
+    else:
         # Hide internal ID and put Series first
-        if 'coin_type_id' in df.columns:
-            df = df.drop(columns=['coin_type_id'])
-        first_order = [c for c in ['series','year','mint_mark','variety','coins_on_hand'] if c in df.columns]
-        df = df[first_order + [c for c in df.columns if c not in first_order]]
+        if "coin_type_id" in df.columns:
+            df = df.drop(columns=["coin_type_id"])
+        first = [c for c in ["series","year","mint_mark","variety","coins_on_hand"] if c in df.columns]
+        df = df[first + [c for c in df.columns if c not in first]]
+
         # Friendly labels
-        rename = {'mint_mark': 'Mint Mark', 'coins_on_hand': 'Qty on Hand', 'series': 'Series', 'year': 'Year'}
-        df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
-        st.dataframe(df, use_container_width=True, hide_index=True,
-                     column_config={'Qty on Hand': st.column_config.NumberColumn(format="%d")})
-        _download_csv_button(df, "inventory_by_type.csv", money_cols=[], int_cols=['Qty on Hand'], key="csv_by_type")
-    else:
-        st.info("No inventory yet.")
+        df = df.rename(columns={
+            "series": "Series",
+            "year": "Year",
+            "mint_mark": "Mint Mark",
+            "variety": "Variety",
+            "coins_on_hand": "Qty on Hand",
+        })
+        # Display formatting
+        disp = _fmt_year_cols_for_display(df)
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+        download_csv_button("Download CSV (By Type)", df, "inventory_by_type.csv")
 
-# ---------------------------------
-# View B: By Series (summary, money)
-# ---------------------------------
-elif view == "By Series (summary)":
-    summary = inventory_by_series_summary()
-    if summary:
-        st.subheader("By Series — Summary")
-        df = pd.DataFrame(summary)
-        col_order = [c for c in ['series','coins','est_value_usd'] if c in df.columns]
-        df = df[col_order + [c for c in df.columns if c not in col_order]]
-        df = df.rename(columns={'series': 'Series', 'coins': 'Coins', 'est_value_usd': 'Est. Value (USD)'})
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                'Coins': st.column_config.NumberColumn(format="%d"),
-                'Est. Value (USD)': st.column_config.NumberColumn(format="$%.2f"),
-            },
-        )
-        _download_csv_button(df, "inventory_by_series_summary.csv", money_cols=['Est. Value (USD)'], int_cols=['Coins'], key="csv_series_summary")
-    else:
-        st.info("No inventory yet.")
-
-# --------------------------------------------------
-# View C: Filter by Series (detail, multiple $ cols)
-# --------------------------------------------------
-elif view == "Filter by Series (detail)":
-    if list_series_for_filter is None or inventory_details_by_series is None:
-        st.warning("Series detail helpers not found in queries.py. Please apply the inventory detail patch, then reload.")
-    else:
-        series_list = list_series_for_filter(only_on_hand=True)
-        if not series_list:
-            st.info("No series to show yet.")
+# ===== By Series (summary) =====
+with tab_series:
+    with get_conn() as cx:
+        # Use v_lot_value_details if present for chosen valuation; otherwise just count coins
+        if table_exists(cx, "v_lot_value_details"):
+            sql = """
+            SELECT
+              series,
+              SUM(qty_remaining) AS coins,
+              ROUND(SUM(qty_remaining * COALESCE(chosen_unit_value,0)), 2) AS est_value_usd
+            FROM v_lot_value_details
+            GROUP BY series
+            ORDER BY est_value_usd DESC, series
+            """
         else:
-            selected = st.selectbox("Choose a series", options=series_list, key="inv_series_select")
-            rows = inventory_details_by_series(selected) if selected else []
-            if not rows:
-                st.info("No on-hand coins for that series.")
-            else:
-                df = pd.DataFrame(rows)
-                # Friendly column names
-                rename = {
-                    "acquired_date": "Acquired",
-                    "mint_mark": "Mint Mark",
-                    "qty_remaining": "Qty",
-                    "unit_cost_usd": "Unit Cost (USD)",
-                    "melt_unit_usd": "Melt/coin (USD)",
-                    "melt_total_usd": "Melt×Qty (USD)",
-                    "grade": "Grade",
-                    "flip_ids": "Flip IDs",
-                    "party": "Party",
-                }
-                df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
-
-                # Column order
-                order = [c for c in ["Acquired","Flip IDs","series","year","Mint Mark","variety","Party",
-                                     "Qty","Unit Cost (USD)","Melt/coin (USD)","Melt×Qty (USD)","Grade"] if c in df.columns]
-                df = df[[c for c in order if c in df.columns] + [c for c in df.columns if c not in order]]
-
-                # Pretty blanks
-                for c in ["variety","Flip IDs","Grade","Party","Mint Mark"]:
-                    if c in df.columns:
-                        df[c] = df[c].replace({"": "—", None: "—"})
-
-                st.dataframe(
-                    df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Qty": st.column_config.NumberColumn(format="%d"),
-                        "Unit Cost (USD)": st.column_config.NumberColumn(format="$%.2f"),
-                        "Melt/coin (USD)": st.column_config.NumberColumn(format="$%.2f"),
-                        "Melt×Qty (USD)": st.column_config.NumberColumn(format="$%.2f"),
-                    },
-                )
-                _download_csv_button(
-                    df, f"inventory_detail_{selected.replace(' ', '_')}.csv",
-                    money_cols=["Unit Cost (USD)","Melt/coin (USD)","Melt×Qty (USD)"],
-                    int_cols=["Qty"],
-                    key="csv_series_detail",
-                )
-
-# --------------------------------------------------
-# View D: Filter by Flags (Proof / Slabbed)
-# --------------------------------------------------
-else:
-    if inventory_details_proof is None or inventory_details_slabbed is None:
-        st.warning("Flag filter helpers not found in queries.py. Please append the flag filter patch, then reload.")
+            sql = """
+            SELECT cm.series AS series, SUM(l.qty_remaining) AS coins, NULL AS est_value_usd
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            WHERE l.qty_remaining > 0
+            GROUP BY cm.series
+            ORDER BY coins DESC, cm.series
+            """
+        rows = cx.execute(sql).fetchall()
+    df = pd.DataFrame([dict(r) for r in rows])
+    if df.empty:
+        st.info("No inventory yet.")
     else:
-        try:
-            choice = st.segmented_control("Show", options=["Proof coins","Slabbed (has cert #)"], default="Proof coins", key="inv_flag_choice")
-        except AttributeError:
-            choice = st.selectbox("Show", ["Proof coins","Slabbed (has cert #)"], index=0, key="inv_flag_choice_sel")
+        df = df.rename(columns={"series":"Series","coins":"Coins","est_value_usd":"Est. Value (USD)"})
+        disp, csv_df = _money_cols(df, ["Est. Value (USD)"])
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+        download_csv_button("Download CSV (Series Summary)", csv_df, "inventory_by_series_summary.csv")
 
-        rows = inventory_details_proof() if choice.startswith("Proof") else inventory_details_slabbed()
-        if not rows:
-            st.info("No matching coins on hand.")
+# ===== Filter by Series (detail) =====
+with tab_series_detail:
+    series_list = list_series()
+    if not series_list:
+        st.info("No series found in catalog (coin_master).")
+    else:
+        pick = st.selectbox("Series", options=series_list, key="inv_series_pick")
+        with get_conn() as cx:
+            # Optional specimen table to list Flip IDs
+            has_specimen = table_exists(cx, "specimen")
+            # Optional party & tx join for acquisition details
+            sql = f"""
+            WITH flip AS (
+              SELECT lot_id, GROUP_CONCAT(specimen_code, ', ') AS flip_ids
+              FROM specimen
+              WHERE sold_line_id IS NULL
+              GROUP BY lot_id
+            )
+            SELECT
+              cm.series AS Series,
+              ct.year   AS Year,
+              ct.mint_mark AS "Mint Mark",
+              COALESCE(ct.variety,'') AS Variety,
+              l.id AS lot_id,
+              t.tx_date AS Acquired,
+              COALESCE(p.name,'') AS Party,
+              l.qty_remaining AS Qty,
+              ROUND(l.unit_cost, 2) AS "Unit Cost (USD)",
+              ROUND(v.melt_unit_value, 4) AS "Melt Unit Value",
+              ROUND(v.chosen_unit_value, 2) AS "Chosen Unit Value",
+              ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value,0), 2) AS "Lot Est. Value",
+              COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS Grade,
+              COALESCE(f.flip_ids, '') AS "Flip IDs",
+              COALESCE(l.slab_cert,'') AS "Cert #"
+            FROM lot l
+            JOIN tx_line tl ON tl.id = l.acquisition_line_id
+            JOIN tx t ON t.id = tl.tx_id
+            LEFT JOIN party p ON p.id = t.party_id
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+            {"LEFT JOIN flip f ON f.lot_id = l.id" if has_specimen else ""}
+            WHERE l.qty_remaining > 0 AND cm.series = ?
+            ORDER BY ct.year, ct.mint_mark, ct.variety, l.id
+            """
+            rows = cx.execute(sql, (pick,)).fetchall()
+        df = pd.DataFrame([dict(r) for r in rows])
+        if df.empty:
+            st.info("No on-hand lots for this series.")
         else:
-            df = pd.DataFrame(rows)
-            # Friendly names
-            rename = {
-                "acquired_date": "Acquired",
-                "mint_mark": "Mint Mark",
-                "qty_remaining": "Qty",
-                "unit_cost_usd": "Unit Cost (USD)",
-                "melt_unit_usd": "Melt/coin (USD)",
-                "melt_total_usd": "Melt×Qty (USD)",
-                "grade": "Grade",
-                "flip_ids": "Flip IDs",
-                "party": "Party",
-                "slab_cert": "Cert #",
-                "is_proof": "Proof",
-            }
-            df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+            # Year display fix + tidy columns
+            disp = _fmt_year_cols_for_display(df)
+            st.dataframe(disp, use_container_width=True, hide_index=True)
+            download_csv_button("Download CSV (Series Detail)", df, f"{pick}_detail.csv".replace(" ","_"))
 
-            # Order columns
-            preferred = ["Acquired","Flip IDs","series","year","Mint Mark","variety","Party",
-                         "Qty","Unit Cost (USD)","Melt/coin (USD)","Melt×Qty (USD)","Grade","Cert #","Proof"]
-            df = df[[c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]]
+# ===== Filter by Flags =====
+with tab_flags:
+    c1, c2 = st.columns(2)
+    want_proofs = c1.checkbox("Proofs only", value=False, key="inv_flag_proofs")
+    want_slabbed = c2.checkbox("Slabbed only (has cert or PCGS/NGC/ANACS/ICG)", value=False, key="inv_flag_slabbed")
 
-            # Normalize blanks
-            for c in ["variety","Flip IDs","Grade","Party","Mint Mark","Cert #"]:
-                if c in df.columns:
-                    df[c] = df[c].replace({"": "—", None: "—"})
-            if "Proof" in df.columns:
-                df["Proof"] = df["Proof"].map({1: "Yes", 0: "No"}).fillna("—")
+    where = ["l.qty_remaining > 0"]
+    if want_proofs:
+        where.append("(ct.is_proof = 1)")
+    if want_slabbed:
+        where.append("(COALESCE(l.slab_cert,'') <> '' OR UPPER(COALESCE(l.purchase_grade_company,'')) IN ('PCGS','NGC','ANACS','ICG'))")
 
-            st.dataframe(
-                df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Qty": st.column_config.NumberColumn(format="%d"),
-                    "Unit Cost (USD)": st.column_config.NumberColumn(format="$%.2f"),
-                    "Melt/coin (USD)": st.column_config.NumberColumn(format="$%.2f"),
-                    "Melt×Qty (USD)": st.column_config.NumberColumn(format="$%.2f"),
-                },
-            )
-            _download_csv_button(
-                df, f"inventory_{'proof' if choice.startswith('Proof') else 'slabbed'}.csv",
-                money_cols=["Unit Cost (USD)","Melt/coin (USD)","Melt×Qty (USD)"],
-                int_cols=["Qty"],
-                key="csv_flags",
-            )
+    with get_conn() as cx:
+        sql = f"""
+        SELECT
+          cm.series AS Series,
+          ct.year   AS Year,
+          ct.mint_mark AS "Mint Mark",
+          COALESCE(ct.variety,'') AS Variety,
+          l.id AS lot_id,
+          l.qty_remaining AS Qty,
+          ROUND(l.unit_cost, 2) AS "Unit Cost (USD)",
+          ROUND(v.melt_unit_value, 4) AS "Melt Unit Value",
+          ROUND(v.chosen_unit_value, 2) AS "Chosen Unit Value",
+          ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value,0), 2) AS "Lot Est. Value",
+          CASE WHEN ct.is_proof = 1 THEN 'Yes' ELSE 'No' END AS Proof,
+          CASE WHEN (COALESCE(l.slab_cert,'') <> '' OR UPPER(COALESCE(l.purchase_grade_company,'')) IN ('PCGS','NGC','ANACS','ICG')) THEN 'Yes' ELSE 'No' END AS Slabbed
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+        WHERE {" AND ".join(where)}
+        ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, l.id
+        """
+        rows = cx.execute(sql).fetchall()
+    df = pd.DataFrame([dict(r) for r in rows])
 
-# Optional: basic Lots section remains when on By Type view
-lots = list_lots()
-if lots and view == "By Type":
-    st.subheader("Lots")
-    dfl = pd.DataFrame(lots).rename(columns={
-        "qty_remaining":"Qty",
-        "unit_cost":"Unit Cost (USD)",
-        "valuation_method":"Valuation",
-        "manual_est_unit_value":"Manual Unit (USD)",
-    })
-    st.dataframe(
-        dfl,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Qty": st.column_config.NumberColumn(format="%d"),
-            "Unit Cost (USD)": st.column_config.NumberColumn(format="$%.2f"),
-            "Manual Unit (USD)": st.column_config.NumberColumn(format="$%.2f"),
-        },
-    )
-    _download_csv_button(dfl, "lots.csv", money_cols=["Unit Cost (USD)","Manual Unit (USD)"], int_cols=["Qty"], key="csv_lots")
+    if df.empty:
+        st.info("No lots matched those flags.")
+    else:
+        # Fix Year display & money display
+        disp = _fmt_year_cols_for_display(df)
+        disp, csv_df = _money_cols(disp, ["Unit Cost (USD)","Chosen Unit Value","Lot Est. Value"])
+        # Note: Melt Unit Value intentionally kept at 4 decimals
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+        download_csv_button("Download CSV (Flags)", df, "inventory_filter_flags.csv")
