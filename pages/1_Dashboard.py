@@ -1,48 +1,12 @@
+
 # pages/1_Dashboard.py
-import streamlit as st
+import io
+import numpy as np
 import pandas as pd
+import streamlit as st
 from queries import get_portfolio_summary, get_latest_spot
 
-
-_SILVER_ITEMS = [
-    ("American Silver Eagle (1 oz)", 1.00000),
-    ("Morgan/Peace Dollar",          0.77344),
-    ("Pre-1965 Half Dollar",         0.36169),
-    ("Pre-1965 Quarter",             0.18084),
-    ("Pre-1965 Dime",                0.07234),
-]
-
-def _get_spot_silver():
-    spots = get_latest_spot() or []
-    for row in spots:
-        # expect rows like {'metal': 'Ag', 'price_per_oz_usd': 29.45}
-        if str(row.get('metal')) == 'Ag':
-            return float(row.get('price_per_oz_usd') or 0.0)
-    return None
-
-def render_silver_quick_widget(title: str = "Silver Melt Quick Reference"):
-    st.subheader(title)
-    spot = _get_spot_silver()
-    if spot is None:
-        st.info("No silver price found. Add one under Admin → Metal Prices, then refresh.")
-        return
-
-    # Metrics layout (cards)
-    cols = st.columns(3)
-    for i, (label, ounces) in enumerate(_SILVER_ITEMS):
-        value = round(ounces * spot, 2)
-        cols[i % 3].metric(label=label, value=f"${value:,.2f}", delta=f"{ounces:.5f} oz Ag @ ${spot:,.2f}")
-
-    # Tabular view
-    st.caption("Details")
-    df = pd.DataFrame([
-        {"Item": label, "Troy oz Ag": ounces, "Value (USD)": round(ounces * spot, 2)}
-        for (label, ounces) in _SILVER_ITEMS
-    ])
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-
-# Optional rollup helper (append its patch to queries.py if missing)
+# Optional helper (append its patch to queries.py if missing)
 try:
     from queries import dashboard_series_rollup
 except Exception:
@@ -53,7 +17,7 @@ st.header("Dashboard")
 tab_overview, tab_series = st.tabs(["📊 Overview", "📚 Series Summary"])
 
 # ========================
-# TAB: OVERVIEW (keep your existing cards here)
+# TAB: OVERVIEW
 # ========================
 with tab_overview:
     summary = get_portfolio_summary()
@@ -61,9 +25,7 @@ with tab_overview:
     col1.metric("Estimated Portfolio Value (USD)", f"${summary['total_estimated_value_usd']:,}")
     col2.metric("Coins on Hand", f"{summary['total_coins']:,}")
 
-    # ---- (Optional) Your existing custom cards/widgets (e.g., Silver Summary) ----
-    # Paste your existing custom Dashboard blocks right below this comment so they remain on the Overview tab.
-    # ----------------------------------------------------------------------------
+    # ---- Paste any custom cards/widgets (e.g., Silver Summary) right below this line ----
 
     st.subheader("Latest Spot Prices")
     spots = get_latest_spot()
@@ -78,7 +40,7 @@ with tab_overview:
             except Exception:
                 pass
 
-        # Friendly headers
+        # Friendly headers & hide row index
         df = df.rename(columns={
             "metal": "Metal",
             "price_per_oz_usd": "Price Per Oz. (USD)",
@@ -87,7 +49,6 @@ with tab_overview:
     else:
         st.info("No metal prices yet. Add some under Admin → Metal Prices.")
 
-    render_silver_quick_widget()
 # ========================
 # TAB: SERIES SUMMARY
 # ========================
@@ -101,13 +62,12 @@ with tab_series:
         else:
             df = pd.DataFrame(rows)
 
-            # Compute Unrealized G/L
-            if {'chosen_total_usd','cost_total_usd'}.issubset(df.columns):
-                df['unreal_gl_usd'] = (df['chosen_total_usd'].fillna(0) - df['cost_total_usd'].fillna(0)).round(2)
-            else:
-                df['unreal_gl_usd'] = None
+            # Compute Unrealized G/L $ and %
+            df['unreal_gl_usd'] = (df.get('chosen_total_usd', 0).fillna(0) - df.get('cost_total_usd', 0).fillna(0)).round(2)
+            cost = df.get('cost_total_usd', 0).replace({0: np.nan})
+            df['unreal_gl_pct'] = (df['unreal_gl_usd'] / cost * 100).round(2)
 
-            # Friendly columns
+            # Friendly headers
             rename = {
                 'series': 'Series',
                 'coins': 'Coins',
@@ -116,14 +76,38 @@ with tab_series:
                 'cost_total_usd': 'Total Cost (USD)',
                 'chosen_total_usd': 'Est. Value (USD)',
                 'unreal_gl_usd': 'Unrealized G/L (USD)',
+                'unreal_gl_pct': 'Unrealized G/L (%)',
             }
-            df = df.rename(columns=rename)
+            df_disp = df.rename(columns=rename)
 
-            # Order columns
+            # Column order
             order = [c for c in [
                 'Series','Coins','Melt Value (USD)','Numismatic Value (USD)',
-                'Total Cost (USD)','Est. Value (USD)','Unrealized G/L (USD)'
-            ] if c in df.columns]
-            df = df[order]
+                'Total Cost (USD)','Est. Value (USD)','Unrealized G/L (USD)','Unrealized G/L (%)'
+            ] if c in df_disp.columns]
+            df_disp = df_disp[order]
 
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            # Show interactive grid
+            st.dataframe(df_disp, use_container_width=True, hide_index=True)
+
+            # CSV download (raw numbers, including G/L %)
+            export_cols = ['series','coins','melt_total_usd','numi_total_usd','cost_total_usd','chosen_total_usd','unreal_gl_usd','unreal_gl_pct']
+            export_cols = [c for c in export_cols if c in df.columns]
+            csv = df[export_cols].to_csv(index=False).encode('utf-8')
+            st.download_button("Download Series Summary (CSV)", data=csv, file_name="series_summary.csv", mime="text/csv")
+
+            # Optional: colorized static table for gains/losses
+            with st.expander("Colorized view (static table)"):
+                def color_gl(val):
+                    try:
+                        v = float(val)
+                    except Exception:
+                        return ''
+                    if np.isnan(v) or v == 0:
+                        return 'color: gray;'
+                    return 'color: green;' if v > 0 else 'color: red;'
+
+                styled = df_disp.style.applymap(color_gl, subset=['Unrealized G/L (USD)']).applymap(
+                    color_gl, subset=['Unrealized G/L (%)'])
+
+                st.table(styled)
