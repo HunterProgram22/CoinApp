@@ -6,6 +6,9 @@ from db import get_conn
 from queries import list_lots, list_storage_locations, upsert_coin_master
 import datetime as _dt
 
+from patches.admin_coin_types_tab import render_admin_coin_types_tab
+
+
 
 _METALS = [("Ag","Silver"), ("Au","Gold"), ("Pt","Platinum"), ("Pd","Palladium")]
 
@@ -589,10 +592,11 @@ def render_admin_void_tool():
 # ---- END VOID ENTIRE TRANSACTION ----
 st.header("🛠️ Admin")
 
-tab_coin_editor, tab_lot, tab_series, tab_storage, tab_void, tab_maint, tab_prices = (
+tab_coin_editor, tab_coin_types, tab_lot, tab_series, tab_storage, tab_void, tab_maint, tab_prices = (
     st.tabs(
         [
-            "Coin Editor",
+            "Coin Master Editor",
+            "Coin Types"
             "Lots (grades & valuation)",
             "Series specs (for melt calc)",
             "Storage locations",
@@ -606,6 +610,8 @@ tab_coin_editor, tab_lot, tab_series, tab_storage, tab_void, tab_maint, tab_pric
 with tab_coin_editor:
     render_catalog_coin_master_editor()
 
+with tab_coin_types:
+    render_admin_coin_types_tab()
 # -------------------- LOT EDITOR --------------------
 with tab_lot:
     st.caption("Edit grades, valuation method, manual value, storage, and notes for a specific lot.")
