@@ -1,2 +1,2 @@
-country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,notes
-USA,Half Dollar,Kennedy,Ag,0.9,12.5,30.6,0.0,Reeded,1964,,
+country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,notes
+USA,Dollar,Morgan,Ag,0.9,26.73,38.1,2.4,Reeded,1878,1921,COIN,Example row; delete before import.
