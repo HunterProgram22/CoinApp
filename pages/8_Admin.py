@@ -21,6 +21,7 @@ def _norm_text(v: str) -> str:
     return '' if s in _BAD_EMPTY else s
 
 def _label_master(m: dict) -> str:
+    # Keep labels clean; don't show IDs
     return f"{m['country']} — {m['denomination']} — {m['series']}"
 
 def _label_type(t: dict) -> str:
@@ -41,7 +42,8 @@ def _load_masters():
         rows = cx.execute("""
           SELECT id, country, denomination, series,
                  metal, fineness, weight_grams, diameter_mm, thickness_mm, edge,
-                 years_start, years_end, COALESCE(notes,'') AS notes
+                 years_start, years_end, COALESCE(notes,'') AS notes,
+                 COALESCE(asset_category,'COIN') AS asset_category
           FROM coin_master
           ORDER BY country, denomination, series
         """ ).fetchall()
@@ -166,6 +168,7 @@ with tab_master:
         c10, c11 = st.columns(2)
         years_start = c10.number_input("First Year", min_value=0, max_value=3000, step=1, value=1878, key="cm_add_y0")
         years_end   = c11.number_input("Last Year", min_value=0, max_value=3000, step=1, value=1921, key="cm_add_y1")
+        asset_category = st.selectbox("Asset Category", ["COIN","ROUND","BAR"], index=0, key="cm_add_category")
         notes = st.text_area("Notes", height=70, key="cm_add_notes")
         if st.button("Save Master", type="primary", key="cm_add_btn"):
             mid = upsert_coin_master(country, denom, series, metal or None, float(fineness or 0) or None,
@@ -173,7 +176,10 @@ with tab_master:
                                      float(thick_mm or 0) or None, edge or None,
                                      int(years_start) if years_start else None, int(years_end) if years_end else None,
                                      notes or None)
-            st.success(f"Saved/Upserted master: {country} {denom} {series} (id #{mid})")
+            # Ensure category is saved even if upsert found an existing row
+            with get_conn() as cx:
+                cx.execute("UPDATE coin_master SET asset_category=? WHERE id=?", (asset_category, mid))
+            st.success(f"Saved/Upserted master: {country} {denom} {series} → {asset_category} (id #{mid})")
             try: st.rerun()
             except Exception: pass
 
@@ -197,9 +203,10 @@ with tab_master:
                 e_diam_mm = c7.number_input("Diameter (mm)", min_value=0.0, step=0.01, value=float(sel.get("diameter_mm") or 0.0), key="cm_e_diam")
                 e_thick_mm = c8.number_input("Thickness (mm)", min_value=0.0, step=0.01, value=float(sel.get("thickness_mm") or 0.0), key="cm_e_thick")
                 e_edge = c9.text_input("Edge", value=sel.get("edge") or "", key="cm_e_edge")
-                c10, c11 = st.columns(2)
+                c10, c11, c12 = st.columns(3)
                 e_y0 = c10.number_input("First Year", min_value=0, max_value=3000, step=1, value=int(sel.get("years_start") or 0), key="cm_e_y0")
                 e_y1 = c11.number_input("Last Year", min_value=0, max_value=3000, step=1, value=int(sel.get("years_end") or 0), key="cm_e_y1")
+                e_cat = c12.selectbox("Asset Category", ["COIN","ROUND","BAR"], index=["COIN","ROUND","BAR"].index(sel.get("asset_category","COIN")), key="cm_e_cat")
                 e_notes = st.text_area("Notes", value=sel.get("notes") or "", height=70, key="cm_e_notes")
 
                 if st.button("Save Changes", type="primary", key="cm_e_save"):
@@ -208,12 +215,13 @@ with tab_master:
                             cx.execute("""
                               UPDATE coin_master
                               SET country=?, denomination=?, series=?, metal=?, fineness=?, weight_grams=?,
-                                  diameter_mm=?, thickness_mm=?, edge=?, years_start=?, years_end=?, notes=?
+                                  diameter_mm=?, thickness_mm=?, edge=?, years_start=?, years_end=?, notes=?,
+                                  asset_category=?
                               WHERE id=?
                             """, (e_country, e_denom, e_series, _norm_text(e_metal) or None, float(e_fineness or 0) or None,
                                     float(e_weight_g or 0) or None, float(e_diam_mm or 0) or None, float(e_thick_mm or 0) or None,
                                     _norm_text(e_edge) or None, int(e_y0) if e_y0 else None, int(e_y1) if e_y1 else None,
-                                    _norm_text(e_notes) or None, sel["id"]))
+                                    _norm_text(e_notes) or None, e_cat, sel["id"]))
                         st.success("Master updated.")
                         try: st.rerun()
                         except Exception: pass
@@ -240,9 +248,12 @@ with tab_types:
                 cm_metal    = c4.text_input("Metal (Ag/Au/Pt/Pd)", value="Ag", key="cm_metal_admin")
                 cm_fineness = c5.number_input("Fineness", min_value=0.0, max_value=1.0, step=0.001, value=0.9, key="cm_fineness_admin")
                 cm_weight   = c6.number_input("Weight (grams)", min_value=0.0, step=0.01, value=26.73, key="cm_weight_admin")
+                cm_cat      = st.selectbox("Asset Category", ["COIN","ROUND","BAR"], index=0, key="cm_cat_admin")
                 if st.button("Save Master (or reuse if it exists)", key="save_master_admin"):
                     mid = upsert_coin_master(cm_country, cm_denom, cm_series, cm_metal, cm_fineness, cm_weight)
-                    st.success(f"Master ready: id #{mid} ({cm_country} {cm_denom} {cm_series})")
+                    with get_conn() as cx:
+                        cx.execute("UPDATE coin_master SET asset_category=? WHERE id=?", (cm_cat, mid))
+                    st.success(f"Master ready: id #{mid} ({cm_country} {cm_denom} {cm_series}) → {cm_cat}")
                     st.session_state.setdefault("_new_master_id_admin", mid)
             master_id = st.session_state.get("_new_master_id_admin")
             if not master_id:
