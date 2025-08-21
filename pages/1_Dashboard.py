@@ -1,6 +1,4 @@
-
 # pages/1_Dashboard.py
-import io
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -9,7 +7,7 @@ from queries import get_portfolio_summary, get_latest_spot
 # Optional helper (append its patch to queries.py if missing)
 try:
     from queries import dashboard_series_rollup
-except Exception:
+except Exception:  # pragma: no cover
     dashboard_series_rollup = None
 
 st.header("Dashboard")
@@ -40,12 +38,22 @@ with tab_overview:
             except Exception:
                 pass
 
-        # Friendly headers & hide row index
+        # Friendly headers
         df = df.rename(columns={
             "metal": "Metal",
             "price_per_oz_usd": "Price Per Oz. (USD)",
         })
-        st.dataframe(df, use_container_width=True, hide_index=True)
+
+        # Show with 2-decimal formatting & hidden index
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Metal": st.column_config.TextColumn(),
+                "Price Per Oz. (USD)": st.column_config.NumberColumn(format="$%.2f"),
+            },
+        )
     else:
         st.info("No metal prices yet. Add some under Admin → Metal Prices.")
 
@@ -87,14 +95,35 @@ with tab_series:
             ] if c in df_disp.columns]
             df_disp = df_disp[order]
 
-            # Show interactive grid
-            st.dataframe(df_disp, use_container_width=True, hide_index=True)
+            # Show interactive grid with 2-decimal formatting
+            st.dataframe(
+                df_disp,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    'Coins': st.column_config.NumberColumn(format="%d"),
+                    'Melt Value (USD)':       st.column_config.NumberColumn(format="$%.2f"),
+                    'Numismatic Value (USD)': st.column_config.NumberColumn(format="$%.2f"),
+                    'Total Cost (USD)':       st.column_config.NumberColumn(format="$%.2f"),
+                    'Est. Value (USD)':       st.column_config.NumberColumn(format="$%.2f"),
+                    'Unrealized G/L (USD)':   st.column_config.NumberColumn(format="$%.2f"),
+                    'Unrealized G/L (%)':     st.column_config.NumberColumn(format="%.2f"),
+                },
+            )
 
-            # CSV download (raw numbers, including G/L %)
+            # CSV download (rounded to 2 decimals)
             export_cols = ['series','coins','melt_total_usd','numi_total_usd','cost_total_usd','chosen_total_usd','unreal_gl_usd','unreal_gl_pct']
             export_cols = [c for c in export_cols if c in df.columns]
-            csv = df[export_cols].to_csv(index=False).encode('utf-8')
-            st.download_button("Download Series Summary (CSV)", data=csv, file_name="series_summary.csv", mime="text/csv")
+            df_export = df[export_cols].copy()
+            for c in ['melt_total_usd','numi_total_usd','cost_total_usd','chosen_total_usd','unreal_gl_usd','unreal_gl_pct']:
+                if c in df_export.columns:
+                    df_export[c] = pd.to_numeric(df_export[c], errors='coerce').round(2)
+            st.download_button(
+                "Download Series Summary (CSV)",
+                data=df_export.to_csv(index=False).encode('utf-8'),
+                file_name="series_summary.csv",
+                mime="text/csv",
+            )
 
             # Optional: colorized static table for gains/losses
             with st.expander("Colorized view (static table)"):
