@@ -1,6 +1,6 @@
+
 # patches/admin_coin_types_tab.py
 import streamlit as st
-import pandas as pd
 import sqlite3
 from db import get_conn
 from queries import upsert_coin_master, upsert_coin_type
@@ -31,7 +31,7 @@ def _list_coin_types_full():
               cm.country, cm.denomination, cm.series
             FROM coin_type ct
             JOIN coin_master cm ON cm.id = ct.master_id
-            ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
+            ORDER BY cm.country, cm.denomination, cm.series, ct.year, ct.mint_mark, ct.variety
             """
         ).fetchall()
         return [dict(r) for r in rows]
@@ -61,12 +61,14 @@ def _insert_coin_type(master_id: int, year: int, mint_mark: str, variety: str,
         raise
 
 def _master_label(m):
-    return f"{m['country']} — {m['denomination']} — {m['series']}  (#{m['id']})"
+    # No parenthetical IDs in labels
+    return f"{m['country']} — {m['denomination']} — {m['series']}"
 
 def _type_label(t):
+    # No '(type #id)' suffix
     mm = f" {t['mint_mark']}" if t['mint_mark'] else ''
     var = f" • {t['variety']}" if t['variety'] else ''
-    return f"{t['series']} {t['year']}{mm}{var}  (type #{t['id']})"
+    return f"{t['country']} — {t['denomination']} — {t['series']} {t['year']}{mm}{var}"
 
 def render_admin_coin_types_tab():
     st.subheader("Coin Types")  # Add & Edit
@@ -91,7 +93,7 @@ def render_admin_coin_types_tab():
                 cm_weight = c6.number_input("Weight (grams)", min_value=0.0, step=0.01, value=26.73, key="cm_weight_admin")
                 if st.button("Save Master (or reuse if it exists)", key="save_master_admin"):
                     mid = upsert_coin_master(cm_country, cm_denom, cm_series, cm_metal, cm_fineness, cm_weight)
-                    st.success(f"Master ready: id #{mid} ({cm_country} {cm_denom} {cm_series})")
+                    st.success(f"Master ready: {cm_country} {cm_denom} {cm_series} (id #{mid})")
                     st.session_state.setdefault("_new_master_id_admin", mid)
             master_id = st.session_state.get("_new_master_id_admin")
             if not master_id:
@@ -137,7 +139,7 @@ def render_admin_coin_types_tab():
         if not types:
             st.info("No coin types yet.")
         else:
-            st.caption("Edit existing coin types. Changes propagate to new transactions (existing lots remain tied to their types)." )
+            st.caption("Edit existing coin types. Changes apply going forward; existing lots remain linked to their types." )
             options = {_type_label(t): t for t in types}
             label = st.selectbox("Coin Type", list(options.keys()), key="ct_edit_pick_admin")
             row = options[label]
@@ -169,7 +171,7 @@ def render_admin_coin_types_tab():
                     _update_coin_type(int(row["id"]), fields)
                     st.success("Saved.")
                 except sqlite3.IntegrityError:
-                    st.error("Unique conflict: another coin type already uses this master/year/mint/variety.")
+                    st.error("Unique conflict: another type already uses this master/year/mint/variety.")
                 except Exception as e:
                     st.error(str(e))
 
