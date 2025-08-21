@@ -3,7 +3,8 @@
 import streamlit as st
 import sqlite3
 from datetime import datetime, date
-from db import get_conn
+from pathlib import Path as _Path
+from db import get_conn, DB_PATH, init_db
 from queries import upsert_coin_master, upsert_coin_type
 
 st.header("Admin")
@@ -43,7 +44,7 @@ def _load_masters():
                  years_start, years_end, COALESCE(notes,'') AS notes
           FROM coin_master
           ORDER BY country, denomination, series
-        """).fetchall()
+        """ ).fetchall()
     return [dict(r) for r in rows]
 
 def _load_types(master_id: int | None = None):
@@ -65,7 +66,7 @@ def _load_storage():
         rows = cx.execute("""
           SELECT id, name, COALESCE(category,'') AS category, COALESCE(description,'') AS description
           FROM storage_location ORDER BY name
-        """).fetchall()
+        """ ).fetchall()
     return [dict(r) for r in rows]
 
 def _load_lots(only_open=True):
@@ -79,7 +80,7 @@ def _load_lots(only_open=True):
           JOIN coin_master cm ON cm.id=ct.master_id
           {where}
           ORDER BY l.acquired_date DESC, l.id DESC
-        """).fetchall()
+        """ ).fetchall()
     return [dict(r) for r in rows]
 
 def _load_guide_prices(coin_type_id: int):
@@ -101,7 +102,7 @@ def _latest_spot_rows():
             SELECT MAX(quoted_at_utc) FROM metal_price x WHERE x.metal = mp.metal
           )
           ORDER BY metal
-        """).fetchall()
+        """ ).fetchall()
     return [dict(r) for r in rows]
 
 def pick_coin_master(label: str, key: str | None = None, allow_none: bool = False) -> int | None:
@@ -135,10 +136,10 @@ def pick_lot(label: str, key: str | None = None, only_open=True) -> int | None:
     return sel["id"] if sel else None
 
 # ==============================
-# Tabs
+# Tabs (including Reset DB at the end)
 # ==============================
-tab_master, tab_types, tab_guide, tab_prices, tab_void, tab_delete = st.tabs(
-    ["Coin Master", "Coin Types", "Guide Prices", "Metal Prices", "Void Tools", "Delete Lot"]
+tab_master, tab_types, tab_guide, tab_prices, tab_void, tab_delete, tab_reset = st.tabs(
+    ["Coin Master", "Coin Types", "Guide Prices", "Metal Prices", "Void Tools", "Delete Lot", "Reset DB"]
 )
 
 # ------------------------------
@@ -316,7 +317,7 @@ with tab_types:
                 except Exception as e:
                     st.error(str(e))
 
-            with colB.popover("Dangerous actions"):
+            with st.expander("Dangerous actions"):
                 st.caption("Delete this coin type (no lots can reference it)." )
                 if st.button("Delete coin type", type="secondary", key="ct_del_admin"):
                     try:
@@ -333,11 +334,9 @@ with tab_types:
 # ------------------------------
 with tab_guide:
     st.subheader("Guide Prices")
-    # Choose type
     trow = pick_coin_type("Coin Type", key="gp_type_pick")
     if trow:
         st.caption(f"Editing guide prices for: {_label_type(trow)}")
-        # Existing rows
         rows = _load_guide_prices(trow["id"])
         if rows:
             import pandas as pd
@@ -345,7 +344,6 @@ with tab_guide:
             df = df.rename(columns={
                 "grade_text":"Grade", "numeric_grade":"Numeric", "price_usd":"Price (USD)", "as_of":"As Of", "source":"Source"
             })
-            # Format numbers
             if "Price (USD)" in df.columns:
                 df["Price (USD)"] = pd.to_numeric(df["Price (USD)"], errors="coerce").map(lambda x: f"${x:,.2f}" if pd.notna(x) else "")
             if "Numeric" in df.columns:
@@ -444,7 +442,6 @@ with tab_void:
     if st.button("Void Transaction", type="primary", disabled=not confirm, key="void_btn"):
         try:
             with get_conn() as cx:
-                # Check exists
                 row = cx.execute("SELECT id FROM tx WHERE id=?", (int(tx_id),)).fetchone()
                 if not row:
                     st.error("No such transaction.")
@@ -472,3 +469,66 @@ with tab_delete:
             st.error("Cannot delete: lot is referenced by sales (lot_relief). Void those first.")
         except Exception as e:
             st.error(str(e))
+
+# ------------------------------
+# Reset DB (Danger Zone)
+# ------------------------------
+with tab_reset:
+    st.subheader("Reset Database (Danger Zone)" )
+    st.warning("This will DELETE all your data and re-create an empty database. Make a backup first!", icon="⚠️")
+
+    # Offer quick backup download
+    if _Path(DB_PATH).exists():
+        try:
+            with open(DB_PATH, "rb") as fh:
+                st.download_button("Download backup (coinapp.sqlite)", data=fh.read(), file_name="coinapp.sqlite.bak", mime="application/octet-stream", key="db_backup_dl")
+        except Exception as e:
+            st.caption(f"Backup read failed: {e}")
+
+    colA, colB = st.columns([2,1])
+    typed = colA.text_input("Type RESET to confirm", key="db_reset_text")
+    really = colB.checkbox("Yes, I understand", key="db_reset_ck" )
+
+    def _hard_reset_in_place():
+        # Robustly drop views, triggers, and tables even if other sessions hold the file open.
+        with get_conn() as cx:
+            cx.execute("PRAGMA foreign_keys=OFF;")
+            # Drop views first
+            for (name,) in cx.execute("SELECT name FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%';").fetchall():
+                try:
+                    cx.execute(f"DROP VIEW IF EXISTS {name};")
+                except Exception:
+                    pass
+            # Drop triggers
+            for (name,) in cx.execute("SELECT name FROM sqlite_master WHERE type='trigger';").fetchall():
+                try:
+                    cx.execute(f"DROP TRIGGER IF EXISTS {name};")
+                except Exception:
+                    pass
+            # Drop tables
+            for (name,) in cx.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';").fetchall():
+                try:
+                    cx.execute(f"DROP TABLE IF EXISTS {name};")
+                except Exception:
+                    pass
+            cx.execute("VACUUM;")
+            cx.execute("PRAGMA foreign_keys=ON;")
+        # Recreate schema
+        init_db()
+
+    if st.button("Erase & Reinitialize DB", type="primary", disabled=not (really and typed.strip().upper() == "RESET"), key="db_reset_btn"):
+        try:
+            _hard_reset_in_place()
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
+            try:
+                st.cache_resource.clear()
+            except Exception:
+                pass
+            st.success("Database has been reset. Reloading...")
+            try: st.rerun()
+            except Exception: pass
+        except Exception as e:
+            st.error(f"Reset failed: {e}")
