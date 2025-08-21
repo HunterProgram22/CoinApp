@@ -15,6 +15,14 @@ def table_exists(cx, name: str) -> bool:
         (name,)
     ).fetchone() is not None
 
+def column_exists(cx, table: str, column: str) -> bool:
+    # PRAGMA can't be parameterized, so we interpolate a vetted table name
+    if not table:
+        return False
+    rows = cx.execute(f"PRAGMA table_info({table})").fetchall()
+    cols = {r[1] for r in rows}  # r[1] is the column name
+    return column in cols
+
 def list_series():
     with get_conn() as cx:
         rows = cx.execute("SELECT DISTINCT series FROM coin_master ORDER BY series").fetchall()
@@ -26,7 +34,6 @@ def _fmt_year_cols_for_display(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     yearish = [c for c in out.columns if c.lower() in {"year","years_start","years_end"}]
     for col in yearish:
-        # Make sure display has no thousands separators
         out[col] = pd.to_numeric(out[col], errors="coerce").map(lambda x: "" if pd.isna(x) else f"{int(x)}")
     return out
 
@@ -58,9 +65,7 @@ tab_type, tab_series, tab_series_detail, tab_flags = st.tabs(
 # ===== By Type =====
 with tab_type:
     with get_conn() as cx:
-        # Works even if v_inventory_by_type view is missing
-        sql = """
-        SELECT
+        sql = """        SELECT
           ct.id AS coin_type_id,
           cm.series,
           ct.year,
@@ -101,10 +106,8 @@ with tab_type:
 # ===== By Series (summary) =====
 with tab_series:
     with get_conn() as cx:
-        # Use v_lot_value_details if present for chosen valuation; otherwise just count coins
         if table_exists(cx, "v_lot_value_details"):
-            sql = """
-            SELECT
+            sql = """            SELECT
               series,
               SUM(qty_remaining) AS coins,
               ROUND(SUM(qty_remaining * COALESCE(chosen_unit_value,0)), 2) AS est_value_usd
@@ -113,8 +116,7 @@ with tab_series:
             ORDER BY est_value_usd DESC, series
             """
         else:
-            sql = """
-            SELECT cm.series AS series, SUM(l.qty_remaining) AS coins, NULL AS est_value_usd
+            sql = """            SELECT cm.series AS series, SUM(l.qty_remaining) AS coins, NULL AS est_value_usd
             FROM lot l
             JOIN coin_type ct ON ct.id = l.coin_type_id
             JOIN coin_master cm ON cm.id = ct.master_id
@@ -140,49 +142,54 @@ with tab_series_detail:
     else:
         pick = st.selectbox("Series", options=series_list, key="inv_series_pick")
         with get_conn() as cx:
-            # Optional specimen table to list Flip IDs
             has_specimen = table_exists(cx, "specimen")
-            # Optional party & tx join for acquisition details
-            sql = f"""
-            WITH flip AS (
-              SELECT lot_id, GROUP_CONCAT(specimen_code, ', ') AS flip_ids
-              FROM specimen
-              WHERE sold_line_id IS NULL
-              GROUP BY lot_id
-            )
-            SELECT
-              cm.series AS Series,
-              ct.year   AS Year,
-              ct.mint_mark AS "Mint Mark",
-              COALESCE(ct.variety,'') AS Variety,
-              l.id AS lot_id,
-              t.tx_date AS Acquired,
-              COALESCE(p.name,'') AS Party,
-              l.qty_remaining AS Qty,
-              ROUND(l.unit_cost, 2) AS "Unit Cost (USD)",
-              ROUND(v.melt_unit_value, 4) AS "Melt Unit Value",
-              ROUND(v.chosen_unit_value, 2) AS "Chosen Unit Value",
-              ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value,0), 2) AS "Lot Est. Value",
-              COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS Grade,
-              COALESCE(f.flip_ids, '') AS "Flip IDs",
-              COALESCE(l.slab_cert,'') AS "Cert #"
-            FROM lot l
-            JOIN tx_line tl ON tl.id = l.acquisition_line_id
-            JOIN tx t ON t.id = tl.tx_id
-            LEFT JOIN party p ON p.id = t.party_id
-            JOIN coin_type ct ON ct.id = l.coin_type_id
-            JOIN coin_master cm ON cm.id = ct.master_id
-            LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
-            {"LEFT JOIN flip f ON f.lot_id = l.id" if has_specimen else ""}
-            WHERE l.qty_remaining > 0 AND cm.series = ?
-            ORDER BY ct.year, ct.mint_mark, ct.variety, l.id
-            """
+            has_specimen_code = column_exists(cx, "specimen", "specimen_code") if has_specimen else False
+            has_sold_line_id = column_exists(cx, "specimen", "sold_line_id") if has_specimen else False
+
+            cte = ""
+            join_flip = ""
+            if has_specimen and has_specimen_code:
+                where_unsold = " WHERE sold_line_id IS NULL" if has_sold_line_id else ""
+                cte = f"""WITH flip AS (
+  SELECT lot_id, GROUP_CONCAT(specimen_code, ', ') AS flip_ids
+  FROM specimen{where_unsold}
+  GROUP BY lot_id
+)
+"""
+                join_flip = "LEFT JOIN flip f ON f.lot_id = l.id"
+
+            sql = f"""{cte}SELECT
+  cm.series AS Series,
+  ct.year   AS Year,
+  ct.mint_mark AS "Mint Mark",
+  COALESCE(ct.variety,'') AS Variety,
+  l.id AS lot_id,
+  t.tx_date AS Acquired,
+  COALESCE(p.name,'') AS Party,
+  l.qty_remaining AS Qty,
+  ROUND(l.unit_cost, 2) AS "Unit Cost (USD)",
+  ROUND(v.melt_unit_value, 4) AS "Melt Unit Value",
+  ROUND(v.chosen_unit_value, 2) AS "Chosen Unit Value",
+  ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value,0), 2) AS "Lot Est. Value",
+  COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS Grade,
+  { "COALESCE(f.flip_ids, '') AS \"Flip IDs\"," if join_flip else "'' AS \"Flip IDs\"," }
+  COALESCE(l.slab_cert,'') AS "Cert #"
+FROM lot l
+JOIN tx_line tl ON tl.id = l.acquisition_line_id
+JOIN tx t ON t.id = tl.tx_id
+LEFT JOIN party p ON p.id = t.party_id
+JOIN coin_type ct ON ct.id = l.coin_type_id
+JOIN coin_master cm ON cm.id = ct.master_id
+LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+{join_flip}
+WHERE l.qty_remaining > 0 AND cm.series = ?
+ORDER BY ct.year, ct.mint_mark, ct.variety, l.id
+"""
             rows = cx.execute(sql, (pick,)).fetchall()
         df = pd.DataFrame([dict(r) for r in rows])
         if df.empty:
             st.info("No on-hand lots for this series.")
         else:
-            # Year display fix + tidy columns
             disp = _fmt_year_cols_for_display(df)
             st.dataframe(disp, use_container_width=True, hide_index=True)
             download_csv_button("Download CSV (Series Detail)", df, f"{pick}_detail.csv".replace(" ","_"))
@@ -200,8 +207,7 @@ with tab_flags:
         where.append("(COALESCE(l.slab_cert,'') <> '' OR UPPER(COALESCE(l.purchase_grade_company,'')) IN ('PCGS','NGC','ANACS','ICG'))")
 
     with get_conn() as cx:
-        sql = f"""
-        SELECT
+        sql = f"""        SELECT
           cm.series AS Series,
           ct.year   AS Year,
           ct.mint_mark AS "Mint Mark",
@@ -227,9 +233,7 @@ with tab_flags:
     if df.empty:
         st.info("No lots matched those flags.")
     else:
-        # Fix Year display & money display
         disp = _fmt_year_cols_for_display(df)
         disp, csv_df = _money_cols(disp, ["Unit Cost (USD)","Chosen Unit Value","Lot Est. Value"])
-        # Note: Melt Unit Value intentionally kept at 4 decimals
         st.dataframe(disp, use_container_width=True, hide_index=True)
         download_csv_button("Download CSV (Flags)", df, "inventory_filter_flags.csv")
