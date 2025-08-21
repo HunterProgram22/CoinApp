@@ -1,140 +1,179 @@
+
 # pages/5_Transactions.py
 import streamlit as st
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from db import get_conn
 from queries import (
+    list_coin_types, list_storage_locations,
     create_buy_transaction, create_sell_transaction,
-    list_coin_types, list_storage_locations
 )
 
 st.header("Transactions")
 
-# ---------- helpers ----------
-try:
-    from streamlit.errors import StreamlitAPIException
-except Exception:  # older streamlit
-    class StreamlitAPIException(Exception):
-        pass
-
-def segmented_or_select(container, label, options, default=None, key=None, help=None):
-    """Use segmented_control when available; fall back to selectbox/radio otherwise."""
-    idx = 0
-    if default in options:
-        idx = options.index(default)
+# --------------------------
+# Helpers
+# --------------------------
+def _friendly_money(val, places=2):
     try:
-        seg = getattr(container, "segmented_control", None)
-        if seg is not None:
-            return seg(label, options=options, default=default, key=key, help=help)
-    except (AttributeError, StreamlitAPIException):
-        pass
-    # For general selection, selectbox is more compact than radio
-    return container.selectbox(label, options, index=idx, key=key, help=help)
+        return f"${float(val):,.{places}f}"
+    except Exception:
+        return val
 
-def to_iso(d):
-    return d.isoformat() if hasattr(d, "isoformat") else str(d)
+def _party_list():
+    with get_conn() as cx:
+        rows = cx.execute("""
+            SELECT DISTINCT COALESCE(p.name,'') AS party
+            FROM tx t LEFT JOIN party p ON p.id = t.party_id
+            WHERE COALESCE(p.name,'') <> ''
+            ORDER BY party
+        """).fetchall()
+    return [r[0] for r in rows]
 
-def df_download(name: str, df: pd.DataFrame):
-    st.download_button(
-        f"Download {name} (CSV)",
-        data=df.to_csv(index=False).encode("utf-8"),
-        file_name=f"{name.lower().replace(' ', '_')}.csv",
-        mime="text/csv"
-    )
+def _fetch_tx(start_dt=None, end_dt=None, kinds=("BUY","SELL"), party=None, search=None):
+    where = []
+    params = []
+    if start_dt and end_dt:
+        where.append("DATE(t.tx_date) BETWEEN DATE(?) AND DATE(?)")
+        params += [start_dt, end_dt]
+    if kinds and len(kinds) < 2:
+        where.append("t.tx_type = ?")
+        params.append(kinds[0])
+    if party:
+        where.append("COALESCE(p.name,'') = ?")
+        params.append(party)
+    if search:
+        s = f"%{search.strip()}%"
+        where.append("(cm.series LIKE ? OR ct.variety LIKE ? OR COALESCE(p.name,'') LIKE ? OR COALESCE(t.notes,'') LIKE ?)")
+        params += [s, s, s, s]
 
-# ---------- Tabs ----------
-tab_review, tab_add, tab_spend = st.tabs(["Review / Search", "Add Transaction", "Spending Log"])
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    with get_conn() as cx:
+        rows = cx.execute(f"""
+            SELECT
+              t.id AS tx_id, t.tx_date, t.tx_type,
+              COALESCE(p.name,'') AS party,
+              cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety,
+              tl.quantity, tl.unit_price,
+              t.currency, t.shipping, t.tax, t.fees, COALESCE(t.notes,'') AS tx_notes
+            FROM tx t
+            JOIN tx_line tl     ON tl.tx_id = t.id
+            LEFT JOIN party p   ON p.id = t.party_id
+            LEFT JOIN coin_type ct ON ct.id = tl.coin_type_id
+            LEFT JOIN coin_master cm ON cm.id = ct.master_id
+            {clause}
+            ORDER BY DATE(t.tx_date) DESC, t.id DESC, tl.id ASC
+        """, params).fetchall()
+    df = pd.DataFrame([dict(r) for r in rows])
+    return df
 
-# ===== Review / Search =====
-with tab_review:
-    col0, col1, col2, col3 = st.columns([2,2,2,2])
-    preset = segmented_or_select(col0, "Quick range", ["7d","30d","90d","YTD","1y"], default="30d", key="tx_rng")
-    all_time = col1.checkbox("All time", value=False, help="Ignore date range filters", key="tx_alltime")
-    tx_type = col2.selectbox("Type", ["All","BUY","SELL"], index=0, key="tx_type_sel")
-    party_filter = col3.text_input("Party contains", value="", key="tx_party_like")
-
-    # compute dates
+def _calc_preset_range(preset: str):
     today = date.today()
     if preset == "7d":
-        start = today - timedelta(days=7)
-    elif preset == "30d":
-        start = today - timedelta(days=30)
-    elif preset == "90d":
-        start = today - timedelta(days=90)
-    elif preset == "YTD":
+        return (today - timedelta(days=7), today)
+    if preset == "30d":
+        return (today - timedelta(days=30), today)
+    if preset == "90d":
+        return (today - timedelta(days=90), today)
+    if preset == "YTD":
         start = date(today.year, 1, 1)
-    elif preset == "1y":
-        start = today - timedelta(days=365)
+        return (start, today)
+    if preset == "1y":
+        return (today - timedelta(days=365), today)
+    return (today - timedelta(days=30), today)
+
+def _download_button(label: str, df: pd.DataFrame, filename: str):
+    st.download_button(label, df.to_csv(index=False).encode("utf-8"), file_name=filename, mime="text/csv")
+
+# --------------------------
+# Tabs
+# --------------------------
+tab_review, tab_add, tab_spend = st.tabs(["Review / Search", "Add Transaction", "Spending Log"])
+
+# =============================================
+# Review / Search
+# =============================================
+with tab_review:
+    col0, col1, col2, col3 = st.columns([2,2,2,2])
+    preset = col0.selectbox("Quick range", ["30d","7d","90d","YTD","1y","All"], index=0, key="tx_preset")
+    if preset == "All":
+        start_dt, end_dt = None, None
+        all_time = True
     else:
-        start = today - timedelta(days=30)
-    end = today
+        start_dt, end_dt = _calc_preset_range(preset)
+        all_time = False
 
-    cA, cB = st.columns(2)
-    d_start = cA.date_input("Start", value=start, key="tx_start")
-    d_end = cB.date_input("End", value=end, key="tx_end")
+    # Ensure unique keys for date inputs
+    start_dt = col1.date_input("Start", value=start_dt or date.today() - timedelta(days=365*5), key="tx_rev_start")
+    end_dt   = col2.date_input("End",   value=end_dt or date.today(), key="tx_rev_end")
 
-    # Query
-    with get_conn() as cx:
-        params = []
-        where = ["1=1"]
-        if not all_time:
-            where.append("t.tx_date BETWEEN ? AND ?")
-            params += [to_iso(d_start), to_iso(d_end)]
-        if tx_type != "All":
-            where.append("t.tx_type = ?")
-            params.append(tx_type)
-        if party_filter.strip():
-            where.append("COALESCE(p.name,'') LIKE ?")
-            params.append(f"%{party_filter.strip()}%")
+    kinds = col3.multiselect("Type", ["BUY","SELL"], default=["BUY","SELL"], key="tx_rev_kinds")
 
-        sql = f"""
-        SELECT
-            t.id AS tx_id, t.tx_date, t.tx_type, COALESCE(p.name,'') AS party,
-            t.currency, t.shipping, t.tax, t.fees, tl.id AS line_id,
-            ct.id AS coin_type_id, cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety,
-            tl.quantity, tl.unit_price
-        FROM tx t
-        LEFT JOIN party p   ON p.id = t.party_id
-        LEFT JOIN tx_line tl ON tl.tx_id = t.id
-        LEFT JOIN coin_type ct ON ct.id = tl.coin_type_id
-        LEFT JOIN coin_master cm ON cm.id = ct.master_id
-        WHERE {' AND '.join(where)}
-        ORDER BY t.tx_date DESC, t.id DESC, tl.id
-        """
-        rows = cx.execute(sql, params).fetchall()
-        df = pd.DataFrame([dict(r) for r in rows])
+    c4, c5, c6 = st.columns([2,2,3])
+    parties = _party_list()
+    party = c4.selectbox("Party (optional)", ["(any)"] + parties, index=0, key="tx_rev_party")
+    party = None if party == "(any)" else party
 
-    if df.empty:
-        st.info("No transactions matched your filters.")
-    else:
-        # Clean display
-        disp = df.rename(columns={
-            "tx_date":"Date","tx_type":"Type","party":"Party",
-            "series":"Series","year":"Year","mint_mark":"Mint Mark","variety":"Variety",
-            "quantity":"Qty","unit_price":"Unit Price","currency":"Currency",
-            "shipping":"Shipping","tax":"Tax","fees":"Fees"
-        })
-        # money columns -> 2 decimals
-        for col in ["Unit Price","Shipping","Tax","Fees"]:
-            if col in disp.columns:
-                disp[col] = pd.to_numeric(disp[col], errors="coerce").fillna(0.0).map(lambda x: f"${x:,.2f}")
-        st.dataframe(disp, use_container_width=True, hide_index=True)
-        df_download("transactions", disp)
+    search = c5.text_input("Search text (series/variety/party/notes)", key="tx_rev_search")
 
-# ===== Add Transaction =====
+    run = c6.button("Run Search", type="primary", key="tx_rev_run")
+
+    if run:
+        df = _fetch_tx(None if all_time else start_dt, None if all_time else end_dt, tuple(kinds) if kinds else None, party, search)
+        if df.empty:
+            st.info("No transactions matched your filters.")
+        else:
+            # Display
+            show = df.copy()
+            show.rename(columns={
+                "tx_date": "Date",
+                "tx_type": "Type",
+                "party": "Party",
+                "series": "Series",
+                "year": "Year",
+                "mint_mark": "Mint Mark",
+                "variety": "Variety",
+                "quantity": "Qty",
+                "unit_price": "Unit Price (USD)",
+                "currency": "Currency",
+                "shipping": "Shipping",
+                "tax": "Tax",
+                "fees": "Fees",
+                "tx_notes": "Notes",
+            }, inplace=True)
+            # Money columns to 2dp
+            for c in ["Unit Price (USD)","Shipping","Tax","Fees"]:
+                if c in show.columns:
+                    show[c] = pd.to_numeric(show[c], errors="coerce").fillna(0.0).map(lambda x: f"${x:,.2f}")
+            # Year to 4-digit string
+            if "Year" in show.columns:
+                show["Year"] = pd.to_numeric(show["Year"], errors="coerce").map(lambda x: "" if pd.isna(x) else f"{int(x)}")
+            st.dataframe(show, use_container_width=True, hide_index=True)
+
+            # CSV
+            _download_button("Download CSV (Transactions)", df, "transactions.csv")
+
+# =============================================
+# Add Transaction
+# =============================================
 with tab_add:
     try:
-        mode = segmented_or_select(st, "Transaction Type", ["BUY","SELL"], default="BUY", key="tx_mode")
-    except Exception:
-        mode = st.radio("Transaction Type", ["BUY","SELL"], horizontal=True, index=0)
+        tx_mode = st.segmented_control("Transaction Type", options=["BUY","SELL"], default="BUY", key="tx_mode")
+    except AttributeError:
+        tx_mode = st.radio("Transaction Type", ["BUY","SELL"], index=0, horizontal=True, key="tx_mode")
 
     coin_types = list_coin_types()
-    storage_opts = list_storage_locations()
+    storage_options = list_storage_locations()
 
-    if mode == "BUY":
+    def ct_label(ct):
+        mm  = f" {ct['mint_mark']}" if ct.get('mint_mark') else ""
+        var = f" • {ct['variety']}" if ct.get('variety') else ""
+        return f"{ct['series']} {ct['year']}{mm}{var}"
+
+    if tx_mode == "BUY":
         with st.form("buy_form", clear_on_submit=False):
             colA, colB, colC = st.columns(3)
-            tx_date = colA.date_input("Date", key="buy_date")
+            tx_date = colA.date_input("Date", value=date.today(), key="buy_date")
             party_name = colB.text_input("Counterparty (Dealer/Person)", key="buy_party")
             currency = colC.text_input("Currency", value="USD", key="buy_ccy")
             shipping = colA.number_input("Shipping", min_value=0.0, step=0.01, value=0.0, key="buy_ship")
@@ -144,15 +183,14 @@ with tab_add:
 
             st.subheader("Line Item")
             if coin_types:
-                options = {f"{ct['series']} {ct['year']}{(' ' + ct['mint_mark']) if ct['mint_mark'] else ''}{(' • ' + ct['variety']) if ct['variety'] else ''}  (#{ct['id']})": ct['id'] for ct in coin_types}
-                label = st.selectbox("Coin Type", list(options.keys()), key="buy_ct")
-                coin_type_id = options[label]
+                selection = st.selectbox("Coin Type", coin_types, format_func=ct_label, key="buy_ct")
+                coin_type_id = selection["id"] if selection else None
             else:
-                st.info("No coin types yet. Add some in Settings / Editor.")
+                st.warning("Add at least one Coin Type in Admin → Coin Types.")
                 coin_type_id = None
 
             quantity = st.number_input("Quantity", min_value=1, step=1, value=1, key="buy_qty")
-            unit_price = st.number_input("Unit Price (per coin)", min_value=0.0, step=0.01, value=0.0, key="buy_price")
+            unit_price = st.number_input("Unit Price (per coin)", min_value=0.0, step=0.01, value=0.0, key="buy_unit")
 
             with st.expander("Grades & Valuation"):
                 purchase_grade_company = st.text_input("Purchase Grade Company (PCGS/NGC/RAW)", key="buy_pgc")
@@ -166,25 +204,25 @@ with tab_add:
                 manual_est_unit_value = st.number_input("Manual Unit Value (used only if MANUAL)", min_value=0.0, step=0.01, value=0.0, key="buy_manual")
 
             with st.expander("Storage"):
-                if storage_opts:
-                    names = {f"{s['name']} ({s['category']})".strip(): s['id'] for s in storage_opts}
-                    storage_label = st.selectbox("Storage Location", list(names.keys()), key="buy_storage")
-                    storage_location_id = names[storage_label]
+                if storage_options:
+                    def stg_label(s): return f"{s['name']}" + (f" ({s['category']})" if s.get('category') else "")
+                    stg = st.selectbox("Storage Location", storage_options, format_func=stg_label, key="buy_storage")
+                    storage_location_id = stg["id"] if stg else None
                 else:
-                    st.info("No storage locations yet. Add some in Settings.")
+                    st.info("No storage locations yet. Add some in Admin → Storage.")
                     storage_location_id = None
                 lot_notes = st.text_input("Lot Notes", key="buy_lot_notes")
 
-            submitted = st.form_submit_button("Save BUY")
+            submitted = st.form_submit_button("Save BUY", type="primary", use_container_width=False)
             if submitted:
                 if not coin_type_id:
                     st.error("Please add/select a Coin Type first.")
                 else:
                     create_buy_transaction(
-                        tx_date=to_iso(tx_date), party_name=party_name, currency=currency,
+                        tx_date=tx_date.isoformat(), party_name=party_name, currency=currency,
                         shipping=shipping, tax=tax, fees=fees, notes=notes,
                         items=[{
-                            "coin_type_id": coin_type_id,
+                            "coin_type_id": int(coin_type_id),
                             "quantity": int(quantity),
                             "unit_price": float(unit_price),
                             "purchase_grade_company": purchase_grade_company or None,
@@ -200,11 +238,15 @@ with tab_add:
                         }]
                     )
                     st.success("BUY saved.")
+                    try:
+                        st.rerun()
+                    except Exception:
+                        pass
 
     else:  # SELL
         with st.form("sell_form", clear_on_submit=False):
             colA, colB, colC = st.columns(3)
-            tx_date = colA.date_input("Date", key="sell_date")
+            tx_date = colA.date_input("Date", value=date.today(), key="sell_date")
             party_name = colB.text_input("Counterparty (Buyer)", key="sell_party")
             currency = colC.text_input("Currency", value="USD", key="sell_ccy")
             shipping = colA.number_input("Shipping", min_value=0.0, step=0.01, value=0.0, key="sell_ship")
@@ -213,122 +255,71 @@ with tab_add:
             notes = st.text_area("Notes", height=70, key="sell_notes")
 
             st.subheader("Line Item")
-            coin_types = list_coin_types()
             if coin_types:
-                options = {f"{ct['series']} {ct['year']}{(' ' + ct['mint_mark']) if ct['mint_mark'] else ''}{(' • ' + ct['variety']) if ct['variety'] else ''}  (#{ct['id']})": ct['id'] for ct in coin_types}
-                label = st.selectbox("Coin Type", list(options.keys()), key="sell_ct")
-                coin_type_id = options[label]
+                selection = st.selectbox("Coin Type", coin_types, format_func=ct_label, key="sell_ct")
+                coin_type_id = selection["id"] if selection else None
             else:
-                st.info("No coin types yet. Add some in Settings / Editor.")
+                st.warning("Add at least one Coin Type in Admin → Coin Types.")
                 coin_type_id = None
 
             quantity = st.number_input("Quantity to SELL", min_value=1, step=1, value=1, key="sell_qty")
-            unit_price = st.number_input("Unit Price (per coin)", min_value=0.0, step=0.01, value=0.0, key="sell_price")
+            unit_price = st.number_input("Unit Price (per coin)", min_value=0.0, step=0.01, value=0.0, key="sell_unit")
 
-            submitted = st.form_submit_button("Save SELL (FIFO)")
+            submitted = st.form_submit_button("Save SELL (FIFO)", type="primary")
             if submitted:
                 if not coin_type_id:
                     st.error("Please add/select a Coin Type first.")
                 else:
                     try:
                         create_sell_transaction(
-                            tx_date=to_iso(tx_date), party_name=party_name, currency=currency,
+                            tx_date=tx_date.isoformat(), party_name=party_name, currency=currency,
                             shipping=shipping, tax=tax, fees=fees, notes=notes,
-                            items=[{"coin_type_id": coin_type_id, "quantity": int(quantity), "unit_price": float(unit_price)}],
+                            items=[{"coin_type_id": int(coin_type_id), "quantity": int(quantity), "unit_price": float(unit_price)}],
                             method='FIFO'
                         )
                         st.success("SELL saved (FIFO).")
+                        try:
+                            st.rerun()
+                        except Exception:
+                            pass
                     except ValueError as e:
                         st.error(str(e))
 
-# ===== Spending Log =====
+# =============================================
+# Spending Log (BUYs only)
+# =============================================
 with tab_spend:
-    colA, colB, colC = st.columns(3)
-    preset2 = segmented_or_select(colA, "Quick range", ["7d","30d","90d","YTD","1y"], default="30d", key="sp_rng")
-    all_time2 = colB.checkbox("All time", value=False, key="sp_all")
-    party_like = colC.text_input("Party contains", value="", key="sp_party")
-
-    today = date.today()
-    if preset2 == "7d":
-        s2 = today - timedelta(days=7)
-    elif preset2 == "30d":
-        s2 = today - timedelta(days=30)
-    elif preset2 == "90d":
-        s2 = today - timedelta(days=90)
-    elif preset2 == "YTD":
-        s2 = date(today.year, 1, 1)
+    col0, col1, col2 = st.columns([2,2,2])
+    sp_preset = col0.selectbox("Quick range", ["30d","7d","90d","YTD","1y","All"], index=0, key="sp_preset")
+    if sp_preset == "All":
+        sp_start, sp_end = None, None
+        sp_all = True
     else:
-        s2 = today - timedelta(days=365)
-    e2 = today
+        sp_start, sp_end = _calc_preset_range(sp_preset)
+        sp_all = False
+    sp_start = col1.date_input("Start", value=sp_start or (date.today() - timedelta(days=365)), key="sp_start")
+    sp_end   = col2.date_input("End",   value=sp_end or date.today(), key="sp_end")
 
-    d_s2 = colA.date_input("Start", value=s2, key="sp_start")
-    d_e2 = colB.date_input("End", value=e2, key="sp_end")
+    run_sp = st.button("Run Spending Log", type="primary", key="sp_run")
 
-    with get_conn() as cx:
-        params = []
-        where = ["t.tx_type = 'BUY'"]
-        if not all_time2:
-            where.append("t.tx_date BETWEEN ? AND ?")
-            params += [to_iso(d_s2), to_iso(d_e2)]
-        if party_like.strip():
-            where.append("COALESCE(p.name,'') LIKE ?")
-            params.append(f"%{party_like.strip()}%")
-
-        # Summary by date+party
-        sum_sql = f"""
-        WITH line_tot AS (
-            SELECT t.id AS tx_id,
-                   SUM(ABS(COALESCE(tl.quantity,0)) * COALESCE(tl.unit_price,0)) AS line_total
-            FROM tx t
-            LEFT JOIN tx_line tl ON tl.tx_id = t.id
-            WHERE {' AND '.join(where)}
-            GROUP BY t.id
-        )
-        SELECT t.tx_date, COALESCE(p.name,'') AS party,
-               ROUND(COALESCE(line_tot.line_total,0) + COALESCE(t.shipping,0) + COALESCE(t.tax,0) + COALESCE(t.fees,0), 2) AS total_spent
-        FROM tx t
-        LEFT JOIN party p ON p.id = t.party_id
-        LEFT JOIN line_tot ON line_tot.tx_id = t.id
-        WHERE {' AND '.join(where)}
-        ORDER BY t.tx_date DESC, party
-        """
-        rows = cx.execute(sum_sql, params*2 if not all_time2 or party_like.strip() else []).fetchall()
-        df_sum = pd.DataFrame([dict(r) for r in rows])
-
-        # Line breakdown (counts by series per date+party)
-        det_sql = f"""
-        SELECT t.tx_date, COALESCE(p.name,'') AS party, cm.series, SUM(ABS(COALESCE(tl.quantity,0))) AS qty
-        FROM tx t
-        LEFT JOIN party p ON p.id = t.party_id
-        LEFT JOIN tx_line tl ON tl.tx_id = t.id
-        LEFT JOIN coin_type ct ON ct.id = tl.coin_type_id
-        LEFT JOIN coin_master cm ON cm.id = ct.master_id
-        WHERE {' AND '.join(where)}
-        GROUP BY t.tx_date, party, cm.series
-        ORDER BY t.tx_date DESC, party, cm.series
-        """
-        rows2 = cx.execute(det_sql, params).fetchall()
-        df_det = pd.DataFrame([dict(r) for r in rows2])
-
-    if df_sum.empty:
-        st.info("No BUY spending found for the selected period.")
-    else:
-        # Roll up same-date+party rows (in case multiple BUY tx that day)
-        grp = df_sum.groupby(["tx_date","party"], as_index=False)["total_spent"].sum()
-        # Build a descriptor like "(1 Morgan, 1 Peace)"
-        if not df_det.empty:
-            parts = (
-                df_det.groupby(["tx_date","party","series"], as_index=False)["qty"].sum()
-                     .sort_values(["tx_date","party","series"])
-            )
-            desc_map = {}
-            for (d, p), sub in parts.groupby(["tx_date","party"]):
-                chunk = ", ".join([f"{int(r.qty)} {r.series}" for _, r in sub.iterrows()])
-                desc_map[(d,p)] = f"({chunk})"
-            grp["what"] = grp.apply(lambda r: desc_map.get((r["tx_date"], r["party"]), ""), axis=1)
+    if run_sp:
+        df = _fetch_tx(None if sp_all else sp_start, None if sp_all else sp_end, kinds=("BUY",), party=None, search=None)
+        if df.empty:
+            st.info("No BUY transactions in that range.")
         else:
-            grp["what"] = ""
-        grp = grp.rename(columns={"tx_date":"Date","party":"Party","total_spent":"Total Spent (USD)"})
-        grp["Total Spent (USD)"] = grp["Total Spent (USD)"].map(lambda x: f"${x:,.2f}")
-        st.dataframe(grp, use_container_width=True, hide_index=True)
-        df_download("spending_log", grp)
+            # Total per tx (line-level)
+            df["line_total"] = pd.to_numeric(df["unit_price"], errors="coerce").fillna(0.0) * pd.to_numeric(df["quantity"], errors="coerce").fillna(0.0)
+            # Group by Date + Party
+            df["Date"] = pd.to_datetime(df["tx_date"]).dt.date
+            df["Series"] = df["series"].fillna("")
+            agg = df.groupby(["Date","party"], dropna=False).agg(
+                Total_Spent_USD=("line_total", "sum"),
+                Items=("Series", lambda s: ", ".join(f"{n}×{k}" for k, n in s.value_counts().items())),
+                Lines=("series", "count")
+            ).reset_index().rename(columns={"party":"Party"})
+            # Display
+            show = agg.copy()
+            show["Total_Spent_USD"] = show["Total_Spent_USD"].map(lambda x: f"${x:,.2f}")
+            show = show.sort_values(["Date","Party"], ascending=[False,True])
+            st.dataframe(show, use_container_width=True, hide_index=True)
+            _download_button("Download CSV (Spending Log)", agg, "spending_log.csv")
