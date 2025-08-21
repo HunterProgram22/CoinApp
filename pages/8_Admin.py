@@ -596,7 +596,7 @@ tab_coin_editor, tab_coin_types, tab_lot, tab_series, tab_storage, tab_void, tab
     st.tabs(
         [
             "Coin Master Editor",
-            "Coin Types"
+            "Coin Types",
             "Lots (grades & valuation)",
             "Series specs (for melt calc)",
             "Storage locations",
