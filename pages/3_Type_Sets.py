@@ -1,353 +1,410 @@
-
-# pages/10_Type_Sets.py
-import streamlit as st
+# pages/3_Type_Sets.py
 import pandas as pd
-import sqlite3
+import streamlit as st
 from db import get_conn
 
-st.header("📚 Type Sets")
+st.header("Type Sets")
 
-def _safe_rerun():
-    # Streamlit >= 1.27: st.rerun()
-    try:
-        st.rerun()
-    except AttributeError:
-        # Older Streamlit: st.experimental_rerun()
-        st.experimental_rerun()
+# ---------------------------
+# Helpers
+# ---------------------------
+def table_exists(cx, name: str) -> bool:
+    return cx.execute(
+        "SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name=?",
+        (name,)
+    ).fetchone() is not None
 
-# ------------------------ DB helpers ------------------------
-def list_sets():
+def view_exists(cx, name: str) -> bool:
+    return table_exists(cx, name)
+
+def list_type_sets():
     with get_conn() as cx:
-        rows = cx.execute("SELECT id, name, description, mode, created_at FROM type_set ORDER BY created_at DESC").fetchall()
+        if not table_exists(cx, "type_set"):
+            return []
+        rows = cx.execute(
+            "SELECT id, name, COALESCE(description,'') AS description FROM type_set ORDER BY name"
+        ).fetchall()
         return [dict(r) for r in rows]
 
-def create_set(name: str, description: str, mode: str) -> int:
+def upsert_type_set(name: str, description: str = None, set_id: int | None = None) -> int:
+    if not name:
+        raise ValueError("Set name is required")
     with get_conn() as cx:
-        cur = cx.execute("INSERT INTO type_set(name, description, mode) VALUES (?,?,?)",
-                         (name.strip(), description or None, mode))
+        if not table_exists(cx, "type_set"):
+            raise RuntimeError("Missing table 'type_set'. Did you apply the Type Set schema patch?")
+        if set_id:
+            cx.execute("UPDATE type_set SET name=?, description=? WHERE id=?", (name, description, set_id))
+            return set_id
+        cur = cx.execute("INSERT INTO type_set(name, description) VALUES (?, ?)", (name, description))
         return cur.lastrowid
-
-def add_item(set_id: int, coin_type_id: int, required_qty: int = 1):
-    with get_conn() as cx:
-        cx.execute("""INSERT OR REPLACE INTO type_set_item(set_id, coin_type_id, required_qty)
-                      VALUES (?,?,?)""", (set_id, coin_type_id, int(required_qty)))
-
-def add_rule(set_id: int, **kw):
-    cols = ["set_id"]; vals = [set_id]
-    for c in ["country","denomination","series","is_proof","mint_mark_in","year_min","year_max","year_list","variety_like"]:
-        v = kw.get(c, None)
-        if v is None or (isinstance(v, str) and not v.strip()):
-            continue
-        cols.append(c); vals.append(v)
-    ph = ",".join(["?"]*len(vals))
-    with get_conn() as cx:
-        cx.execute(f"INSERT INTO type_set_rule({','.join(cols)}) VALUES ({ph})", vals)
-
-def get_progress(set_id: int, with_assign=False):
-    view = "v_type_set_progress_assign" if with_assign else "v_type_set_progress"
-    with get_conn() as cx:
-        rows = cx.execute(f"""
-            SELECT * FROM {view}
-             WHERE set_id=?
-             ORDER BY series, year, mint_mark, variety
-        """, (set_id,)).fetchall()
-        return [dict(r) for r in rows]
 
 def list_series():
     with get_conn() as cx:
         rows = cx.execute("SELECT DISTINCT series FROM coin_master ORDER BY series").fetchall()
-        return [r["series"] for r in rows]
+        return [r[0] for r in rows]
 
-def list_coin_types_for_picker():
+def find_coin_types(series: list[str] | None = None, years: tuple[int,int] | None = None,
+                    proof_filter: str = "Any") -> list[dict]:
+    sql = [
+        "SELECT ct.id, cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety, ct.is_proof",
+        "FROM coin_type ct",
+        "JOIN coin_master cm ON cm.id = ct.master_id",
+        "WHERE 1=1"
+    ]
+    params = []
+    if series:
+        placeholders = ",".join("?" for _ in series)
+        sql.append(f"AND cm.series IN ({placeholders})")
+        params.extend(series)
+    if years:
+        start, end = years
+        sql.append("AND ct.year BETWEEN ? AND ?")
+        params.extend([start, end])
+    if proof_filter == "Proofs only":
+        sql.append("AND ct.is_proof = 1")
+    elif proof_filter == "Non-proof only":
+        sql.append("AND (ct.is_proof IS NULL OR ct.is_proof = 0)")
+    sql.append("ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety")
     with get_conn() as cx:
-        rows = cx.execute(
-            """
-            SELECT ct.id,
-                   cm.country, cm.denomination, cm.series,
-                   ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety, ct.is_proof
-            FROM coin_type ct JOIN coin_master cm ON cm.id = ct.master_id
-            ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
-            """
-        ).fetchall()
-        labels = []
-        ids = []
-        for r in rows:
-            mm = (r["mint_mark"] or "").strip()
-            var = (r["variety"] or "").strip()
-            proof = " PR" if r["is_proof"] else ""
-            lab = f"{r['series']} {r['year']}{(' ' + mm) if mm else ''}{(' • ' + var) if var else ''}{proof}  (#{r['id']})"
-            labels.append(lab); ids.append(r["id"])
-        return labels, ids
-
-def list_specimens_for_type_on_hand(coin_type_id: int):
-    with get_conn() as cx:
-        rows = cx.execute("""
-            SELECT code FROM specimen
-             WHERE coin_type_id=? AND (sold_line_id IS NULL)
-             ORDER BY code
-        """, (coin_type_id,)).fetchall()
-        return [r["code"] for r in rows]
-
-def list_assignments(set_id: int):
-    with get_conn() as cx:
-        rows = cx.execute("""
-            SELECT f.coin_type_id AS coin_type_id,
-                   f.specimen_code AS specimen_code,
-                   (s.sold_line_id IS NULL) AS on_hand
-            FROM type_set_fulfillment AS f
-            JOIN specimen AS s ON s.code = f.specimen_code
-            WHERE f.set_id = ?
-        """, (set_id,)).fetchall()
+        rows = cx.execute("\n".join(sql), params).fetchall()
         return [dict(r) for r in rows]
 
-def assign_specimens(set_id: int, coin_type_id: int, codes: list[str]):
-    inserted = 0
-    errs = []
+def add_members(set_id: int, coin_type_ids: list[int]) -> int:
+    if not coin_type_ids:
+        return 0
     with get_conn() as cx:
-        for code in codes:
-            code = code.strip().upper()
-            # Validate specimen is on-hand and matches type
-            row = cx.execute("""
-                SELECT code FROM specimen
-                 WHERE code=? AND coin_type_id=? AND sold_line_id IS NULL
-            """, (code, coin_type_id)).fetchone()
-            if not row:
-                errs.append(f"{code}: not found, wrong type, or not on-hand")
-                continue
-            try:
-                cx.execute("""
-                    INSERT INTO type_set_fulfillment(set_id, coin_type_id, specimen_code)
-                    VALUES (?,?,?)
-                """, (set_id, coin_type_id, code))
-                inserted += 1
-            except Exception as e:
-                errs.append(f"{code}: {e}")
-    return inserted, errs
+        if not table_exists(cx, "type_set_member"):
+            raise RuntimeError("Missing table 'type_set_member'. Did you apply the Type Set schema patch?")
+        count = 0
+        for cid in coin_type_ids:
+            cx.execute(
+                "INSERT OR IGNORE INTO type_set_member(set_id, coin_type_id) VALUES (?, ?)",
+                (set_id, int(cid))
+            )
+            count += 1
+        return count
 
-def unassign_specimens(set_id: int, codes: list[str]):
-    removed = 0
+def list_members(set_id: int) -> list[dict]:
     with get_conn() as cx:
-        for code in codes:
-            cx.execute("DELETE FROM type_set_fulfillment WHERE set_id=? AND specimen_code=?", (set_id, code))
-            removed += cx.total_changes
-    return removed
-
-def build_missing_df(set_id: int):
-    rows = get_progress(set_id, with_assign=True)
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    # Missing to acquire = required - max(assigned_onhand, on_hand)
-    df["assigned_onhand_qty"] = df.get("assigned_onhand_qty", 0).fillna(0)
-    df["have_qty"] = df["have_qty"].fillna(0)
-    df["missing_qty"] = (df["required_qty"] - df[["assigned_onhand_qty","have_qty"]].max(axis=1)).clip(lower=0)
-    # Pretty columns
-    df = df.rename(columns={
-        "series":"Series","year":"Year","mint_mark":"Mint Mark","variety":"Variety",
-        "is_proof":"Proof","required_qty":"Required","have_qty":"On Hand",
-        "assigned_onhand_qty":"Assigned (on hand)","assigned_codes_csv":"Assigned Codes",
-        "missing_qty":"Missing"
-    })
-    return df
-
-# ------------------------ UI ------------------------
-tab_browse, tab_new, tab_manage = st.tabs(["My Sets", "New Set", "Manage"])
-
-# ---- My Sets (progress + assignments + shopping list) ----
-with tab_browse:
-    sets_ = list_sets()
-    if not sets_:
-        st.info("No Type Sets yet. Create one in the 'New Set' tab.")
-    else:
-        name_to_id = {f"{s['name']} [{s['mode']}]" : s["id"] for s in sets_}
-        sel_name = st.selectbox("Select a set", list(name_to_id.keys()))
-        set_id = name_to_id[sel_name]
-
-        try:
-            rows = get_progress(set_id, with_assign=True)
-        except sqlite3.OperationalError as e:
-            st.error("Type Sets schema isn't fully installed. Apply the patch file below, then refresh.")
-            st.markdown("**Patch:** [schema_typesets_fix.sql](sandbox:/mnt/data/schema_typesets_fix.sql)")
-            st.code("sqlite3 data\coinapp.sqlite < schema_typesets_fix.sql", language="bat")
-            st.stop()
-
-        total = len(rows)
-        done_auto = sum(1 for r in rows if r.get("is_complete") == 1)
-        done_assn = sum(1 for r in rows if r.get("is_complete_by_assignment") == 1)
-
-        colA, colB = st.columns(2)
-        colA.metric("Auto Progress (by on-hand qty)", f"{done_auto}/{total}")
-        colB.metric("Assigned Progress (by Flip IDs)", f"{done_assn}/{total}")
-
-        if rows:
-            df = pd.DataFrame(rows)
-            df = df.rename(columns={
-                "series":"Series","year":"Year","mint_mark":"Mint Mark","variety":"Variety",
-                "is_proof":"Proof","required_qty":"Required","have_qty":"On Hand",
-                "assigned_onhand_qty":"Assigned (on hand)","assigned_codes_csv":"Assigned Codes"
-            })
-            if "Assigned Codes" in df.columns:
-                df["Assigned Codes"] = df["Assigned Codes"].fillna("").apply(lambda s: ", ".join([c for c in str(s).split(",") if c]))
-            show_cols = [c for c in ["Series","Year","Mint Mark","Variety","Proof","Required","On Hand","Assigned (on hand)","Assigned Codes"] if c in df.columns]
-            st.dataframe(df[show_cols], use_container_width=True)
-
-        # ---- What's Missing (shopping list) ----
-        st.subheader("🛒 What's Missing — Shopping List")
-        miss_df = build_missing_df(set_id)
-        if miss_df.empty or miss_df["Missing"].sum() == 0:
-            st.success("Nothing missing—nice!")
-        else:
-            tbl = miss_df[miss_df["Missing"] > 0][["Series","Year","Mint Mark","Variety","Proof","Required","On Hand","Assigned (on hand)","Missing"]]
-            st.dataframe(tbl, use_container_width=True)
-            # Download button
-            out = miss_df[miss_df["Missing"] > 0][["Series","Year","Mint Mark","Variety","Proof","Missing"]].to_csv(index=False).encode("utf-8")
-            st.download_button("Download shopping list CSV", out, file_name=f"type_set_shopping_list_{set_id}.csv", mime="text/csv")
-
-        st.divider()
-        st.subheader("Assign / Unassign Flip IDs")
-        if rows:
-            label_map = {}
-            for r in rows:
-                disp = f"{r['series']} {r['year']}{(' ' + r['mint_mark']) if r['mint_mark'] else ''}{(' • ' + r['variety']) if r['variety'] else ''}"
-                label_map[disp] = r["coin_type_id"]
-            pick_label = st.selectbox("Coin Type", list(label_map.keys()))
-            coin_type_id = label_map[pick_label]
-
-            avail = list_specimens_for_type_on_hand(coin_type_id)
-            asn_rows = [a for a in list_assignments(set_id) if a["coin_type_id"] == coin_type_id]
-            assigned_codes = [a["specimen_code"] + ("" if a["on_hand"] else " (sold)") for a in asn_rows]
-            st.caption("Assigned codes: " + (", ".join(assigned_codes) if assigned_codes else "—"))
-
-            col1, col2 = st.columns(2)
-            with col1:
-                picks = st.multiselect("Flip IDs to **assign**", avail, help="Only on-hand specimens of this type appear here.")
-                if st.button("Assign selected"):
-                    if not picks:
-                        st.warning("Pick at least one Flip ID.")
-                    else:
-                        added, errs = assign_specimens(set_id, coin_type_id, picks)
-                        if added: st.success(f"Assigned {added} Flip ID(s).")
-                        if errs:
-                            st.warning("Some items could not be assigned:")
-                            for e in errs[:50]: st.write("•", e)
-                        _safe_rerun()
-            with col2:
-                to_remove = st.multiselect("Flip IDs to **unassign**", [a["specimen_code"] for a in asn_rows])
-                if st.button("Unassign selected"):
-                    if not to_remove:
-                        st.warning("Pick at least one Flip ID to unassign.")
-                    else:
-                        removed = unassign_specimens(set_id, to_remove)
-                        st.success(f"Unassigned {removed} Flip ID(s).")
-                        _safe_rerun()
-
-# ---- New Set ----
-with tab_new:
-    mode = st.radio("Mode", ["RULES","MANUAL"], horizontal=True, help="RULES = auto-populate by filters; MANUAL = pick exact coin types")
-    name = st.text_input("Set name")
-    desc = st.text_input("Description", placeholder="Optional")
-
-    if mode == "RULES":
-        st.subheader("Rule filters")
-        col1, col2, col3 = st.columns(3)
-        series = col1.selectbox("Series", ["(any)"] + list_series())
-        is_proof = col2.selectbox("Proof?", ["(any)","Business (0)","Proof (1)"])
-        mint_csv = col3.text_input("Mint marks (CSV)", placeholder="e.g., S,D,W")
-
-        col4, col5 = st.columns(2)
-        year_min = col4.number_input("Year min", min_value=0, step=1, value=0)
-        year_max = col5.number_input("Year max", min_value=0, step=1, value=0)
-        year_list = st.text_input("Year list (CSV)", placeholder="e.g., 1980,1982,2015,2016")
-        variety_like = st.text_input("Variety LIKE (SQL)", placeholder="e.g., %Type 1%")
-
-        if st.button("Preview matches"):
-            where = ["1=1"]
-            params = []
-            if series and series != "(any)":
-                where.append("cm.series = ?"); params.append(series)
-            if is_proof != "(any)":
-                pv = 1 if "Proof" in is_proof else 0
-                where.append("ct.is_proof = ?"); params.append(pv)
-            if mint_csv.strip():
-                mints = [m.strip() for m in mint_csv.split(",") if m.strip()]
-                if mints:
-                    placeholders = ",".join(["?"]*len(mints))
-                    where.append(f"ct.mint_mark IN ({placeholders})"); params.extend(mints)
-            if year_min and year_min > 0:
-                where.append("ct.year >= ?"); params.append(int(year_min))
-            if year_max and year_max > 0:
-                where.append("ct.year <= ?"); params.append(int(year_max))
-            if year_list.strip():
-                where.append("instr(','||?||',', ','||ct.year||',') > 0"); params.append(",".join([y.strip() for y in year_list.split(",") if y.strip()]))
-            if variety_like.strip():
-                where.append("ct.variety LIKE ?"); params.append(variety_like.strip())
-
-            sql = f"""
-                SELECT ct.id, cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety, ct.is_proof
-                FROM coin_type ct JOIN coin_master cm ON cm.id = ct.master_id
-                WHERE {' AND '.join(where)}
-                ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
+        if not table_exists(cx, "type_set_member"):
+            return []
+        rows = cx.execute(
             """
-            with get_conn() as cx:
-                rows = cx.execute(sql, tuple(params)).fetchall()
-            if rows:
-                df = pd.DataFrame([dict(r) for r in rows])
-                st.dataframe(df, use_container_width=True)
-                st.success(f"{len(rows)} matches.")
-            else:
-                st.info("No matches for that rule.")
+            SELECT m.coin_type_id, cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety, ct.is_proof
+            FROM type_set_member m
+            JOIN coin_type ct ON ct.id = m.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            WHERE m.set_id=?
+            ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
+            """,
+            (set_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
 
-        if st.button("Save set (RULES)"):
-            if not name.strip():
-                st.error("Name is required.")
-            else:
-                set_id = create_set(name, desc, "RULES")
-                add_rule(set_id,
-                         series=None if series=="(any)" else series,
-                         is_proof=None if is_proof=="(any)" else (1 if "Proof" in is_proof else 0),
-                         mint_mark_in=mint_csv.strip() or None,
-                         year_min=int(year_min) if year_min>0 else None,
-                         year_max=int(year_max) if year_max>0 else None,
-                         year_list=",".join([y.strip() for y in year_list.split(",") if y.strip()]) or None,
-                         variety_like=variety_like.strip() or None)
-                st.success(f"Created rules-based set “{name}”. See progress in My Sets.")
+def remove_members(set_id: int, coin_type_ids: list[int]) -> int:
+    if not coin_type_ids:
+        return 0
+    with get_conn() as cx:
+        count = 0
+        for cid in coin_type_ids:
+            cx.execute("DELETE FROM type_set_member WHERE set_id=? AND coin_type_id=?", (set_id, int(cid)))
+            count += 1
+        return count
 
-    else:  # MANUAL
-        labels, ids = list_coin_types_for_picker()
-        st.caption("Pick the exact coin types you want in this set.")
-        picks = st.multiselect("Coin Types", labels, default=[])
-        req_qty = st.number_input("Required qty for each", min_value=1, step=1, value=1)
-        if st.button("Save set (MANUAL)"):
-            if not name.strip():
-                st.error("Name is required.")
-            elif not picks:
-                st.error("Pick at least one coin type.")
-            else:
-                set_id = create_set(name, desc, "MANUAL")
-                id_map = {lab: ids[i] for i, lab in enumerate(labels)}
-                for lab in picks:
-                    add_item(set_id, id_map[lab], int(req_qty))
-                st.success(f"Created manual set “{name}”. See progress in My Sets.")
+def choose_progress_view() -> str | None:
+    with get_conn() as cx:
+        if view_exists(cx, "v_type_set_progress_assign"):
+            return "v_type_set_progress_assign"
+        if view_exists(cx, "v_type_set_progress"):
+            return "v_type_set_progress"
+        return None
 
-# ---- Manage ----
-with tab_manage:
-    sets_ = list_sets()
-    if not sets_:
-        st.info("No Type Sets yet.")
+def get_progress_rows(set_id: int):
+    view = choose_progress_view()
+    if not view:
+        return None, []
+    with get_conn() as cx:
+        rows = cx.execute(
+            f"""
+            SELECT * FROM {view}
+            WHERE set_id=?
+            ORDER BY series, year, mint_mark, variety
+            """,
+            (set_id,)
+        ).fetchall()
+        return view, [dict(r) for r in rows]
+
+def derive_missing(df: pd.DataFrame) -> pd.DataFrame:
+    # Try a set of possible indicator columns meaning 'have/on hand'
+    candidate_cols = ["on_hand","have","have_count","have_qty","assigned_count","owned","has_any"]
+    present = [c for c in candidate_cols if c in df.columns]
+    if not present:
+        return pd.DataFrame(columns=df.columns)
+    col = present[0]
+    s = pd.to_numeric(df[col], errors="coerce")
+    if s.notna().any():
+        mask = (s <= 0)
     else:
-        by_name = {s["name"]: s for s in sets_}
-        nm = st.selectbox("Select a set", list(by_name.keys()))
-        s = by_name[nm]
+        mask = ~df[col].astype(bool)
+    return df[mask].copy()
 
-        new_name = st.text_input("Rename", value=s["name"])
-        new_desc = st.text_input("Description", value=s.get("description") or "")
-        if st.button("Save changes"):
-            with get_conn() as cx:
-                cx.execute("UPDATE type_set SET name=?, description=? WHERE id=?", (new_name.strip(), new_desc or None, s["id"]))
-            st.success("Updated.")
+# Assignment helpers (optional; detected dynamically)
+def list_assignments(set_id: int):
+    with get_conn() as cx:
+        if not (table_exists(cx, "type_set_assignment") and table_exists(cx, "specimen") and table_exists(cx, "lot")):
+            return []
+        rows = cx.execute(
+            """
+            SELECT a.coin_type_id AS coin_type_id, s.specimen_code AS specimen_code,
+                   (s.sold_line_id IS NULL) AS on_hand
+            FROM type_set_assignment a
+            JOIN specimen s ON s.id = a.specimen_id
+            JOIN lot l ON l.id = s.lot_id
+            WHERE a.set_id = ?
+            ORDER BY a.coin_type_id, s.specimen_code
+            """,
+            (set_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
 
-        st.divider()
-        if st.button("Delete this set", type="secondary"):
-            with get_conn() as cx:
-                cx.execute("DELETE FROM type_set WHERE id=?", (s["id"],))
-            st.success("Deleted. Refresh the page.")
+def list_unassigned_specimens_for_type(coin_type_id: int, set_id: int):
+    with get_conn() as cx:
+        if not (table_exists(cx, "specimen") and table_exists(cx, "lot") and table_exists(cx, "type_set_assignment")):
+            return []
+        rows = cx.execute(
+            """
+            SELECT s.id, s.specimen_code
+            FROM specimen s
+            JOIN lot l ON l.id = s.lot_id
+            WHERE l.coin_type_id = ?
+              AND s.sold_line_id IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM type_set_assignment a
+                WHERE a.set_id = ? AND a.specimen_id = s.id
+              )
+            ORDER BY s.specimen_code
+            """,
+            (coin_type_id, set_id)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+def assign_specimen(set_id: int, coin_type_id: int, specimen_id: int):
+    with get_conn() as cx:
+        cx.execute(
+            "INSERT INTO type_set_assignment(set_id, coin_type_id, specimen_id) VALUES (?,?,?)",
+            (set_id, coin_type_id, specimen_id)
+        )
+
+def unassign_specimen(set_id: int, specimen_code: str):
+    with get_conn() as cx:
+        row = cx.execute("SELECT id FROM specimen WHERE specimen_code = ?", (specimen_code,)).fetchone()
+        if not row:
+            return
+        cx.execute("DELETE FROM type_set_assignment WHERE set_id = ? AND specimen_id = ?", (set_id, row[0]))
+
+# ---------------------------
+# UI
+# ---------------------------
+tab_my, tab_define = st.tabs(["My Sets", "Define / Catalog"])
+
+# ======== My Sets ========
+with tab_my:
+    sets = list_type_sets()
+    if not sets:
+        st.info("No Type Sets yet. Use 'Define / Catalog' to create one.")
+    else:
+        options = {f"{s['name']} (#{s['id']})": s['id'] for s in sets}
+        label = st.selectbox("Choose a Type Set", list(options.keys()), key="ts_pick")
+        set_id = options[label]
+
+        # Edit name/description
+        ed_exp = st.expander("Edit set name/description")
+        with ed_exp:
+            sel = next(x for x in sets if x["id"] == set_id)
+            new_name = st.text_input("Set name", value=sel["name"], key="ts_name_edit")
+            new_desc = st.text_area("Description", value=sel.get("description",""), key="ts_desc_edit")
+            if st.button("Save changes", key="ts_save_changes"):
+                upsert_type_set(new_name, new_desc, set_id=set_id)
+                st.success("Saved.")
+                st.rerun()
+
+        # Progress
+        view_name, rows = get_progress_rows(set_id)
+        if view_name is None:
+            st.error("Required views not found. Ensure v_type_set_progress exists (and v_type_set_progress_assign optional).")
+        else:
+            st.caption(f"Using view: {view_name}")
+            df_prog = pd.DataFrame(rows)
+            st.subheader("Progress")
+            st.dataframe(df_prog, use_container_width=True, hide_index=True)
+            st.download_button(
+                "Download Progress (CSV)",
+                data=df_prog.to_csv(index=False).encode("utf-8"),
+                file_name=f"type_set_{set_id}_progress.csv",
+                mime="text/csv",
+                key="csv_ts_progress",
+            )
+
+            # What's Missing
+            df_missing = derive_missing(df_prog)
+            st.subheader("What's Missing")
+            if df_missing.empty:
+                st.success("No missing items detected (or could not determine from available columns).")
+            else:
+                id_cols = [c for c in ["series","year","mint_mark","variety","coin_type_id"] if c in df_missing.columns]
+                extra = [c for c in ["on_hand","have","have_count","have_qty","assigned_count","owned","has_any"] if c in df_missing.columns]
+                disp = df_missing[id_cols + [c for c in extra if c not in id_cols]] if id_cols else df_missing
+                st.dataframe(disp, use_container_width=True, hide_index=True)
+                st.download_button(
+                    "Download What's Missing (CSV)",
+                    data=disp.to_csv(index=False).encode("utf-8"),
+                    file_name=f"type_set_{set_id}_missing.csv",
+                    mime="text/csv",
+                    key="csv_ts_missing",
+                )
+
+        # Assign flips (if assignment/specimen tables exist)
+        with get_conn() as cx:
+            ok_assign = table_exists(cx, "type_set_assignment") and table_exists(cx, "specimen") and table_exists(cx, "lot")
+        if ok_assign:
+            st.subheader("Assign Flips to Set")
+            if not df_prog.empty and "coin_type_id" in df_prog.columns:
+                coin_rows = df_prog[["coin_type_id","series","year","mint_mark","variety"]].drop_duplicates()
+                coin_rows["label"] = coin_rows.apply(
+                    lambda r: f"{r['series']} {r['year']}{(' ' + r['mint_mark']) if r['mint_mark'] else ''}{(' • ' + r['variety']) if r['variety'] else ''} (#{r['coin_type_id']})",
+                    axis=1
+                )
+                label_to_id = {r["label"]: int(r["coin_type_id"]) for _, r in coin_rows.iterrows()}
+                pick_label = st.selectbox("Select coin type to assign a Flip ID to:", list(label_to_id.keys()), key="ts_pick_coin")
+                coin_type_id = label_to_id[pick_label]
+
+                candidates = list_unassigned_specimens_for_type(coin_type_id, set_id)
+                if not candidates:
+                    st.caption("No unassigned on-hand Flip IDs for this type.")
+                else:
+                    spec_map = {c["specimen_code"]: int(c["id"]) for c in candidates}
+                    spec_label = st.selectbox("Choose Flip ID", list(spec_map.keys()), key="ts_pick_flip")
+                    if st.button("Assign Flip to Set", key="ts_assign_flip"):
+                        assign_specimen(set_id, coin_type_id, spec_map[spec_label])
+                        st.success("Assigned.")
+                        st.rerun()
+
+                asn = list_assignments(set_id)
+                if asn:
+                    st.write("Current assignments for this set:")
+                    df_asn = pd.DataFrame(asn)
+                    st.dataframe(df_asn, use_container_width=True, hide_index=True)
+                    to_unassign = st.selectbox("Unassign a Flip ID", options=[a["specimen_code"] for a in asn], key="ts_unas_pick")
+                    if st.button("Unassign Flip", key="ts_unas_btn"):
+                        unassign_specimen(set_id, to_unassign)
+                        st.success("Unassigned.")
+                        st.rerun()
+            else:
+                st.caption("No progress rows with coin_type_id to assign against.")
+
+# ======== Define / Catalog ========
+with tab_define:
+    st.subheader("Create or edit a Type Set")
+    left, right = st.columns(2)
+
+    with left:
+        sets = list_type_sets()
+        mode = st.radio("Mode", ["Create new", "Edit existing"], horizontal=True, key="ts_mode")
+        if mode == "Create new":
+            new_name = st.text_input("Set name", key="ts_new_name")
+            new_desc = st.text_area("Description", key="ts_new_desc")
+            if st.button("Create set", key="ts_create_btn"):
+                if not new_name:
+                    st.error("Please enter a set name.")
+                else:
+                    sid = upsert_type_set(new_name, new_desc)
+                    st.success(f"Created set #{sid}.")
+                    st.rerun()
+            work_set_id = None
+        else:
+            if not sets:
+                st.info("No existing sets; switch to 'Create new'.")
+                work_set_id = None
+            else:
+                options = {f"{s['name']} (#{s['id']})": s['id'] for s in sets}
+                label = st.selectbox("Choose a set to edit", list(options.keys()), key="ts_edit_pick")
+                work_set_id = options[label]
+                sel = next(x for x in sets if x["id"] == work_set_id)
+                e_name = st.text_input("Rename set", value=sel["name"], key="ts_edit_name")
+                e_desc = st.text_area("Edit description", value=sel.get("description",""), key="ts_edit_desc")
+                if st.button("Save set info", key="ts_save_info"):
+                    upsert_type_set(e_name, e_desc, set_id=work_set_id)
+                    st.success("Saved.")
+                    st.rerun()
+
+    with right:
+        st.markdown("**Auto-build from catalog**")
+        all_series = list_series()
+        if not all_series:
+            st.caption("No series found in catalog (coin_master). Add master records first.")
+        else:
+            sel_series = st.multiselect("Series", options=all_series, key="ts_auto_series")
+            c1, c2, c3 = st.columns([1,1,1])
+            start_year = c1.number_input("Start year", min_value=0, step=1, value=0, help="0 = no lower bound")
+            end_year = c2.number_input("End year", min_value=0, step=1, value=0, help="0 = no upper bound")
+            proof_filter = c3.selectbox("Proof filter", ["Any","Proofs only","Non-proof only"], index=0)
+            years = None
+            if start_year and end_year and end_year >= start_year:
+                years = (int(start_year), int(end_year))
+            elif start_year and not end_year:
+                years = (int(start_year), 9999)
+            elif end_year and not start_year:
+                years = (0, int(end_year))
+            preview = []
+            if st.button("Preview matches", key="ts_preview_btn"):
+                preview = find_coin_types(series=sel_series or None, years=years, proof_filter=proof_filter)
+                if not preview:
+                    st.info("No matches with those filters.")
+            if preview:
+                df_prev = pd.DataFrame(preview)
+                df_prev["label"] = df_prev.apply(
+                    lambda r: f"{r['series']} {r['year']}{(' ' + r['mint_mark']) if r['mint_mark'] else ''}{(' • ' + r['variety']) if r['variety'] else ''}"
+                              + (" (Proof)" if r.get('is_proof') else ""),
+                    axis=1
+                )
+                st.dataframe(df_prev[["id","label"]], use_container_width=True, hide_index=True)
+                if mode == "Edit existing" and work_set_id:
+                    if st.button("Add ALL previewed to set", key="ts_add_all_preview"):
+                        add_members(work_set_id, [int(x["id"]) for x in preview])
+                        st.success(f"Added {len(preview)} types to set.")
+                        st.rerun()
+                else:
+                    st.caption("Switch to 'Edit existing' to add these to a specific set.")
+
+        st.markdown("---")
+        st.markdown("**Manual add/remove members**")
+        if mode == "Edit existing" and work_set_id:
+            # Manual add
+            candidates = find_coin_types()
+            if candidates:
+                labels = {
+                    f"{r['series']} {r['year']}{(' ' + r['mint_mark']) if r['mint_mark'] else ''}{(' • ' + r['variety']) if r['variety'] else ''} "
+                    f"(#{r['id']}){' (Proof)' if r.get('is_proof') else ''}": int(r['id'])
+                    for r in candidates
+                }
+                add_sel = st.multiselect("Add coin types", options=list(labels.keys()), key="ts_man_add")
+                if st.button("Add selected", key="ts_man_add_btn"):
+                    add_members(work_set_id, [labels[x] for x in add_sel])
+                    st.success(f"Added {len(add_sel)} types.")
+                    st.rerun()
+
+            # Remove
+            current = list_members(work_set_id)
+            if current:
+                labels_r = {
+                    f"{r['series']} {r['year']}{(' ' + r['mint_mark']) if r['mint_mark'] else ''}{(' • ' + r['variety']) if r['variety'] else ''} "
+                    f"(#{r['coin_type_id']}){' (Proof)' if r.get('is_proof') else ''}": int(r['coin_type_id'])
+                    for r in current
+                }
+                rem_sel = st.multiselect("Remove coin types", options=list(labels_r.keys()), key="ts_man_rem")
+                if st.button("Remove selected", key="ts_man_rem_btn"):
+                    remove_members(work_set_id, [labels_r[x] for x in rem_sel])
+                    st.success(f"Removed {len(rem_sel)} types.")
+                    st.rerun()
+        else:
+            st.caption("Select 'Edit existing' and choose a set to manage members.")
