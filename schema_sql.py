@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS coin_master (
   country         TEXT NOT NULL,
   denomination    TEXT NOT NULL,                -- e.g., "Half Dollar"
   series          TEXT NOT NULL,                -- e.g., "Kennedy"
-  metal           TEXT,                         -- "Ag","Au","CuNi"
+  metal           TEXT,                         -- "Ag","Au","CuNi","Pt","Pd"
   fineness        REAL,                         -- e.g., 0.900
   weight_grams    REAL,                         -- per-coin gross weight
   diameter_mm     REAL,
@@ -18,9 +18,9 @@ CREATE TABLE IF NOT EXISTS coin_master (
   years_start     INTEGER,
   years_end       INTEGER,
   notes           TEXT,
+  asset_category  TEXT NOT NULL DEFAULT 'COIN', -- NEW: COIN / ROUND / BAR
   UNIQUE(country, denomination, series)
 );
-
 CREATE INDEX IF NOT EXISTS idx_coin_master_series ON coin_master(series);
 
 CREATE TABLE IF NOT EXISTS coin_type (
@@ -155,7 +155,7 @@ END;
 /* ---------- Pricing & valuation ---------- */
 CREATE TABLE IF NOT EXISTS metal_price (
   id               INTEGER PRIMARY KEY,
-  metal            TEXT NOT NULL,                -- 'Ag','Au','Pt'
+  metal            TEXT NOT NULL,                -- 'Ag','Au','Pt','Pd'
   price_per_oz_usd REAL NOT NULL,
   quoted_at_utc    TEXT NOT NULL
 );
@@ -201,38 +201,8 @@ CREATE TABLE IF NOT EXISTS image (
   caption         TEXT
 );
 
-/* ---------- NEW: Per-series coin code sequencing & per-coin IDs ("specimens") ---------- */
-CREATE TABLE IF NOT EXISTS series_code (
-  series    TEXT PRIMARY KEY,             -- e.g., 'Peace', 'Morgan'
-  prefix    TEXT NOT NULL,                -- e.g., 'P','M','B','CB'
-  next_seq  INTEGER NOT NULL DEFAULT 1
-);
-
-CREATE TABLE IF NOT EXISTS specimen (
-  id            INTEGER PRIMARY KEY,
-  code          TEXT NOT NULL UNIQUE,     -- e.g., 'P1', 'M23'
-  coin_type_id  INTEGER NOT NULL REFERENCES coin_type(id),
-  lot_id        INTEGER REFERENCES lot(id) ON DELETE SET NULL,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  sold_line_id  INTEGER REFERENCES tx_line(id),  -- set when specifically sold (optional)
-  notes         TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_specimen_type ON specimen(coin_type_id);
-CREATE INDEX IF NOT EXISTS idx_specimen_lot ON specimen(lot_id);
-CREATE INDEX IF NOT EXISTS idx_specimen_sold ON specimen(sold_line_id);
-
-/* Helper view for quick lookups */
-CREATE VIEW IF NOT EXISTS v_specimen_basic AS
-SELECT sp.code,
-       cm.series, ct.year, ct.mint_mark, ct.variety,
-       sp.lot_id,
-       CASE WHEN sp.sold_line_id IS NULL THEN 'ON_HAND' ELSE 'SOLD' END AS status
-FROM specimen sp
-JOIN coin_type ct ON ct.id = sp.coin_type_id
-JOIN coin_master cm ON cm.id = ct.master_id;
-
 /* ---------- Views ---------- */
--- Latest spot per metal
+/* Latest spot per metal */
 CREATE VIEW IF NOT EXISTS v_latest_spot AS
 SELECT metal, price_per_oz_usd
 FROM metal_price mp
@@ -240,7 +210,7 @@ WHERE quoted_at_utc = (
   SELECT MAX(quoted_at_utc) FROM metal_price x WHERE x.metal = mp.metal
 );
 
--- Latest guide price per (type, grade_text)
+/* Latest guide price per (type, grade_text) */
 CREATE TABLE IF NOT EXISTS guide_price (
   id            INTEGER PRIMARY KEY,
   coin_type_id  INTEGER NOT NULL REFERENCES coin_type(id) ON DELETE CASCADE,
@@ -298,8 +268,31 @@ SELECT
 FROM lot l
 JOIN coin_type ct ON ct.id = l.coin_type_id
 JOIN coin_master cm ON cm.id = ct.master_id
-WHERE l.qty_remaining > 0 AND cm.metal IN ('Ag','Au','Pt')
+WHERE l.qty_remaining > 0 AND cm.metal IN ('Ag','Au','Pt','Pd')
 GROUP BY cm.metal;
+
+/* NEW: Bullion inventory by category (ROUND/BAR) */
+DROP VIEW IF EXISTS v_inventory_bullion_by_category;
+CREATE VIEW v_inventory_bullion_by_category AS
+WITH latest AS (
+  SELECT metal, price_per_oz_usd FROM v_latest_spot
+)
+SELECT
+  COALESCE(cm.asset_category,'COIN') AS category,
+  cm.metal AS metal,
+  SUM(l.qty_remaining) AS units_on_hand,
+  SUM(l.qty_remaining * COALESCE(cm.weight_grams,0) / 31.1034768) AS gross_oz,
+  SUM(l.qty_remaining * (COALESCE(cm.weight_grams,0) * COALESCE(cm.fineness,0)) / 31.1034768) AS fine_oz,
+  ROUND(SUM(
+    l.qty_remaining
+    * (COALESCE(cm.weight_grams,0) * COALESCE(cm.fineness,0)) / 31.1034768
+    * (SELECT price_per_oz_usd FROM latest WHERE metal = cm.metal)
+  ), 2) AS melt_value_usd
+FROM lot l
+JOIN coin_type ct ON ct.id = l.coin_type_id
+JOIN coin_master cm ON cm.id = ct.master_id
+WHERE l.qty_remaining > 0 AND COALESCE(cm.asset_category,'COIN') IN ('ROUND','BAR')
+GROUP BY COALESCE(cm.asset_category,'COIN'), cm.metal;
 
 /* Per-lot chosen valuation */
 CREATE VIEW IF NOT EXISTS v_lot_value_details AS

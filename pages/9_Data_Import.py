@@ -36,7 +36,6 @@ def _read_any(uploaded_file) -> pd.DataFrame:
     name = uploaded_file.name.lower()
     if name.endswith(".xlsx") or name.endswith(".xls"):
         try:
-            import pandas as pd
             return pd.read_excel(uploaded_file)
         except Exception as e:
             st.error(f"Unable to read Excel: {e}. Ensure 'openpyxl' is installed.")
@@ -50,68 +49,8 @@ def _fnum(v):
         return None
 
 # -------------------------------
-# Tab 1 — Quick Templates (tx lines template)
+# Core import routine for transactions (used by tabs 0 & 1)
 # -------------------------------
-with tabs[0]:
-    st.subheader("⚡ Quick Templates (Transactions)")
-    st.caption("Upload the exact **coin_lines_template.csv** or **.xlsx** (headers must match). Also supports optional **asset_category** for the coin master.")
-    uploaded = st.file_uploader("Upload template file", type=["csv","xlsx","xls"], key="qi_file")
-
-    TEMPLATE_REQUIRED = [
-        'tx_date','tx_type','country','denomination','series','year','mint_mark','variety','quantity','unit_price'
-    ]
-    OPTIONAL = [
-        'party','currency','shipping','tax','fees','notes',
-        'purchase_grade_company','purchase_grade_text','purchase_numeric_grade',
-        'estimated_grade_text','estimated_numeric_grade','valuation_method','manual_est_unit_value','storage_location',
-        'slab_cert','asset_category'
-    ]
-
-    if uploaded is not None:
-        df = _read_any(uploaded)
-        st.write("**Preview**")
-        st.dataframe(df.head(20), use_container_width=True)
-
-        missing = [c for c in TEMPLATE_REQUIRED if c not in df.columns]
-        if missing:
-            st.error("Missing required columns in your file: " + ", ".join(missing))
-            st.stop()
-
-        # Ensure optional columns exist
-        for c in OPTIONAL:
-            if c not in df.columns:
-                df[c] = None
-
-        # Normalize core fields
-        df['tx_date'] = pd.to_datetime(df['tx_date'], errors='coerce').dt.date
-        df['tx_type'] = df['tx_type'].astype(str).str.strip().str.upper()
-        df['quantity'] = pd.to_numeric(df['quantity'], errors='coerce').fillna(0).astype(int)
-        df['unit_price'] = pd.to_numeric(df['unit_price'], errors='coerce').fillna(0.0)
-
-        # Normalize asset_category
-        if 'asset_category' in df.columns:
-            df['asset_category'] = df['asset_category'].apply(_norm_asset_category)
-
-        # Validate
-        if df['tx_date'].isna().any():
-            st.error("Some rows have invalid tx_date.")
-            st.stop()
-        if (~df['tx_type'].isin(['BUY','SELL'])).any():
-            st.error("Some rows have invalid tx_type (must be BUY/SELL).")
-            st.stop()
-
-        dry_run = st.checkbox("Dry run (validate only—don’t write)", value=True, key="qi_dryrun")
-        if st.button("Validate & Import from Template", type="primary", key="qi_run"):
-            _import_transactions(df, dry_run)
-
-    with st.expander("Template Columns", expanded=False):
-        st.markdown("""
-        **Required**: `tx_date`, `tx_type`, `country`, `denomination`, `series`, `year`, `mint_mark`, `variety`, `quantity`, `unit_price`  
-        **Optional**: `party`, `currency`, `shipping`, `tax`, `fees`, `notes`, `purchase_grade_company`, `purchase_grade_text`, `purchase_numeric_grade`, `estimated_grade_text`, `estimated_numeric_grade`, `valuation_method`, `manual_est_unit_value`, `storage_location`, `slab_cert`, `asset_category`  
-        **asset_category** values: **COIN**, **ROUND**, **BAR**
-        """)
-
-# Core import routine for transactions (shared between tabs 0 and 1)
 def _import_transactions(df: pd.DataFrame, dry_run: bool):
     problems = []
     created_tx = 0
@@ -222,6 +161,68 @@ def _import_transactions(df: pd.DataFrame, dry_run: bool):
         st.success(f"Imported {created_tx} transactions and {created_lines} line items.")
 
 # -------------------------------
+# Tab 1 — Quick Templates (transactions)
+# -------------------------------
+with tabs[0]:
+    st.subheader("⚡ Quick Templates (Transactions)")
+    st.caption("Upload the exact **coin_lines_template.csv** or **.xlsx** (headers must match). Also supports optional **asset_category** for the coin master.")
+    uploaded = st.file_uploader("Upload template file", type=["csv","xlsx","xls"], key="qi_file")
+
+    TEMPLATE_REQUIRED = [
+        'tx_date','tx_type','country','denomination','series','year','mint_mark','variety','quantity','unit_price'
+    ]
+    OPTIONAL = [
+        'party','currency','shipping','tax','fees','notes',
+        'purchase_grade_company','purchase_grade_text','purchase_numeric_grade',
+        'estimated_grade_text','estimated_numeric_grade','valuation_method','manual_est_unit_value','storage_location',
+        'slab_cert','asset_category'
+    ]
+
+    if uploaded is not None:
+        df = _read_any(uploaded)
+        st.write("**Preview**")
+        st.dataframe(df.head(20), use_container_width=True)
+
+        missing = [c for c in TEMPLATE_REQUIRED if c not in df.columns]
+        if missing:
+            st.error("Missing required columns in your file: " + ", ".join(missing))
+            st.stop()
+
+        # Ensure optional columns exist
+        for c in OPTIONAL:
+            if c not in df.columns:
+                df[c] = None
+
+        # Normalize core fields
+        df['tx_date'] = pd.to_datetime(df['tx_date'], errors='coerce').dt.date
+        df['tx_type'] = df['tx_type'].astype(str).str.strip().str.upper()
+        df['quantity'] = pd.to_numeric(df['quantity'], errors='coerce').fillna(0).astype(int)
+        df['unit_price'] = pd.to_numeric(df['unit_price'], errors='coerce').fillna(0.0)
+
+        # Normalize asset_category
+        if 'asset_category' in df.columns:
+            df['asset_category'] = df['asset_category'].apply(_norm_asset_category)
+
+        # Validate
+        if df['tx_date'].isna().any():
+            st.error("Some rows have invalid tx_date.")
+            st.stop()
+        if (~df['tx_type'].isin(['BUY','SELL'])).any():
+            st.error("Some rows have invalid tx_type (must be BUY/SELL).")
+            st.stop()
+
+        dry_run = st.checkbox("Dry run (validate only—don’t write)", value=True, key="qi_dryrun")
+        if st.button("Validate & Import from Template", type="primary", key="qi_run"):
+            _import_transactions(df, dry_run)
+
+    with st.expander("Template Columns", expanded=False):
+        st.markdown("""
+        **Required**: `tx_date`, `tx_type`, `country`, `denomination`, `series`, `year`, `mint_mark`, `variety`, `quantity`, `unit_price`  
+        **Optional**: `party`, `currency`, `shipping`, `tax`, `fees`, `notes`, `purchase_grade_company`, `purchase_grade_text`, `purchase_numeric_grade`, `estimated_grade_text`, `estimated_numeric_grade`, `valuation_method`, `manual_est_unit_value`, `storage_location`, `slab_cert`, `asset_category`  
+        **asset_category** values: **COIN**, **ROUND**, **BAR**
+        """)
+
+# -------------------------------
 # Tab 2 — Flexible Import (Column Mapper) — transactions
 # -------------------------------
 with tabs[1]:
@@ -311,7 +312,7 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("📚 Catalog Import (Coin Masters & Coin Types)")
     st.caption("Add or update **catalog** without recording transactions. Useful when seeding your collection definitions.")
-    st.markdown("- Download a CSV template: "
+    st.markdown("- Download CSV templates: "
                 "[coin_master_template.csv](sandbox:/mnt/data/templates/coin_master_template.csv) • "
                 "[coin_type_template.csv](sandbox:/mnt/data/templates/coin_type_template.csv)")
 
@@ -428,7 +429,7 @@ with tabs[2]:
                 for _, r in df.iterrows():
                     try:
                         mid = upsert_coin_master(str(r["country"]), str(r["denomination"]), str(r["series"]))
-                        ct_id = upsert_coin_type(
+                        _ = upsert_coin_type(
                             mid, int(r["year"]),
                             (_norm_text(r.get("mint_mark")) or ""),
                             (_norm_text(r.get("variety")) or ""),
