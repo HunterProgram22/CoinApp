@@ -1,4 +1,5 @@
 # pages/2_Inventory.py
+import io
 import streamlit as st
 import pandas as pd
 
@@ -18,6 +19,23 @@ except Exception:  # pragma: no cover
     inventory_details_slabbed = None
 
 st.header("Inventory")
+
+def _download_csv_button(df: pd.DataFrame, filename: str, money_cols=None, int_cols=None, key: str = None):
+    """Render a CSV download button for df, rounding money cols to 2 decimals and casting ints."""
+    money_cols = money_cols or []
+    int_cols = int_cols or []
+    df_export = df.copy()
+    for c in money_cols:
+        if c in df_export.columns:
+            df_export[c] = pd.to_numeric(df_export[c], errors='coerce').round(2)
+    for c in int_cols:
+        if c in df_export.columns:
+            # Cast safely to int, preserving blanks
+            df_export[c] = pd.to_numeric(df_export[c], errors='coerce')
+            if df_export[c].notna().all():
+                df_export[c] = df_export[c].astype(int)
+    csv = df_export.to_csv(index=False).encode('utf-8')
+    st.download_button("Download CSV", data=csv, file_name=filename, mime="text/csv", key=key)
 
 # Four views
 view = st.radio(
@@ -45,6 +63,7 @@ if view == "By Type":
         df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
         st.dataframe(df, use_container_width=True, hide_index=True,
                      column_config={'Qty on Hand': st.column_config.NumberColumn(format="%d")})
+        _download_csv_button(df, "inventory_by_type.csv", money_cols=[], int_cols=['Qty on Hand'], key="csv_by_type")
     else:
         st.info("No inventory yet.")
 
@@ -59,11 +78,16 @@ elif view == "By Series (summary)":
         col_order = [c for c in ['series','coins','est_value_usd'] if c in df.columns]
         df = df[col_order + [c for c in df.columns if c not in col_order]]
         df = df.rename(columns={'series': 'Series', 'coins': 'Coins', 'est_value_usd': 'Est. Value (USD)'})
-        st.dataframe(df, use_container_width=True, hide_index=True,
-                     column_config={
-                         'Coins': st.column_config.NumberColumn(format="%d"),
-                         'Est. Value (USD)': st.column_config.NumberColumn(format="$%.2f"),
-                     })
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                'Coins': st.column_config.NumberColumn(format="%d"),
+                'Est. Value (USD)': st.column_config.NumberColumn(format="$%.2f"),
+            },
+        )
+        _download_csv_button(df, "inventory_by_series_summary.csv", money_cols=['Est. Value (USD)'], int_cols=['Coins'], key="csv_series_summary")
     else:
         st.info("No inventory yet.")
 
@@ -118,6 +142,12 @@ elif view == "Filter by Series (detail)":
                         "Melt/coin (USD)": st.column_config.NumberColumn(format="$%.2f"),
                         "Melt×Qty (USD)": st.column_config.NumberColumn(format="$%.2f"),
                     },
+                )
+                _download_csv_button(
+                    df, f"inventory_detail_{selected.replace(' ', '_')}.csv",
+                    money_cols=["Unit Cost (USD)","Melt/coin (USD)","Melt×Qty (USD)"],
+                    int_cols=["Qty"],
+                    key="csv_series_detail",
                 )
 
 # --------------------------------------------------
@@ -176,6 +206,12 @@ else:
                     "Melt×Qty (USD)": st.column_config.NumberColumn(format="$%.2f"),
                 },
             )
+            _download_csv_button(
+                df, f"inventory_{'proof' if choice.startswith('Proof') else 'slabbed'}.csv",
+                money_cols=["Unit Cost (USD)","Melt/coin (USD)","Melt×Qty (USD)"],
+                int_cols=["Qty"],
+                key="csv_flags",
+            )
 
 # Optional: basic Lots section remains when on By Type view
 lots = list_lots()
@@ -197,3 +233,4 @@ if lots and view == "By Type":
             "Manual Unit (USD)": st.column_config.NumberColumn(format="$%.2f"),
         },
     )
+    _download_csv_button(dfl, "lots.csv", money_cols=["Unit Cost (USD)","Manual Unit (USD)"], int_cols=["Qty"], key="csv_lots")
