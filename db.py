@@ -72,28 +72,44 @@ if IS_TURSO:
             return RowLike(m) if m is not None else None
         @property
         def lastrowid(self):
-            # Prefer cached id computed on execute; fall back to SA's attribute if present.
             if self._lastrowid is not None:
                 return self._lastrowid
             try:
-                return self._result.lastrowid  # may exist on SQLite
+                return self._result.lastrowid  # may exist on SQLite backends
             except Exception:
                 return None
 
     class _SAConnWrapper:
-        """Minimal sqlite3-like wrapper so existing code keeps working."""
+        """Minimal sqlite3-like wrapper so existing code keeps working.
+        IMPORTANT: now manages an explicit transaction and commits on success.
+        """
         def __init__(self, engine):
             self._engine = engine
             self._conn = None
+            self._trans = None
             self.row_factory = None  # compatibility
+
         def __enter__(self):
             self._conn = self._engine.connect()
+            # Explicit transaction: commit on successful __exit__, rollback on error
+            self._trans = self._conn.begin()
+            # Enforce FK behavior
             self._conn.exec_driver_sql("PRAGMA foreign_keys=ON;")
             return self
+
         def __exit__(self, exc_type, exc, tb):
-            if self._conn is not None:
-                self._conn.close()
-                self._conn = None
+            try:
+                if self._trans is not None:
+                    if exc_type is None:
+                        self._trans.commit()
+                    else:
+                        self._trans.rollback()
+            finally:
+                if self._conn is not None:
+                    self._conn.close()
+                    self._conn = None
+                self._trans = None
+
         def execute(self, sql: str, params=()):
             res = self._conn.exec_driver_sql(sql, params)
             wrap = _SAResultWrapper(res, self._conn)
@@ -104,14 +120,12 @@ if IS_TURSO:
                 is_insert = False
             if is_insert:
                 lid = None
-                # Try SA-provided lastrowid first
                 try:
                     lid = res.lastrowid
                 except Exception:
                     lid = None
                 if lid is None:
                     try:
-                        # SQLite-compatible: works on libSQL/Turso
                         lid = self._conn.exec_driver_sql("SELECT last_insert_rowid()").scalar()
                     except Exception:
                         lid = None
