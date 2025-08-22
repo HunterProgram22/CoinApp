@@ -7,4 +7,4 @@ yfinance>=0.2
 
 # Turso / libSQL (only used when TURSO_* secrets are set)
 SQLAlchemy>=2.0
-sqlalchemy-libsql>=0.3
+sqlalchemy-libsql==0.2.0
