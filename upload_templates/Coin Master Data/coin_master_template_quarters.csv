@@ -1,2 +1,7 @@
 country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,notes
 USA,Quarter Dollar,Barber (1892-1916),Ag,0.9,6.25,24.33,1.75,Reeded,1892,1916,COIN,https://en.numista.com/catalogue/pieces10591.html,
+USA,Quarter Dollar,Standing Liberty No Stars Below Eagle (1916-1917),Ag,0.9,6.25,24.3,1.75,Reeded,1916,1917,COIN,https://en.numista.com/catalogue/pieces30785.html,
+USA,Quarter Dollar,Standing Liberty (1917-1930),Ag,0.9,6.25,24.3,1.75,Reeded,1917,1930,COIN,https://en.numista.com/catalogue/pieces3573.html,
+USA,Quarter Dollar,Washington 90% Silver (1932-1964),Ag,0.9,6.25,24.3,1.75,Reeded,1932,1964,COIN,https://en.numista.com/catalogue/pieces54.html,
+USA,Quarter Dollar,Washington (1965-1998),Cu-Ni,1,5.67,24.26,1.75,Reeded,1965,1998,COIN,https://en.numista.com/catalogue/pieces55.html,
+USA,Quarter Dollar,State Quarter Series (1999-2008),Cu-Ni,1,5.67,24.26,1.75,Reeded,1999,2008,COIN,https://en.numista.com/catalogue/series.php?id=7180,
