@@ -31,6 +31,7 @@ DB_PATH = Path(os.environ.get("COINAPP_DB_PATH", "data/coinapp.sqlite"))
 if IS_TURSO:
     # Turso / libSQL via SQLAlchemy
     from sqlalchemy import create_engine
+
     _ENGINE = create_engine(
         f"sqlite+{TURSO_DATABASE_URL}?secure=true",
         connect_args={"auth_token": TURSO_AUTH_TOKEN},
@@ -38,14 +39,46 @@ if IS_TURSO:
         future=True,
     )
 
+    class RowLike:
+        """Duck-typed like sqlite3.Row: supports row['col'] and row[0], and dict(row)."""
+        def __init__(self, mapping):
+            self._map = dict(mapping)
+            self._keys = list(self._map.keys())
+            self._vals = [self._map[k] for k in self._keys]
+        def __getitem__(self, key):
+            if isinstance(key, int):
+                return self._vals[key]
+            return self._map[key]
+        def keys(self):
+            return self._keys
+        def items(self):
+            return self._map.items()
+        def get(self, k, default=None):
+            return self._map.get(k, default)
+        def __iter__(self):
+            return iter(self._keys)
+        def __len__(self):
+            return len(self._map)
+
     class _SAResultWrapper:
-        def __init__(self, result):
-            self._result = result
+        def __init__(self, sa_result, conn):
+            self._result = sa_result
+            self._conn = conn
+            self._lastrowid = None  # set by _SAConnWrapper.execute for INSERTs
         def fetchall(self):
-            return list(self._result.mappings().all())
+            return [RowLike(m) for m in self._result.mappings().all()]
         def fetchone(self):
-            row = self._result.mappings().first()
-            return row
+            m = self._result.mappings().first()
+            return RowLike(m) if m is not None else None
+        @property
+        def lastrowid(self):
+            # Prefer cached id computed on execute; fall back to SA's attribute if present.
+            if self._lastrowid is not None:
+                return self._lastrowid
+            try:
+                return self._result.lastrowid  # may exist on SQLite
+            except Exception:
+                return None
 
     class _SAConnWrapper:
         """Minimal sqlite3-like wrapper so existing code keeps working."""
@@ -53,21 +86,37 @@ if IS_TURSO:
             self._engine = engine
             self._conn = None
             self.row_factory = None  # compatibility
-
         def __enter__(self):
             self._conn = self._engine.connect()
             self._conn.exec_driver_sql("PRAGMA foreign_keys=ON;")
             return self
-
         def __exit__(self, exc_type, exc, tb):
             if self._conn is not None:
                 self._conn.close()
                 self._conn = None
-
         def execute(self, sql: str, params=()):
-            # Keep using qmark-style '?' params
             res = self._conn.exec_driver_sql(sql, params)
-            return _SAResultWrapper(res)
+            wrap = _SAResultWrapper(res, self._conn)
+            # Best-effort lastrowid for INSERTs
+            try:
+                is_insert = sql.lstrip().upper().startswith("INSERT")
+            except Exception:
+                is_insert = False
+            if is_insert:
+                lid = None
+                # Try SA-provided lastrowid first
+                try:
+                    lid = res.lastrowid
+                except Exception:
+                    lid = None
+                if lid is None:
+                    try:
+                        # SQLite-compatible: works on libSQL/Turso
+                        lid = self._conn.exec_driver_sql("SELECT last_insert_rowid()").scalar()
+                    except Exception:
+                        lid = None
+                wrap._lastrowid = lid
+            return wrap
 
     def get_conn():
         return _SAConnWrapper(_ENGINE)
