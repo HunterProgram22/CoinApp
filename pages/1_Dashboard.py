@@ -57,6 +57,42 @@ with tab_overview:
     else:
         st.info("No metal prices yet. Add some under Admin → Metal Prices.")
 
+    # --- Quick Silver Melt Reference ---
+    spots = {r['metal']: r['price_per_oz_usd'] for r in get_latest_spot()}
+    ag = spots.get('Ag')
+
+    st.subheader("Quick Silver Melt Reference")
+    if ag is None:
+        st.info("No silver spot price found. Update via Admin → Metal Prices.")
+    else:
+        # Fine troy ounces per coin (U.S. 90% silver for pre-1965)
+        SAE_FINE_OZ = 1.00000  # American Silver Eagle (1 oz .999 fine; use 1.0 for melt calc)
+        MORGAN_PEACE_FINE_OZ = 0.77344  # Morgan/Peace dollar (26.73g, .900 fine)
+        HALF_FINE_OZ = 0.36169  # Pre-1965 half dollar (12.50g, .900 fine)
+        QUARTER_FINE_OZ = 0.18084  # Pre-1965 quarter (6.25g, .900 fine)
+        DIME_FINE_OZ = 0.07234  # Pre-1965 dime (2.50g, .900 fine)
+
+        rows = [
+            {"Item": "American Silver Eagle (1 oz)", "Fine Oz": SAE_FINE_OZ,
+             "Melt (USD)": round(ag * SAE_FINE_OZ, 2)},
+            {"Item": "Morgan/Peace Dollar (90%)", "Fine Oz": MORGAN_PEACE_FINE_OZ,
+             "Melt (USD)": round(ag * MORGAN_PEACE_FINE_OZ, 2)},
+            {"Item": "Pre-1965 Half Dollar (90%)", "Fine Oz": HALF_FINE_OZ,
+             "Melt (USD)": round(ag * HALF_FINE_OZ, 2)},
+            {"Item": "Pre-1965 Quarter (90%)", "Fine Oz": QUARTER_FINE_OZ,
+             "Melt (USD)": round(ag * QUARTER_FINE_OZ, 2)},
+            {"Item": "Pre-1965 Dime (90%)", "Fine Oz": DIME_FINE_OZ,
+             "Melt (USD)": round(ag * DIME_FINE_OZ, 2)},
+        ]
+        df_qs = pd.DataFrame(rows)
+        # Format for display
+        df_qs["Melt (USD)"] = df_qs["Melt (USD)"].map(lambda x: f"${x:,.2f}")
+        df_qs["Fine Oz"] = df_qs["Fine Oz"].map(lambda x: f"{x:.5f}")
+        # Make 'Item' the index so there's no numeric index column
+        df_qs = df_qs.set_index("Item")
+        st.dataframe(df_qs, use_container_width=True)
+    # --- end Quick Silver Melt Reference ---
+
 # ========================
 # TAB: SERIES SUMMARY
 # ========================
