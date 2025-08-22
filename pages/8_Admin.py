@@ -134,7 +134,8 @@ with tab_master:
                                         placeholder="https://en.numista.com/catalogue/...",
                                         key=f"cm_numista_{mid}")
             if numista_url:
-                st.link_button("Open Numista", numista_url, type="secondary", key=f"cm_numista_btn_{mid}")
+                # Older Streamlit builds don't accept `key=` here; omit it.
+                st.link_button("Open Numista", numista_url, type="secondary")
 
             notes = st.text_area("Notes", m.get("notes") or "", height=80, key=f"cm_notes_{mid}")
 
