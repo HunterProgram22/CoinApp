@@ -7,21 +7,23 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS coin_master (
   id              INTEGER PRIMARY KEY,
   country         TEXT NOT NULL,
-  denomination    TEXT NOT NULL,                -- e.g., "Half Dollar"
-  series          TEXT NOT NULL,                -- e.g., "Kennedy"
-  metal           TEXT,                         -- "Ag","Au","CuNi","Pt","Pd"
-  fineness        REAL,                         -- e.g., 0.900
-  weight_grams    REAL,                         -- per-coin gross weight
+  denomination    TEXT NOT NULL,
+  series          TEXT NOT NULL,
+  metal           TEXT,
+  fineness        REAL,
+  weight_grams    REAL,
   diameter_mm     REAL,
   thickness_mm    REAL,
   edge            TEXT,
   years_start     INTEGER,
   years_end       INTEGER,
   notes           TEXT,
-  asset_category  TEXT NOT NULL DEFAULT 'COIN', -- COIN / ROUND / BAR
+  asset_category  TEXT NOT NULL DEFAULT 'COIN',
+  numista_url     TEXT,
   UNIQUE(country, denomination, series)
 );
 CREATE INDEX IF NOT EXISTS idx_coin_master_series ON coin_master(series);
+CREATE INDEX IF NOT EXISTS idx_coin_master_numista_url ON coin_master(numista_url);
 
 CREATE TABLE IF NOT EXISTS coin_type (
   id              INTEGER PRIMARY KEY,
