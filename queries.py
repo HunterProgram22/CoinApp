@@ -53,28 +53,79 @@ def upsert_storage(name: str, category: str = None, description: str = None) -> 
         )
         return cur.lastrowid
 
-def upsert_coin_master(country: str, denomination: str, series: str,
-                       metal: str = None, fineness: float = None, weight_grams: float = None,
-                       diameter_mm: float = None, thickness_mm: float = None, edge: str = None,
-                       years_start: int = None, years_end: int = None, notes: str = None) -> int:
-    country = country.strip()
-    denomination = denomination.strip()
-    series = series.strip()
+def upsert_coin_master(
+    country: str,
+    denomination: str,
+    series: str,
+    metal: str = None,
+    fineness: float = None,
+    weight_grams: float = None,
+    diameter_mm: float = None,
+    thickness_mm: float = None,
+    edge: str = None,
+    years_start: int = None,
+    years_end: int = None,
+    notes: str = None,
+    asset_category: str = None,   # NEW
+    numista_url: str = None       # NEW
+) -> int:
+    # normalize empties to None so we don’t overwrite with '' via COALESCE
+    def _n(v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return None if s == '' or s.lower() in {'nan','none','-','—'} else s
+
+    metal = _n(metal)
+    edge = _n(edge)
+    notes = _n(notes)
+    asset_category = _n(asset_category)
+    numista_url = _n(numista_url)
+
     with get_conn() as cx:
-        row = _fetchone(cx, "SELECT id FROM coin_master WHERE country=? AND denomination=? AND series=?",
-                        (country, denomination, series))
+        row = cx.execute(
+            "SELECT id, asset_category, numista_url FROM coin_master WHERE country=? AND denomination=? AND series=?",
+            (country, denomination, series),
+        ).fetchone()
+
         if row:
-            return row[0]
+            # Upsert behavior: if you pass additional metadata later, fill it in without clobbering existing values.
+            cx.execute(
+                """
+                UPDATE coin_master
+                   SET metal           = COALESCE(?, metal),
+                       fineness        = COALESCE(?, fineness),
+                       weight_grams    = COALESCE(?, weight_grams),
+                       diameter_mm     = COALESCE(?, diameter_mm),
+                       thickness_mm    = COALESCE(?, thickness_mm),
+                       edge            = COALESCE(?, edge),
+                       years_start     = COALESCE(?, years_start),
+                       years_end       = COALESCE(?, years_end),
+                       notes           = COALESCE(?, notes),
+                       asset_category  = COALESCE(?, asset_category),
+                       numista_url     = COALESCE(?, numista_url)
+                 WHERE id = ?
+                """,
+                (metal, fineness, weight_grams, diameter_mm, thickness_mm, edge,
+                 years_start, years_end, notes, asset_category, numista_url, row["id"]),
+            )
+            return row["id"]
+
         cur = cx.execute(
             """
-            INSERT INTO coin_master(country, denomination, series, metal, fineness, weight_grams,
-                                    diameter_mm, thickness_mm, edge, years_start, years_end, notes)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO coin_master(
+                country, denomination, series,
+                metal, fineness, weight_grams, diameter_mm, thickness_mm, edge,
+                years_start, years_end, notes, asset_category, numista_url
+            )
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (country, denomination, series, metal, fineness, weight_grams,
-             diameter_mm, thickness_mm, edge, years_start, years_end, notes),
+             diameter_mm, thickness_mm, edge, years_start, years_end, notes,
+             asset_category, numista_url),
         )
         return cur.lastrowid
+
 
 def upsert_coin_type(master_id: int, year: int, mint_mark: str = None, variety: str = None,
                      mintage: int = None, is_proof: int = 0, designer: str = None,

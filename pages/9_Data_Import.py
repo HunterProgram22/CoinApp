@@ -354,7 +354,9 @@ with tabs[2]:
                         _fnum(r.get("diameter_mm")), _fnum(r.get("thickness_mm")), _norm_text(r.get("edge")),
                         int(r["years_start"]) if pd.notna(r["years_start"]) else None,
                         int(r["years_end"]) if pd.notna(r["years_end"]) else None,
-                        _norm_text(r.get("notes"))
+                        _norm_text(r.get("notes")),
+                        asset_category=_norm_text(r.get("asset_category")),
+                        numista_url=_norm_text(r.get("numista_url"))
                     )
                     if dry_run_cm:
                         created += 1
