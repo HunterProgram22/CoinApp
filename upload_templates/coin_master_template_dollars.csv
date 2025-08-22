@@ -1,0 +1,6 @@
+country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,notes
+USA,Dollar,Morgan (1878-1921),Ag,0.9,26.73,38.1,2.4,Reeded,1878,1921,Coin,https://en.numista.com/catalogue/pieces1492.html,
+USA,Dollar,Peace (1921-1935),Ag,0.9,26.73,38.1,2.4,Reeded,1921,1964,Coin,https://en.numista.com/catalogue/pieces5580.html,
+USA,Dollar,Eisenhower Silver (1971-1976),Ag,0.4,24.59,38.1,2.54,Reeded,1971,1976,Coin,https://en.numista.com/catalogue/pieces15202.html,
+USA,Dollar,Eisenhower (1971-1978),Cu-Ni,1,22.68,38.1,2.58,Reeded,1971,1978,Coin,https://en.numista.com/catalogue/pieces1346.html,
+USA,Dollar,"Susan B. Anthony (1979-1981, 1999)",Cu-Ni,1,8.1,26.5,2,Reeded,1979,1999,Coin,https://en.numista.com/catalogue/pieces3548.html,

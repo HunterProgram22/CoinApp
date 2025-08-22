@@ -1,3 +1,14 @@
 tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,series,year,mint_mark,variety,quantity,unit_price,purchase_grade_company,purchase_grade_text,purchase_numeric_grade,estimated_grade_text,estimated_numeric_grade,valuation_method,manual_est_unit_value,storage_location
-2025-01-15,BUY,Local Dealer,USD,10.0,0.0,0.0,Show pickup,USA,Half Dollar,Kennedy,1964,P,,5,12.0,RAW,XF,,XF45,45,MELT_ONLY,,Safe A - Tray 1
-2025-01-20,SELL,eBay Buyer,USD,0.0,0.0,0.0,eBay sale,USA,Half Dollar,Kennedy,1964,P,,2,18.0,,,,,,AUTO,,Safe A - Tray 1
+2025-06-29,Buy,Kat's Grandparents,USD,$0.00 ,0,0,,,,,,,,,,,,,,,,,
+2025-07-12,Buy,Money Metals Exchange,USD,$0.80 ,0,0,,,,,,,,,,,,,,,,,
+2025-07-20,Buy,Columbus Coin Show,USD,$0.00 ,0,0,,,,,,,,,,,,,,,,,
+2025-07-20,Buy,Edward Lyons / Unky,USD,$0.00 ,0,0,,,,,,,,,,,,,,,,,
+2025-08-07,Buy,eBay - divine_62911,USD,$2.28 ,0,0,,,,,,,,,,,,,,,,,
+2025-08-07,Buy,eBay - divine_62911,USD,$0.00 ,0,0,,,,,,,,,,,,,,,,,
+2025-08-10,Buy,eBay - mbarrcoins,USD,$0.00 ,0,0,,,,,,,,,,,,,,,,,
+2025-08-11,Buy,Don's Loans,USD,$0.00 ,0,0,,,,,,,,,,,,,,,,,
+2025-08-11,Buy,Don's Loans,USD,$0.00 ,0,0,,,,,,,,,,,,,,,,,
+2025-08-12,Buy,Fabulous Finds,USD,$0.00 ,0,0,,,,,,,,,,,,,,,,,
+2025-08-17,Buy,Columbus Coin Show,USD,$0.00 ,0,0,,,,,,,,,,,,,,,,,
+2025-08-19,Buy,Don's Loans,USD,$0.00 ,0,0,,,,,,,,,,,,,,,,,
+2025-08-19,Buy,Don's Loans,USD,$0.00 ,0,0,,,,,,,,,,,,,,,,,

@@ -9,7 +9,6 @@ import pandas as pd
 import streamlit as st
 
 from db import get_conn, init_db, DB_PATH
-from schema_sql import SCHEMA_SQL
 
 st.set_page_config(page_title="Admin", page_icon="🛠️", layout="wide")
 st.title("🛠️ Admin")
@@ -31,7 +30,7 @@ def _clean_str(val):
     if val is None:
         return None
     s = str(val).strip()
-    if s.lower() in {"nan", "none", "-"}:
+    if s.lower() in {"nan", "none", "-", "—"}:
         return ""
     return s
 
@@ -104,34 +103,42 @@ with tab_master:
         else:
             labels = [f"{m['country']} • {m['denomination']} • {m['series']}" for m in masters]
             lbl_to_row = {lab: m for lab, m in zip(labels, masters)}
-            pick = st.selectbox("Select a coin master", labels)
+            pick = st.selectbox("Select a coin master", labels, key="cm_pick_label")
             m = lbl_to_row[pick]
+            mid = m["id"]
 
             ca, cb, cc = st.columns(3)
-            country = ca.text_input("Country", m.get("country") or "")
-            denomination = cb.text_input("Denomination", m.get("denomination") or "")
-            series = cc.text_input("Series", m.get("series") or "")
+            country = ca.text_input("Country", m.get("country") or "", key=f"cm_country_{mid}")
+            denomination = cb.text_input("Denomination", m.get("denomination") or "", key=f"cm_denom_{mid}")
+            series = cc.text_input("Series", m.get("series") or "", key=f"cm_series_{mid}")
 
             c1, c2, c3 = st.columns(3)
-            metal = c1.text_input("Metal (Ag/Au/Pt/Pd/...)", m.get("metal") or "")
-            fineness = c2.number_input("Fineness (0-1)", min_value=0.0, max_value=1.0, step=0.001, value=float(m.get("fineness") or 0.0))
-            weight_grams = c3.number_input("Weight (g)", min_value=0.0, step=0.001, value=float(m.get("weight_grams") or 0.0))
+            metal = c1.text_input("Metal (Ag/Au/Pt/Pd/...)", m.get("metal") or "", key=f"cm_metal_{mid}")
+            fineness = c2.number_input("Fineness (0-1)", min_value=0.0, max_value=1.0, step=0.001,
+                                       value=float(m.get("fineness") or 0.0), key=f"cm_fineness_{mid}")
+            weight_grams = c3.number_input("Weight (g)", min_value=0.0, step=0.001,
+                                           value=float(m.get("weight_grams") or 0.0), key=f"cm_weight_{mid}")
 
             y1, y2 = st.columns(2)
-            years_start = y1.number_input("Years start", min_value=0, step=1, value=int(m.get("years_start") or 0))
-            years_end = y2.number_input("Years end", min_value=0, step=1, value=int(m.get("years_end") or 0))
+            years_start = y1.number_input("Years start", min_value=0, step=1,
+                                          value=int(m.get("years_start") or 0), key=f"cm_ystart_{mid}")
+            years_end = y2.number_input("Years end", min_value=0, step=1,
+                                        value=int(m.get("years_end") or 0), key=f"cm_yend_{mid}")
 
             asset_category = st.selectbox("Asset Category", ["COIN","ROUND","BAR"],
-                                          index=["COIN","ROUND","BAR"].index((m.get("asset_category") or "COIN")))
+                                          index=["COIN","ROUND","BAR"].index((m.get("asset_category") or "COIN")),
+                                          key=f"cm_assetcat_{mid}")
 
-            # NEW: Numista URL
-            numista_url = st.text_input("Numista URL (optional)", m.get("numista_url") or "", placeholder="https://en.numista.com/catalogue/...")
+            # Numista URL
+            numista_url = st.text_input("Numista URL (optional)", m.get("numista_url") or "",
+                                        placeholder="https://en.numista.com/catalogue/...",
+                                        key=f"cm_numista_{mid}")
             if numista_url:
-                st.link_button("Open Numista", numista_url, type="secondary")
+                st.link_button("Open Numista", numista_url, type="secondary", key=f"cm_numista_btn_{mid}")
 
-            notes = st.text_area("Notes", m.get("notes") or "", height=80)
+            notes = st.text_area("Notes", m.get("notes") or "", height=80, key=f"cm_notes_{mid}")
 
-            if st.button("Save changes", type="primary", use_container_width=False):
+            if st.button("Save changes", type="primary", use_container_width=False, key=f"cm_save_{mid}"):
                 with get_conn() as cx:
                     cx.execute(
                         """
@@ -148,12 +155,13 @@ with tab_master:
                                numista_url=?,
                                notes=?
                          WHERE id=?
-                        """,
+                        """
+                        ,
                         (
                             _clean_str(country), _clean_str(denomination), _clean_str(series),
                             _clean_str(metal), fineness or None, weight_grams or None,
                             years_start or None, years_end or None,
-                            asset_category, _clean_str(numista_url), _clean_str(notes), m["id"],
+                            asset_category, _clean_str(numista_url), _clean_str(notes), mid,
                         )
                     )
                 st.success("Saved.")
@@ -165,21 +173,22 @@ with tab_master:
 
     with right:
         st.subheader("Add New")
-        with st.form("add_master"):
+        with st.form("cm_add_form"):
             ac, ad = st.columns(2)
-            new_country = ac.text_input("Country*")
-            new_denom = ad.text_input("Denomination*")
-            new_series = st.text_input("Series*")
+            new_country = ac.text_input("Country*", key="cm_add_country")
+            new_denom = ad.text_input("Denomination*", key="cm_add_denom")
+            new_series = st.text_input("Series*", key="cm_add_series")
             row1, row2, row3 = st.columns(3)
-            new_metal = row1.text_input("Metal")
-            new_fineness = row2.number_input("Fineness", min_value=0.0, max_value=1.0, step=0.001, value=0.0)
-            new_weight = row3.number_input("Weight (g)", min_value=0.0, step=0.001, value=0.0)
+            new_metal = row1.text_input("Metal", key="cm_add_metal")
+            new_fineness = row2.number_input("Fineness", min_value=0.0, max_value=1.0, step=0.001, value=0.0, key="cm_add_fineness")
+            new_weight = row3.number_input("Weight (g)", min_value=0.0, step=0.001, value=0.0, key="cm_add_weight")
             y1, y2 = st.columns(2)
-            new_start = y1.number_input("Years start", min_value=0, step=1, value=0)
-            new_end = y2.number_input("Years end", min_value=0, step=1, value=0)
-            new_asset_cat = st.selectbox("Asset Category", ["COIN","ROUND","BAR"], index=0, key="new_asset_cat")
-            new_numista = st.text_input("Numista URL (optional)", placeholder="https://en.numista.com/catalogue/...")
-            new_notes = st.text_area("Notes", height=80)
+            new_start = y1.number_input("Years start", min_value=0, step=1, value=0, key="cm_add_ystart")
+            new_end = y2.number_input("Years end", min_value=0, step=1, value=0, key="cm_add_yend")
+            new_asset_cat = st.selectbox("Asset Category", ["COIN","ROUND","BAR"], index=0, key="cm_add_asset_cat")
+            new_numista = st.text_input("Numista URL (optional)", placeholder="https://en.numista.com/catalogue/...",
+                                        key="cm_add_numista")
+            new_notes = st.text_area("Notes", height=80, key="cm_add_notes")
 
             submitted = st.form_submit_button("Create master")
             if submitted:
@@ -192,7 +201,8 @@ with tab_master:
                             INSERT INTO coin_master (country, denomination, series, metal, fineness, weight_grams,
                                                      years_start, years_end, asset_category, numista_url, notes)
                             VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                            """,
+                            """
+                            ,
                             (
                                 _clean_str(new_country), _clean_str(new_denom), _clean_str(new_series),
                                 _clean_str(new_metal), float(new_fineness or 0) or None,
@@ -219,25 +229,26 @@ with tab_types:
         with st.expander("➕ Add a Coin Type", expanded=True):
             labels = [f"{m['country']} • {m['denomination']} • {m['series']}" for m in masters]
             lbl_to_id = {lab: m['id'] for lab, m in zip(labels, masters)}
-            pick_m_label = st.selectbox("Master", labels, key="new_type_master")
+            pick_m_label = st.selectbox("Master", labels, key="ct_add_master")
             master_id = lbl_to_id[pick_m_label]
 
             c1, c2, c3 = st.columns(3)
-            year = c1.number_input("Year*", min_value=0, step=1, value=0)
-            mint_mark = c2.text_input("Mint Mark ('', P, D, S, W ...)", value="")
-            variety = c3.text_input("Variety", value="")
+            year = c1.number_input("Year*", min_value=0, step=1, value=0, key="ct_add_year")
+            mint_mark = c2.text_input("Mint Mark ('', P, D, S, W ...)", value="", key="ct_add_mint")
+            variety = c3.text_input("Variety", value="", key="ct_add_variety")
             c4, c5 = st.columns(2)
-            mintage = c4.number_input("Mintage", min_value=0, step=1, value=0)
-            is_proof = c5.checkbox("Is Proof?")
+            mintage = c4.number_input("Mintage", min_value=0, step=1, value=0, key="ct_add_mintage")
+            is_proof = c5.checkbox("Is Proof?", key="ct_add_proof")
 
-            if st.button("Create Type", type="primary"):
+            if st.button("Create Type", type="primary", key="ct_add_submit"):
                 with get_conn() as cx:
                     try:
                         cx.execute(
                             """
                             INSERT INTO coin_type(master_id, year, mint_mark, variety, mintage, is_proof)
                             VALUES (?,?,?,?,?,?)
-                            """, (master_id, int(year or 0), _clean_str(mint_mark), _clean_str(variety), int(mintage or 0), 1 if is_proof else 0)
+                            """
+                            , (master_id, int(year or 0), _clean_str(mint_mark), _clean_str(variety), int(mintage or 0), 1 if is_proof else 0)
                         )
                         st.success("Coin Type created.")
                         st.rerun()
@@ -248,7 +259,6 @@ with tab_types:
 
         # Edit Type
         st.subheader("Edit Existing Type")
-        # Build a friendly label that omits raw IDs
         type_rows = []
         with get_conn() as cx:
             type_rows = cx.execute(
@@ -270,26 +280,28 @@ with tab_types:
                 for r in type_rows
             ]
             lbl_to_row = {lab: r for lab, r in zip(options, type_rows)}
-            pick_t = st.selectbox("Select coin type", options, key="edit_type_pick")
+            pick_t = st.selectbox("Select coin type", options, key="ct_edit_pick")
             row = lbl_to_row[pick_t]
+            tid = row["id"]
 
             c1, c2, c3 = st.columns(3)
-            e_year = c1.number_input("Year", min_value=0, step=1, value=int(row["year"] or 0))
-            e_mint = c2.text_input("Mint Mark", value=row["mint_mark"] or "")
-            e_var = c3.text_input("Variety", value=row["variety"] or "")
+            e_year = c1.number_input("Year", min_value=0, step=1, value=int(row["year"] or 0), key=f"ct_year_{tid}")
+            e_mint = c2.text_input("Mint Mark", value=row["mint_mark"] or "", key=f"ct_mint_{tid}")
+            e_var = c3.text_input("Variety", value=row["variety"] or "", key=f"ct_var_{tid}")
             c4, c5 = st.columns(2)
-            e_mintage = c4.number_input("Mintage", min_value=0, step=1, value=int(row.get("mintage") or 0))
-            e_proof = c5.checkbox("Is Proof?", value=bool(row.get("is_proof")))
+            e_mintage = c4.number_input("Mintage", min_value=0, step=1, value=int(row.get("mintage") or 0), key=f"ct_mintage_{tid}")
+            e_proof = c5.checkbox("Is Proof?", value=bool(row.get("is_proof")), key=f"ct_proof_{tid}")
 
-            if st.button("Save Type Changes"):
+            if st.button("Save Type Changes", key=f"ct_save_{tid}"):
                 with get_conn() as cx:
                     cx.execute(
                         """
                         UPDATE coin_type
                            SET year=?, mint_mark=?, variety=?, mintage=?, is_proof=?
                          WHERE id=?
-                        """,
-                        (int(e_year or 0), _clean_str(e_mint), _clean_str(e_var), int(e_mintage or 0), 1 if e_proof else 0, row["id"])
+                        """
+                        ,
+                        (int(e_year or 0), _clean_str(e_mint), _clean_str(e_var), int(e_mintage or 0), 1 if e_proof else 0, tid)
                     )
                 st.success("Type updated.")
                 st.rerun()
@@ -322,11 +334,11 @@ with tab_prices:
 
     st.markdown("**Add/Update a Price**")
     c1, c2, c3 = st.columns(3)
-    metal = c1.selectbox("Metal", ["Ag","Au","Pt","Pd"], index=0)
-    price = c2.number_input("Price per oz (USD)", min_value=0.0, step=0.01, value=0.0)
+    metal = c1.selectbox("Metal", ["Ag","Au","Pt","Pd"], index=0, key="mp_metal")
+    price = c2.number_input("Price per oz (USD)", min_value=0.0, step=0.01, value=0.0, key="mp_price")
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
-    if st.button("Save Price"):
+    if st.button("Save Price", key="mp_save"):
         with get_conn() as cx:
             cx.execute(
                 "INSERT INTO metal_price (metal, price_per_oz_usd, quoted_at_utc) VALUES (?,?,?)",
@@ -340,7 +352,7 @@ with tab_prices:
 
     c1, c2 = st.columns([1, 3])
     with c1:
-        if st.button("Update Ag/Au/Pt/Pd from Yahoo"):
+        if st.button("Update Ag/Au/Pt/Pd from Yahoo", key="mp_yahoo_btn"):
             try:
                 import yfinance as yf
             except Exception as e:
@@ -383,10 +395,10 @@ with tab_maint:
             for r in tx_rows
         ]
         lbl_to_id = {lab: r["id"] for lab, r in zip(opts, tx_rows)}
-        pick = st.selectbox("Pick a transaction to void", opts)
+        pick = st.selectbox("Pick a transaction to void", opts, key="vd_tx_pick")
         tx_id = lbl_to_id[pick]
 
-        if st.button("Void Transaction", type="primary"):
+        if st.button("Void Transaction", type="primary", key="vd_tx_void"):
             try:
                 with get_conn() as cx:
                     cx.execute("DELETE FROM tx WHERE id=?", (tx_id,))
@@ -406,13 +418,12 @@ with tab_maint:
             for l in lots
         ]
         lbl_to_row = {lab: l for lab, l in zip(labels, lots)}
-        pick_lot = st.selectbox("Pick a lot", labels)
+        pick_lot = st.selectbox("Pick a lot", labels, key="vd_lot_pick")
         chosen = lbl_to_row[pick_lot]
 
-        if st.button("Delete Lot", type="secondary"):
+        if st.button("Delete Lot", type="secondary", key="vd_lot_delete"):
             try:
                 with get_conn() as cx:
-                    # ensure no relief rows
                     used = cx.execute("SELECT COUNT(1) AS c FROM lot_relief WHERE lot_id=?", (chosen["id"],)).fetchone()["c"]
                     if used and used > 0:
                         st.error("This lot has relief (sales) linked. Cannot delete.")
@@ -433,7 +444,7 @@ with tab_reset:
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("Create Backup (.sqlite download)"):
+        if st.button("Create Backup (.sqlite download)", key="reset_backup_btn"):
             try:
                 bio = io.BytesIO()
                 with open(DB_PATH, "rb") as f:
@@ -444,17 +455,18 @@ with tab_reset:
                     data=bio,
                     file_name=f"coinapp-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.sqlite",
                     mime="application/octet-stream",
-                    use_container_width=True
+                    use_container_width=True,
+                    key="reset_download_btn"
                 )
             except Exception as e:
                 st.error(f"Backup failed: {e}")
     with c2:
         st.warning("Reset will delete the database file and rebuild with the current schema. This cannot be undone.")
-        if st.button("💥 Reset DB (drop & recreate)", type="primary"):
+        if st.button("💥 Reset DB (drop & recreate)", type="primary", key="reset_drop_btn"):
             try:
                 if os.path.exists(DB_PATH):
                     os.remove(DB_PATH)
-                init_db()  # uses current SCHEMA_SQL
+                init_db()
                 st.success("Database reset complete.")
                 st.rerun()
             except Exception as e:
