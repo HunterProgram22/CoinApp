@@ -318,7 +318,7 @@ JOIN coin_type ct ON ct.id = tl.coin_type_id
 JOIN coin_master cm ON cm.id = ct.master_id
 GROUP BY tl.id;
 
-/* Bullion: by category (ROUND/BAR) */
+/* Bullion: by category (ROUND/BAR/BULLION COIN) */
 DROP VIEW IF EXISTS v_inventory_bullion_by_category;
 CREATE VIEW v_inventory_bullion_by_category AS
 WITH latest AS (SELECT metal, price_per_oz_usd FROM v_latest_spot)
@@ -336,10 +336,10 @@ SELECT
 FROM lot l
 JOIN coin_type ct ON ct.id = l.coin_type_id
 JOIN coin_master cm ON cm.id = ct.master_id
-WHERE l.qty_remaining > 0 AND COALESCE(cm.asset_category,'COIN') IN ('ROUND','BAR')
+WHERE l.qty_remaining > 0 AND COALESCE(cm.asset_category,'COIN') IN ('ROUND','BAR','BULLION COIN')
 GROUP BY COALESCE(cm.asset_category,'COIN'), cm.metal;
 
-/* Bullion: by series (ROUND/BAR) */
+/* Bullion: by series (ROUND/BAR/BULLION COIN) */
 DROP VIEW IF EXISTS v_inventory_bullion_by_series;
 CREATE VIEW v_inventory_bullion_by_series AS
 WITH latest AS (SELECT metal, price_per_oz_usd FROM v_latest_spot)
@@ -360,6 +360,6 @@ SELECT
 FROM lot l
 JOIN coin_type ct ON ct.id = l.coin_type_id
 JOIN coin_master cm ON cm.id = ct.master_id
-WHERE l.qty_remaining > 0 AND COALESCE(cm.asset_category,'COIN') IN ('ROUND','BAR')
+WHERE l.qty_remaining > 0 AND COALESCE(cm.asset_category,'COIN') IN ('ROUND','BAR','BULLION COIN')
 GROUP BY COALESCE(cm.asset_category,'COIN'), cm.metal, cm.series;
 """
