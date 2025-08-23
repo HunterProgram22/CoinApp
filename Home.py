@@ -21,4 +21,5 @@ st.page_link("pages/7_Coin_Type_Editor.py", label="Coin Type Editor", icon="🧩
 st.page_link("pages/8_Admin.py", label="Admin", icon="🛠️")
 st.page_link("pages/9_Data_Import.py", label="Data Import", icon="📥")
 st.page_link("pages/10_Bullion.py", label="Bullion", icon="💰")
+st.page_link("pages/11_Coin_Catalog.py", label="Coin Catalog", icon="📚")
 
