@@ -1,4 +1,3 @@
-
 # pages/8_Admin.py
 import io
 import os
@@ -9,8 +8,9 @@ import pandas as pd
 import streamlit as st
 
 from db import get_conn, init_db, DB_PATH
+from constants import ASSET_CATEGORIES
 
-ASSET_CATEGORIES = ["COIN", "ROUND", "BAR", "BULLION COIN"]
+
 
 
 st.set_page_config(page_title="Admin", page_icon="🛠️", layout="wide")
@@ -195,7 +195,6 @@ with tab_master:
             new_notes = st.text_area("Notes", height=80, key="cm_add_notes")
 
             submitted = st.form_submit_button("Create master")
-#            st.write(f"DEBUG: new_asset_cat = '{new_asset_cat}'")
             if submitted:
                 if not (new_country and new_denom and new_series):
                     st.error("Country, Denomination, and Series are required.")

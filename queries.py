@@ -71,6 +71,7 @@ def upsert_coin_master(
 ) -> int:
     # normalize empties to None so we don’t overwrite with '' via COALESCE
     def _n(v):
+        print(v)
         if v is None:
             return None
         s = str(v).strip()
@@ -80,6 +81,8 @@ def upsert_coin_master(
     edge = _n(edge)
     notes = _n(notes)
     asset_category = _n(asset_category)
+    if asset_category is None:
+        asset_category = 'COIN'
     numista_url = _n(numista_url)
 
     with get_conn() as cx:

@@ -1,4 +1,3 @@
-
 # pages/9_Data_Import.py
 import streamlit as st
 import pandas as pd
@@ -8,6 +7,7 @@ from queries import (
     create_buy_transaction, create_sell_transaction,
 )
 from db import get_conn
+from constants import ASSET_CATEGORIES
 
 st.header("📥 Data Import")
 tabs = st.tabs(["Quick Templates", "Flexible Import (Column Mapper)", "Catalog Import (Masters & Types)"])
@@ -15,7 +15,6 @@ tabs = st.tabs(["Quick Templates", "Flexible Import (Column Mapper)", "Catalog I
 # -------------------------------
 # Shared helpers
 # -------------------------------
-VALID_CATEGORIES = {"COIN","ROUND","BAR"}
 _BAD_EMPTY = {"", "-", "—", "None", "none", "null", "nan", "NaN"}
 
 def _norm_text(v):
@@ -28,9 +27,7 @@ def _norm_asset_category(v: Optional[str]) -> Optional[str]:
     if v is None:
         return None
     s = str(v).strip().upper()
-    aliases = {"COINS":"COIN","BARS":"BAR","ROUNDS":"ROUND"}
-    s = aliases.get(s, s)
-    return s if s in VALID_CATEGORIES else None
+    return s if s in ASSET_CATEGORIES else None
 
 def _read_any(uploaded_file) -> pd.DataFrame:
     name = uploaded_file.name.lower()
