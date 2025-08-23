@@ -1,0 +1,7 @@
+tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,series,year,mint_mark,variety,quantity,unit_price,purchase_grade_company,purchase_grade_text,purchase_numeric_grade,estimated_grade_text,estimated_numeric_grade,valuation_method,manual_est_unit_value,storage_location
+6/29/25,BUY,Kat's Grandparents,USD,,,,,USA,One Dollar,Peace (1921-1935),1923,-,,1,0,,,,AU50,50,,43.50,Peace Box
+6/29/25,BUY,Warehouse 61,USD,,,,,USA,One Dollar,Peace (1921-1935),1926,S,,1,29.95,,,,VF30,30,,40.33,Peace Box
+7/20/25,BUY,Columbus Coin Show,USD,,,,,USA,One Dollar,Peace (1921-1935),1922,,,1,30,,,,EF45,45,,42.17,Peace Box
+7/20/25,BUY,Columbus Coin Show,USD,,,,,USA,One Dollar,Peace (1921-1935),1923,-,,1,30,,,,EF45,45,,42.17,Peace Box
+7/20/25,BUY,Edward Lyons / Unky,USD,,,,,USA,One Dollar,Peace (1921-1935),1922,-,,1,0,,,,F10,10,,30.00,Peace Box
+8/10/25,BUY,Warehouse 61,USD,,,,,USA,One Dollar,Peace (1921-1935),1934,D,,1,50,,,,VF30,30,,50.00,Peace Box

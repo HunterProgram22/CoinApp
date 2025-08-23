@@ -133,7 +133,7 @@ with tab_sum:
             GROUP BY cm.series
             ORDER BY Coins DESC, cm.series
             """
-        rows = cx.execute(sql, params).fetchall()
+        rows = cx.execute(sql, tuple(params)).fetchall()
 
     df = pd.DataFrame([dict(r) for r in rows])
     if df.empty:
@@ -204,7 +204,7 @@ JOIN coin_master cm ON cm.id = ct.master_id
 WHERE {" AND ".join(where)}
 ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, l.id
 """
-        rows = cx.execute(sql, params).fetchall()
+        rows = cx.execute(sql, tuple(params)).fetchall()
 
     df = pd.DataFrame([dict(r) for r in rows])
     if df.empty:
