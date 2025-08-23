@@ -1,0 +1,9 @@
+country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,notes
+Canada,5 Dollars,Silver Maple Leaf,Silver,0.9999,31.103,38.0,3.29,Reeded,1988,,BULLION COIN,https://en.numista.com/catalogue/pieces2021.html,Royal Canadian Mint bullion coin with security features since 2014
+Australia,1 Dollar,Silver Kangaroo (Perth Mint),Silver,0.9999,31.107,40.90,3.50,Reeded,2016,,BULLION COIN,https://en.numista.com/catalogue/pieces143754.html,Perth Mint version with micro-laser security feature
+Australia,1 Dollar,Silver Kangaroo (Royal Australian Mint),Silver,0.999,31.103,40.60,3.20,Reeded,1993,,BULLION COIN,https://en.numista.com/catalogue/pieces143754.html,Royal Australian Mint version - design changes annually
+Austria,1.5 Euros,Silver Philharmonic,Silver,0.999,31.103,37.0,3.20,Plain,2008,,BULLION COIN,https://en.numista.com/catalogue/pieces10226.html,First silver bullion coin denominated in Euros
+United Kingdom,2 Pounds,Silver Britannia,Silver,0.999,31.21,38.61,3.00,Reeded,2013,,BULLION COIN,https://en.numista.com/catalogue/pieces10547.html,Royal Mint with advanced security features since 2019
+United Kingdom,2 Pounds,Silver Britannia (1997-2012),Silver,0.958,32.45,40.00,3.00,Reeded,1997,2012,BULLION COIN,https://en.numista.com/catalogue/pieces10547.html,Earlier version with Britannia silver alloy
+Armenia,500 Dram,Noah's Ark,Silver,0.999,31.103,38.60,2.80,Plain,2011,,BULLION COIN,https://en.numista.com/catalogue/pieces84459.html,Biblical themed design with Mount Ararat
+South Africa,1 Rand,Silver Krugerrand,Silver,0.999,31.103,38.70,2.84,Reeded,2017,,BULLION COIN,https://en.numista.com/catalogue/pieces143754.html,Silver version introduced for 50th anniversary

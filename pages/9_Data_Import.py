@@ -40,10 +40,22 @@ def _read_any(uploaded_file) -> pd.DataFrame:
     return pd.read_csv(uploaded_file)
 
 def _fnum(v):
+    """Convert to float, defaulting to 0.0 for Turso compatibility"""
+    if v is None or v == "" or str(v).strip().lower() in {"nan", "none", "null", "-", "—"}:
+        return 0.0
     try:
-        return float(v) if v is not None and str(v) != "" else None
-    except Exception:
-        return None
+        return float(v)
+    except (ValueError, TypeError):
+        return 0.0
+
+def _fint(v):
+    """Convert to int, defaulting to 0 for Turso compatibility"""
+    if v is None or v == "" or str(v).strip().lower() in {"nan", "none", "null", "-", "—"}:
+        return 0
+    try:
+        return int(float(v))  # Handle "1.0" -> 1
+    except (ValueError, TypeError):
+        return 0
 
 # -------------------------------
 # Core import routine for transactions (used by tabs 0 & 1)
@@ -54,9 +66,9 @@ def _import_transactions(df: pd.DataFrame, dry_run: bool):
     created_lines = 0
 
     # Group-level numeric cleanups
-    for col in ['shipping','tax','fees']:
+    for col in ['shipping', 'tax', 'fees']:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)  # Add fillna(0.0)
         else:
             df[col] = 0.0
 
@@ -116,8 +128,8 @@ def _import_transactions(df: pd.DataFrame, dry_run: bool):
 
             items.append({
                 'coin_type_id': coin_type_id,
-                'quantity': int(row.get('quantity') or 0),
-                'unit_price': float(row.get('unit_price') or 0.0),
+                'quantity': _fint(row.get('quantity')),  # Use _fint instead of int()
+                'unit_price': _fnum(row.get('unit_price')),  # Use _fnum instead of float()
                 'purchase_grade_company': _norm_text(row.get('purchase_grade_company')),
                 'purchase_grade_text': _norm_text(row.get('purchase_grade_text')),
                 'purchase_numeric_grade': _fnum(row.get('purchase_numeric_grade')),
