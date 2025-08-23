@@ -1,4 +1,3 @@
-
 # db.py — hybrid connector: Turso (libSQL via SQLAlchemy) in deploy, SQLite locally
 import os
 import sqlite3

@@ -10,6 +10,9 @@ import streamlit as st
 
 from db import get_conn, init_db, DB_PATH
 
+ASSET_CATEGORIES = ["COIN", "ROUND", "BAR", "BULLION COIN"]
+
+
 st.set_page_config(page_title="Admin", page_icon="🛠️", layout="wide")
 st.title("🛠️ Admin")
 
@@ -125,8 +128,8 @@ with tab_master:
             years_end = y2.number_input("Years end", min_value=0, step=1,
                                         value=int(m.get("years_end") or 0), key=f"cm_yend_{mid}")
 
-            asset_category = st.selectbox("Asset Category", ["COIN","ROUND","BAR"],
-                                          index=["COIN","ROUND","BAR"].index((m.get("asset_category") or "COIN")),
+            asset_category = st.selectbox("Asset Category", ASSET_CATEGORIES,
+                                          index=ASSET_CATEGORIES.index((m.get("asset_category") or "COIN")),
                                           key=f"cm_assetcat_{mid}")
 
             # Numista URL
@@ -186,7 +189,7 @@ with tab_master:
             y1, y2 = st.columns(2)
             new_start = y1.number_input("Years start", min_value=0, step=1, value=0, key="cm_add_ystart")
             new_end = y2.number_input("Years end", min_value=0, step=1, value=0, key="cm_add_yend")
-            new_asset_cat = st.selectbox("Asset Category", ["COIN","ROUND","BAR"], index=0, key="cm_add_asset_cat")
+            new_asset_cat = st.selectbox("Asset Category", ASSET_CATEGORIES, index=0, key="cm_add_asset_cat")
             new_numista = st.text_input("Numista URL (optional)", placeholder="https://en.numista.com/catalogue/...",
                                         key="cm_add_numista")
             new_notes = st.text_area("Notes", height=80, key="cm_add_notes")
