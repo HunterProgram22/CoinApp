@@ -22,4 +22,5 @@ st.page_link("pages/8_Admin.py", label="Admin", icon="🛠️")
 st.page_link("pages/9_Data_Import.py", label="Data Import", icon="📥")
 st.page_link("pages/10_Bullion.py", label="Bullion", icon="💰")
 st.page_link("pages/11_Coin_Catalog.py", label="Coin Catalog", icon="📚")
-
+st.page_link("pages/12_DB_Patches.py", label="DB Patches", icon="🧩")
+st.page_link("pages/13_Diagnostics.py", label="Diagnostics Catalog", icon="🧪")
