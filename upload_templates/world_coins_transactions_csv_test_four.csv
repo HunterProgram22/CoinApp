@@ -1,5 +1,0 @@
-tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,series,year,mint_mark,variety,quantity,unit_price,purchase_grade_company,purchase_grade_text,purchase_numeric_grade,estimated_grade_text,estimated_numeric_grade,valuation_method,manual_est_unit_value,storage_location
-5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,France,2 Francs,Mercury Commerce (1920-1927),1924,,Open 4,1,0,,,,,,AUTO,0.5,
-5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,Tunisia,2 Francs,Commerce (1921-1945),1921,,,1,0,,,,,,AUTO,3,
-5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,France,1 Franc,Mercury Commerce (1920-1927),1922,,,1,0,,,,,,AUTO,0.2,
-5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,France,1 Franc,Mercury Commerce (1920-1927),1923,,,1,0,,,,,,AUTO,0.2,
