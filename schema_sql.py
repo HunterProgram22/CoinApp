@@ -5,7 +5,7 @@ PRAGMA foreign_keys = ON;
 
 /* ---------- Reference: coin master & types ---------- */
 CREATE TABLE IF NOT EXISTS coin_master (
-  id              INTEGER PRIMARY KEY,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
   country         TEXT NOT NULL,
   denomination    TEXT NOT NULL,
   series          TEXT NOT NULL,
@@ -26,7 +26,7 @@ CREATE INDEX IF NOT EXISTS idx_coin_master_series ON coin_master(series);
 CREATE INDEX IF NOT EXISTS idx_coin_master_numista_url ON coin_master(numista_url);
 
 CREATE TABLE IF NOT EXISTS coin_type (
-  id              INTEGER PRIMARY KEY,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
   master_id       INTEGER NOT NULL REFERENCES coin_master(id) ON DELETE CASCADE,
   year            INTEGER NOT NULL,
   mint_mark       TEXT DEFAULT '',
@@ -43,14 +43,14 @@ CREATE INDEX IF NOT EXISTS idx_coin_type_year ON coin_type(year);
 
 /* ---------- Parties & storage ---------- */
 CREATE TABLE IF NOT EXISTS party (
-  id              INTEGER PRIMARY KEY,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
   name            TEXT NOT NULL,
   kind            TEXT,
   contact         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS storage_location (
-  id              INTEGER PRIMARY KEY,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
   name            TEXT NOT NULL,
   category        TEXT,
   description     TEXT
@@ -58,119 +58,136 @@ CREATE TABLE IF NOT EXISTS storage_location (
 
 /* ---------- Transactions & lines ---------- */
 CREATE TABLE IF NOT EXISTS tx (
-  id              INTEGER PRIMARY KEY,
-  tx_date         TEXT NOT NULL,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  tx_date         DATE NOT NULL,
   tx_type         TEXT NOT NULL CHECK (tx_type IN ('BUY','SELL','FEE','ADJUST','GIFT_IN','GIFT_OUT','TRANSFER')),
-  party_id        INTEGER REFERENCES party(id),
+  party_id        INTEGER REFERENCES party(id) ON DELETE SET NULL,
   currency        TEXT NOT NULL DEFAULT 'USD',
-  shipping        REAL DEFAULT 0,
-  tax             REAL DEFAULT 0,
-  fees            REAL DEFAULT 0,
+  shipping        DECIMAL(10,2) DEFAULT 0.00,
+  tax             DECIMAL(10,2) DEFAULT 0.00,
+  fees            DECIMAL(10,2) DEFAULT 0.00,
   notes           TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tx_date ON tx(tx_date);
+CREATE INDEX IF NOT EXISTS idx_tx_party_id ON tx(party_id);
 
 CREATE TABLE IF NOT EXISTS tx_line (
-  id              INTEGER PRIMARY KEY,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
   tx_id           INTEGER NOT NULL REFERENCES tx(id) ON DELETE CASCADE,
-  coin_type_id    INTEGER REFERENCES coin_type(id),
+  coin_type_id    INTEGER NOT NULL REFERENCES coin_type(id) ON DELETE RESTRICT,
   quantity        INTEGER NOT NULL CHECK (quantity <> 0),
-  unit_price      REAL,
+  unit_price      DECIMAL(10,2),
   grade_company   TEXT,
   grade_text      TEXT,
-  numeric_grade   REAL,
+  numeric_grade   DECIMAL(4,1),
   slab_cert       TEXT,
   condition_notes TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_tx_line_type ON tx_line(coin_type_id);
-CREATE INDEX IF NOT EXISTS idx_tx_line_tx ON tx_line(tx_id);
+
+/* Indexes for foreign keys and common queries */
+CREATE INDEX IF NOT EXISTS idx_tx_line_tx_id ON tx_line(tx_id);
+CREATE INDEX IF NOT EXISTS idx_tx_line_coin_type_id ON tx_line(coin_type_id);
+CREATE INDEX IF NOT EXISTS idx_tx_line_tx_date ON tx_line(tx_id); -- For joins with tx by date
 
 /* ---------- Inventory lots & relief ---------- */
 CREATE TABLE IF NOT EXISTS lot (
-  id                      INTEGER PRIMARY KEY,
+  id                      INTEGER PRIMARY KEY AUTOINCREMENT,
   acquisition_line_id     INTEGER NOT NULL REFERENCES tx_line(id) ON DELETE CASCADE,
-  coin_type_id            INTEGER NOT NULL REFERENCES coin_type(id),
-  acquired_date           TEXT NOT NULL,
+  coin_type_id            INTEGER NOT NULL REFERENCES coin_type(id) ON DELETE RESTRICT,
+  acquired_date           DATE NOT NULL,
   qty_acquired            INTEGER NOT NULL CHECK (qty_acquired > 0),
   qty_remaining           INTEGER NOT NULL CHECK (qty_remaining >= 0),
-  unit_cost               REAL NOT NULL,
-  storage_location_id     INTEGER REFERENCES storage_location(id),
+  unit_cost               DECIMAL(10,2) NOT NULL,
+  storage_location_id     INTEGER REFERENCES storage_location(id) ON DELETE SET NULL,
 
   purchase_grade_company  TEXT,
   purchase_grade_text     TEXT,
-  purchase_numeric_grade  REAL,
+  purchase_numeric_grade  DECIMAL(4,1),
   slab_cert               TEXT,
 
   estimated_grade_text    TEXT,
-  estimated_numeric_grade REAL,
+  estimated_numeric_grade DECIMAL(4,1),
 
   valuation_method        TEXT NOT NULL DEFAULT 'AUTO'
                            CHECK (valuation_method IN ('AUTO','MELT_ONLY','GUIDE_ONLY','MANUAL')),
-  manual_est_unit_value   REAL,
+  manual_est_unit_value   DECIMAL(10,2),
 
   status                  TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CLOSED')),
   notes                   TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_lot_type ON lot(coin_type_id);
-CREATE INDEX IF NOT EXISTS idx_lot_storage ON lot(storage_location_id);
+
+/* Indexes for foreign keys and common queries */
+CREATE INDEX IF NOT EXISTS idx_lot_acquisition_line_id ON lot(acquisition_line_id);
+CREATE INDEX IF NOT EXISTS idx_lot_coin_type_id ON lot(coin_type_id);
+CREATE INDEX IF NOT EXISTS idx_lot_storage_location_id ON lot(storage_location_id);
 CREATE INDEX IF NOT EXISTS idx_lot_status ON lot(status);
-CREATE INDEX IF NOT EXISTS idx_lot_date ON lot(acquired_date);
+CREATE INDEX IF NOT EXISTS idx_lot_acquired_date ON lot(acquired_date);
+CREATE INDEX IF NOT EXISTS idx_lot_remaining_open ON lot(qty_remaining) WHERE status = 'OPEN'; -- For inventory queries
 
 /* Relief mapping */
 CREATE TABLE IF NOT EXISTS lot_relief (
-  id                INTEGER PRIMARY KEY,
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
   lot_id            INTEGER NOT NULL REFERENCES lot(id) ON DELETE CASCADE,
   sell_line_id      INTEGER NOT NULL REFERENCES tx_line(id) ON DELETE CASCADE,
   quantity          INTEGER NOT NULL CHECK (quantity > 0),
-  proceeds_per_unit REAL
+  proceeds_per_unit DECIMAL(10,2)
 );
-CREATE INDEX IF NOT EXISTS idx_lot_relief_lot ON lot_relief(lot_id);
-CREATE INDEX IF NOT EXISTS idx_lot_relief_sell ON lot_relief(sell_line_id);
 
-/* Triggers */
+/* Indexes for foreign keys */
+CREATE INDEX IF NOT EXISTS idx_lot_relief_lot_id ON lot_relief(lot_id);
+CREATE INDEX IF NOT EXISTS idx_lot_relief_sell_line_id ON lot_relief(sell_line_id);
+
+/* Triggers - Fixed logic for better error handling */
 CREATE TRIGGER IF NOT EXISTS trg_lot_relief_before_insert
 BEFORE INSERT ON lot_relief
 BEGIN
-  SELECT CASE WHEN (SELECT qty_remaining FROM lot WHERE id = NEW.lot_id) < NEW.quantity
-              THEN RAISE(ABORT, 'Not enough quantity in lot') END;
+  SELECT CASE 
+    WHEN (SELECT qty_remaining FROM lot WHERE id = NEW.lot_id) < NEW.quantity
+    THEN RAISE(ABORT, 'Insufficient quantity in lot - available: ' || 
+                     (SELECT qty_remaining FROM lot WHERE id = NEW.lot_id) || 
+                     ', requested: ' || NEW.quantity)
+    END;
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_lot_relief_after_insert
 AFTER INSERT ON lot_relief
 BEGIN
-  UPDATE lot SET qty_remaining = qty_remaining - NEW.quantity,
-                 status = CASE WHEN qty_remaining - NEW.quantity = 0 THEN 'CLOSED' ELSE status END
-   WHERE id = NEW.lot_id;
+  UPDATE lot 
+  SET qty_remaining = qty_remaining - NEW.quantity,
+      status = CASE WHEN qty_remaining - NEW.quantity = 0 THEN 'CLOSED' ELSE status END
+  WHERE id = NEW.lot_id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_lot_relief_after_delete
 AFTER DELETE ON lot_relief
 BEGIN
-  UPDATE lot SET qty_remaining = qty_remaining + OLD.quantity,
-                 status = 'OPEN'
-   WHERE id = OLD.lot_id;
+  UPDATE lot 
+  SET qty_remaining = qty_remaining + OLD.quantity,
+      status = CASE WHEN qty_remaining + OLD.quantity > 0 THEN 'OPEN' ELSE status END
+  WHERE id = OLD.lot_id;
 END;
 
 /* ---------- Pricing ---------- */
 CREATE TABLE IF NOT EXISTS metal_price (
-  id               INTEGER PRIMARY KEY,
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
   metal            TEXT NOT NULL,                -- 'Ag','Au','Pt','Pd'
-  price_per_oz_usd REAL NOT NULL,
-  quoted_at_utc    TEXT NOT NULL
+  price_per_oz_usd DECIMAL(10,2) NOT NULL,
+  quoted_at_utc    DATETIME NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_metal_price_time ON metal_price(metal, quoted_at_utc);
+CREATE INDEX IF NOT EXISTS idx_metal_price_metal_time ON metal_price(metal, quoted_at_utc DESC);
 
 CREATE TABLE IF NOT EXISTS fx_rate (
-  id              INTEGER PRIMARY KEY,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
   base_ccy        TEXT NOT NULL,
   quote_ccy       TEXT NOT NULL,
-  rate            REAL NOT NULL,
-  quoted_at_utc   TEXT NOT NULL
+  rate            DECIMAL(12,6) NOT NULL,
+  quoted_at_utc   DATETIME NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_fx_rate_pair_time ON fx_rate(base_ccy, quote_ccy, quoted_at_utc DESC);
 
 /* ---------- Org ---------- */
 CREATE TABLE IF NOT EXISTS tag (
-  id              INTEGER PRIMARY KEY,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
   name            TEXT NOT NULL UNIQUE
 );
 
@@ -181,25 +198,30 @@ CREATE TABLE IF NOT EXISTS coin_type_tag (
 );
 
 CREATE TABLE IF NOT EXISTS image (
-  id              INTEGER PRIMARY KEY,
-  coin_type_id    INTEGER REFERENCES coin_type(id),
-  lot_id          INTEGER REFERENCES lot(id),
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  coin_type_id    INTEGER REFERENCES coin_type(id) ON DELETE CASCADE,
+  lot_id          INTEGER REFERENCES lot(id) ON DELETE CASCADE,
   file_path       TEXT NOT NULL,
   caption         TEXT
 );
 
+/* Indexes for foreign keys */
+CREATE INDEX IF NOT EXISTS idx_image_coin_type_id ON image(coin_type_id);
+CREATE INDEX IF NOT EXISTS idx_image_lot_id ON image(lot_id);
+
 /* ---------- Guide pricing ---------- */
 CREATE TABLE IF NOT EXISTS guide_price (
-  id            INTEGER PRIMARY KEY,
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
   coin_type_id  INTEGER NOT NULL REFERENCES coin_type(id) ON DELETE CASCADE,
   grade_text    TEXT NOT NULL,
-  numeric_grade REAL,
-  price_usd     REAL NOT NULL,
-  as_of         TEXT NOT NULL,
+  numeric_grade DECIMAL(4,1),
+  price_usd     DECIMAL(10,2) NOT NULL,
+  as_of         DATE NOT NULL,
   source        TEXT,
   UNIQUE (coin_type_id, grade_text, as_of)
 );
-CREATE INDEX IF NOT EXISTS idx_guide_price_type_grade ON guide_price(coin_type_id, grade_text, as_of);
+CREATE INDEX IF NOT EXISTS idx_guide_price_coin_type_id ON guide_price(coin_type_id);
+CREATE INDEX IF NOT EXISTS idx_guide_price_grade_date ON guide_price(coin_type_id, grade_text, as_of DESC);
 
 /* ---------- Views ---------- */
 /* Latest spot per metal */
