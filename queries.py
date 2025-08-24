@@ -152,15 +152,14 @@ def upsert_coin_type(master_id: int, year: int, mint_mark: str = None, variety: 
 
 def list_coin_types() -> List[dict]:
     with get_conn() as cx:
-        rows = _fetchall(cx, """
-            SELECT ct.id,
-                   cm.series, ct.year,
-                   COALESCE(NULLIF(TRIM(ct.mint_mark), ''), '') AS mint_mark,
-                   COALESCE(NULLIF(TRIM(ct.variety), ''), '')   AS variety
-              FROM coin_type ct
-              JOIN coin_master cm ON cm.id = ct.master_id
-             ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
-        """)
+        rows = cx.execute("""
+            SELECT ct.id, cm.series, ct.year,
+                   COALESCE(ct.mint_mark, '') AS mint_mark,
+                   COALESCE(ct.variety, '') AS variety
+            FROM coin_type ct
+            JOIN coin_master cm ON cm.id = ct.master_id
+            ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
+        """).fetchall()
         return [dict(r) for r in rows]
 
 # ------------------------------------------------------------------

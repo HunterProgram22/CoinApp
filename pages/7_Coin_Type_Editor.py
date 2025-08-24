@@ -3,6 +3,7 @@
 import streamlit as st
 import pandas as pd
 from db import get_conn
+from queries import list_coin_types
 
 st.header("🧩 Coin Type & Guide Price Editor")
 
@@ -25,55 +26,6 @@ def _normalize_variety(v: str) -> str:
     if v.lower() in NAN_LIKE:
         return ""
     return v
-
-def _list_coin_types_for_picker():
-    """Return (labels, ids, meta) while de-duplicating rows where raw variety/mint are 'nan' text."""
-    with get_conn() as cx:
-        rows = cx.execute(
-            '''
-            SELECT ct.id,
-                   cm.country, cm.denomination, cm.series,
-                   ct.year, ct.mint_mark, ct.variety,
-                   ct.is_proof
-            FROM coin_type ct
-            JOIN coin_master cm ON cm.id = ct.master_id
-            ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
-            '''
-        ).fetchall()
-
-    by_key = {}   # normalized key -> chosen row
-    dups = {}     # normalized key -> all rows (for cleanup UI)
-    for r in rows:
-        mm_norm  = _normalize_mm(r["mint_mark"])
-        var_norm = _normalize_variety(r["variety"])
-        key = (r["series"], int(r["year"]), mm_norm, var_norm)
-
-        rec = dict(r)
-        rec.update({"_mm_norm": mm_norm, "_var_norm": var_norm, "_key": key})
-        dups.setdefault(key, []).append(rec)
-
-        # Prefer a row whose raw values are already clean; tie-breaker: lower id
-        current = by_key.get(key)
-        if current is None:
-            by_key[key] = rec
-        else:
-            cur_bad = (str(current.get("mint_mark") or "").strip().lower() in NAN_LIKE) or                       (str(current.get("variety")   or "").strip().lower() in NAN_LIKE)
-            new_bad = (str(r["mint_mark"] or "").strip().lower() in NAN_LIKE) or                       (str(r["variety"]   or "").strip().lower() in NAN_LIKE)
-            if cur_bad and not new_bad:
-                by_key[key] = rec
-            elif (cur_bad == new_bad) and (r["id"] < current["id"]):
-                by_key[key] = rec
-
-    labels, ids, meta = [], [], {}
-    for key, rec in by_key.items():
-        series, year, mm_norm, var_norm = key
-        mm_part  = f" {mm_norm}" if mm_norm else ""
-        var_part = f" • {var_norm}" if var_norm else ""
-        label = f"{series} {year}{mm_part}{var_part}  (#{rec['id']})"
-        labels.append(label)
-        ids.append(rec["id"])
-        meta[label] = {"key": key, "dups": dups.get(key, [])}
-    return labels, ids, meta
 
 def _load_coin_type(ct_id: int):
     with get_conn() as cx:
@@ -195,7 +147,7 @@ def _merge_nan_duplicate_for_key(key):
 
 # ---------- UI ----------
 
-labels, ids, meta = _list_coin_types_for_picker()
+labels, ids, meta = list_coin_types()
 if not ids:
     st.info("No coin types found. Add some via Import or Add Transaction (BUY).")
     st.stop()

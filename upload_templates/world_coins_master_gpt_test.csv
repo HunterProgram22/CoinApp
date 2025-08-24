@@ -1,0 +1,5 @@
+country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,notes
+Iceland,5 aurar,Christian X (1926-1942),Cu-Zn-Sn (Bronze),1,6,24,2,Plain,1926,1942,COIN,https://en.numista.com/catalogue/pieces6883.html,
+Germany,50 Pfennig,Third Reich (1939-1945),Al,1,1.3,22.7,1.55,Reeded,1939,1944,COIN,https://en.numista.com/catalogue/pieces1928.html,
+Germany,10 Pfennig,Third Reich (1936-1939),Cu-Al (Al-Bronze),1,4,21,1.75,Reeded,1936,1939,COIN,https://en.numista.com/catalogue/pieces2341.html,
+Morocco,1 Franc,Yusuf (1921-1924),Ni,1,7.8,27.2,1.5,Reeded,1921,1924,COIN,https://en.numista.com/catalogue/pieces1712.html,

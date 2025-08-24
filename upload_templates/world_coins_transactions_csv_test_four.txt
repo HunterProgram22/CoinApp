@@ -1,5 +1,0 @@
-tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,series,year,mint_mark,variety,quantity,unit_price,purchase_grade_company,purchase_grade_text,purchase_numeric_grade,estimated_grade_text,estimated_numeric_grade,valuation_method,manual_est_unit_value,storage_location
-2025-05-01,BUY,Edward Lyons / Unky,USD,0,0,0,,France,1 Franc,Vichy State Light Type (1942-1944),1942,,Light Type,1,0.00,,,,,,AUTO,,
-2025-05-01,BUY,Edward Lyons / Unky,USD,0,0,0,,France,10 Centimes,Third Republic (1917-1938),1929,,,1,0.00,,,,,,AUTO,,
-2025-05-01,BUY,Edward Lyons / Unky,USD,0,0,0,,Monaco,2 Francs,Louis II Undated (1943),1943,,,1,0.00,,,,,,AUTO,,
-2025-05-01,BUY,Edward Lyons / Unky,USD,0,0,0,,Germany,3 Mark,Weimar Constitution (1922-1923),1922,,,1,0.00,,,,,,AUTO,,
