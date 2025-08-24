@@ -268,17 +268,61 @@ with tab_types:
             if st.button("Create Type", type="primary", key="ct_add_submit"):
                 with get_conn() as cx:
                     try:
-                        cx.execute(
+                        st.write(
+                            f"DEBUG: Attempting to create coin type with master_id={master_id}, year={year}")
+
+                        cursor = cx.execute(
                             """
                             INSERT INTO coin_type(master_id, year, mint_mark, variety, mintage, is_proof)
                             VALUES (?,?,?,?,?,?)
-                            """
-                            , (master_id, int(year or 0), _clean_str(mint_mark), _clean_str(variety), int(mintage or 0), 1 if is_proof else 0)
+                            """,
+                            (master_id, int(year or 0), _clean_str(mint_mark), _clean_str(variety),
+                             int(mintage or 0), 1 if is_proof else 0)
                         )
+
+                        row_id = cursor.lastrowid
+                        print(f"DEBUG: Created coin type with ID {row_id}")
+                        st.write(f"DEBUG: Created coin type with ID {row_id}")
+
+                        # Immediately verify it exists
+                        verify = cx.execute("SELECT COUNT(*) FROM coin_type WHERE id = ?",
+                                            (row_id,)).fetchone()
+                        st.write(f"DEBUG: Verification count in coin_type table: {verify[0]}")
+                        print(f"DEBUG: Verification count in coin_type table: {verify[0]}")
+
+                        # Also check what we can query back
+                        created_record = cx.execute(
+                            "SELECT ct.id, cm.series FROM coin_type ct JOIN coin_master cm ON cm.id = ct.master_id WHERE ct.id = ?",
+                            (row_id,)
+                        ).fetchone()
+                        if created_record:
+                            st.write(
+                                f"DEBUG: Found created record - ID: {created_record[0]}, Series: {created_record[1]}")
+                        else:
+                            st.write("DEBUG: Could not find the created record in joined query")
+
                         st.success("Coin Type created.")
                         st.rerun()
+
                     except sqlite3.IntegrityError as e:
                         st.error(f"Could not create coin type (maybe it already exists): {e}")
+                    except Exception as e:
+                        st.error(f"Database error: {e}")
+
+            # if st.button("Create Type", type="primary", key="ct_add_submit"):
+            #     with get_conn() as cx:
+            #         try:
+            #             cx.execute(
+            #                 """
+            #                 INSERT INTO coin_type(master_id, year, mint_mark, variety, mintage, is_proof)
+            #                 VALUES (?,?,?,?,?,?)
+            #                 """
+            #                 , (master_id, int(year or 0), _clean_str(mint_mark), _clean_str(variety), int(mintage or 0), 1 if is_proof else 0)
+            #             )
+            #             st.success("Coin Type created.")
+            #             st.rerun()
+            #         except sqlite3.IntegrityError as e:
+            #             st.error(f"Could not create coin type (maybe it already exists): {e}")
 
         st.divider()
 
