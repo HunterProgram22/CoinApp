@@ -11,8 +11,6 @@ from db import get_conn, init_db, DB_PATH
 from constants import ASSET_CATEGORIES
 
 
-
-
 st.set_page_config(page_title="Admin", page_icon="🛠️", layout="wide")
 st.title("🛠️ Admin")
 
@@ -42,8 +40,9 @@ def _list_coin_masters():
         rows = cx.execute(
             """
             SELECT id, country, denomination, series, metal, fineness, weight_grams,
-                   years_start, years_end, asset_category,
-                   numista_url, notes
+                diameter_mm, thickness_mm, edge, 
+                years_start, years_end, asset_category,
+                numista_url, notes
             FROM coin_master
             ORDER BY country, denomination, series
             """
@@ -122,6 +121,15 @@ with tab_master:
             weight_grams = c3.number_input("Weight (g)", min_value=0.0, step=0.001,
                                            value=float(m.get("weight_grams") or 0.0), key=f"cm_weight_{mid}")
 
+            d1, d2, d3 = st.columns(3)
+            diameter_mm = d1.number_input("Diameter (mm)", min_value=0.0, step=0.1,
+                                          value=float(m.get("diameter_mm") or 0.0),
+                                          key=f"cm_diameter_{mid}")
+            thickness_mm = d2.number_input("Thickness (mm)", min_value=0.0, step=0.01,
+                                           value=float(m.get("thickness_mm") or 0.0),
+                                           key=f"cm_thickness_{mid}")
+            edge = d3.text_input("Edge", m.get("edge") or "", key=f"cm_edge_{mid}")
+
             y1, y2 = st.columns(2)
             years_start = y1.number_input("Years start", min_value=0, step=1,
                                           value=int(m.get("years_start") or 0), key=f"cm_ystart_{mid}")
@@ -153,6 +161,9 @@ with tab_master:
                                metal=?,
                                fineness=?,
                                weight_grams=?,
+                               diameter_mm=?,
+                               thickness_mm=?,
+                               edge=?,
                                years_start=?,
                                years_end=?,
                                asset_category=?,
@@ -164,6 +175,7 @@ with tab_master:
                         (
                             _clean_str(country), _clean_str(denomination), _clean_str(series),
                             _clean_str(metal), fineness or None, weight_grams or None,
+                            diameter_mm or None, thickness_mm or None, _clean_str(edge),
                             years_start or None, years_end or None,
                             asset_category, _clean_str(numista_url), _clean_str(notes), mid,
                         )
@@ -186,6 +198,12 @@ with tab_master:
             new_metal = row1.text_input("Metal", key="cm_add_metal")
             new_fineness = row2.number_input("Fineness", min_value=0.0, max_value=1.0, step=0.001, value=0.0, key="cm_add_fineness")
             new_weight = row3.number_input("Weight (g)", min_value=0.0, step=0.001, value=0.0, key="cm_add_weight")
+            dim1, dim2, dim3 = st.columns(3)
+            new_diameter = dim1.number_input("Diameter (mm)", min_value=0.0, step=0.1, value=0.0,
+                                             key="cm_add_diameter")
+            new_thickness = dim2.number_input("Thickness (mm)", min_value=0.0, step=0.01, value=0.0,
+                                              key="cm_add_thickness")
+            new_edge = dim3.text_input("Edge", key="cm_add_edge")
             y1, y2 = st.columns(2)
             new_start = y1.number_input("Years start", min_value=0, step=1, value=0, key="cm_add_ystart")
             new_end = y2.number_input("Years end", min_value=0, step=1, value=0, key="cm_add_yend")
@@ -203,14 +221,17 @@ with tab_master:
                         cx.execute(
                             """
                             INSERT INTO coin_master (country, denomination, series, metal, fineness, weight_grams,
+                                                     diameter_mm, thickness_mm, edge,
                                                      years_start, years_end, asset_category, numista_url, notes)
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                            """
-                            ,
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                            """,
                             (
-                                _clean_str(new_country), _clean_str(new_denom), _clean_str(new_series),
+                                _clean_str(new_country), _clean_str(new_denom),
+                                _clean_str(new_series),
                                 _clean_str(new_metal), float(new_fineness or 0) or None,
                                 float(new_weight or 0) or None,
+                                float(new_diameter or 0) or None, float(new_thickness or 0) or None,
+                                _clean_str(new_edge),
                                 int(new_start or 0) or None, int(new_end or 0) or None,
                                 new_asset_cat, _clean_str(new_numista), _clean_str(new_notes),
                             )
