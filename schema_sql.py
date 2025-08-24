@@ -1,4 +1,4 @@
-# schema_sql.py
+# schema_sql.py - Turso Compatible Version
 
 SCHEMA_SQL = r"""
 PRAGMA foreign_keys = ON;
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS coin_type (
   rev_desc        TEXT,
   UNIQUE(master_id, year, mint_mark, variety)
 );
-CREATE INDEX IF NOT EXISTS idx_coin_type_master ON coin_type(master_id);
+CREATE INDEX IF NOT EXISTS idx_coin_type_master_id ON coin_type(master_id);
 CREATE INDEX IF NOT EXISTS idx_coin_type_year ON coin_type(year);
 
 /* ---------- Parties & storage ---------- */
@@ -59,13 +59,13 @@ CREATE TABLE IF NOT EXISTS storage_location (
 /* ---------- Transactions & lines ---------- */
 CREATE TABLE IF NOT EXISTS tx (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  tx_date         DATE NOT NULL,
+  tx_date         TEXT NOT NULL,  -- ISO date format YYYY-MM-DD
   tx_type         TEXT NOT NULL CHECK (tx_type IN ('BUY','SELL','FEE','ADJUST','GIFT_IN','GIFT_OUT','TRANSFER')),
   party_id        INTEGER REFERENCES party(id) ON DELETE SET NULL,
   currency        TEXT NOT NULL DEFAULT 'USD',
-  shipping        DECIMAL(10,2) DEFAULT 0.00,
-  tax             DECIMAL(10,2) DEFAULT 0.00,
-  fees            DECIMAL(10,2) DEFAULT 0.00,
+  shipping        REAL DEFAULT 0.00,
+  tax             REAL DEFAULT 0.00,
+  fees            REAL DEFAULT 0.00,
   notes           TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tx_date ON tx(tx_date);
@@ -76,10 +76,10 @@ CREATE TABLE IF NOT EXISTS tx_line (
   tx_id           INTEGER NOT NULL REFERENCES tx(id) ON DELETE CASCADE,
   coin_type_id    INTEGER NOT NULL REFERENCES coin_type(id) ON DELETE RESTRICT,
   quantity        INTEGER NOT NULL CHECK (quantity <> 0),
-  unit_price      DECIMAL(10,2),
+  unit_price      REAL,
   grade_company   TEXT,
   grade_text      TEXT,
-  numeric_grade   DECIMAL(4,1),
+  numeric_grade   REAL,
   slab_cert       TEXT,
   condition_notes TEXT
 );
@@ -87,30 +87,29 @@ CREATE TABLE IF NOT EXISTS tx_line (
 /* Indexes for foreign keys and common queries */
 CREATE INDEX IF NOT EXISTS idx_tx_line_tx_id ON tx_line(tx_id);
 CREATE INDEX IF NOT EXISTS idx_tx_line_coin_type_id ON tx_line(coin_type_id);
-CREATE INDEX IF NOT EXISTS idx_tx_line_tx_date ON tx_line(tx_id); -- For joins with tx by date
 
 /* ---------- Inventory lots & relief ---------- */
 CREATE TABLE IF NOT EXISTS lot (
   id                      INTEGER PRIMARY KEY AUTOINCREMENT,
   acquisition_line_id     INTEGER NOT NULL REFERENCES tx_line(id) ON DELETE CASCADE,
   coin_type_id            INTEGER NOT NULL REFERENCES coin_type(id) ON DELETE RESTRICT,
-  acquired_date           DATE NOT NULL,
+  acquired_date           TEXT NOT NULL,  -- ISO date format YYYY-MM-DD
   qty_acquired            INTEGER NOT NULL CHECK (qty_acquired > 0),
   qty_remaining           INTEGER NOT NULL CHECK (qty_remaining >= 0),
-  unit_cost               DECIMAL(10,2) NOT NULL,
+  unit_cost               REAL NOT NULL,
   storage_location_id     INTEGER REFERENCES storage_location(id) ON DELETE SET NULL,
 
   purchase_grade_company  TEXT,
   purchase_grade_text     TEXT,
-  purchase_numeric_grade  DECIMAL(4,1),
+  purchase_numeric_grade  REAL,
   slab_cert               TEXT,
 
   estimated_grade_text    TEXT,
-  estimated_numeric_grade DECIMAL(4,1),
+  estimated_numeric_grade REAL,
 
   valuation_method        TEXT NOT NULL DEFAULT 'AUTO'
                            CHECK (valuation_method IN ('AUTO','MELT_ONLY','GUIDE_ONLY','MANUAL')),
-  manual_est_unit_value   DECIMAL(10,2),
+  manual_est_unit_value   REAL,
 
   status                  TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CLOSED')),
   notes                   TEXT
@@ -122,7 +121,6 @@ CREATE INDEX IF NOT EXISTS idx_lot_coin_type_id ON lot(coin_type_id);
 CREATE INDEX IF NOT EXISTS idx_lot_storage_location_id ON lot(storage_location_id);
 CREATE INDEX IF NOT EXISTS idx_lot_status ON lot(status);
 CREATE INDEX IF NOT EXISTS idx_lot_acquired_date ON lot(acquired_date);
-CREATE INDEX IF NOT EXISTS idx_lot_remaining_open ON lot(qty_remaining) WHERE status = 'OPEN'; -- For inventory queries
 
 /* Relief mapping */
 CREATE TABLE IF NOT EXISTS lot_relief (
@@ -130,22 +128,20 @@ CREATE TABLE IF NOT EXISTS lot_relief (
   lot_id            INTEGER NOT NULL REFERENCES lot(id) ON DELETE CASCADE,
   sell_line_id      INTEGER NOT NULL REFERENCES tx_line(id) ON DELETE CASCADE,
   quantity          INTEGER NOT NULL CHECK (quantity > 0),
-  proceeds_per_unit DECIMAL(10,2)
+  proceeds_per_unit REAL
 );
 
 /* Indexes for foreign keys */
 CREATE INDEX IF NOT EXISTS idx_lot_relief_lot_id ON lot_relief(lot_id);
 CREATE INDEX IF NOT EXISTS idx_lot_relief_sell_line_id ON lot_relief(sell_line_id);
 
-/* Triggers - Fixed logic for better error handling */
+/* Triggers - Simplified for compatibility */
 CREATE TRIGGER IF NOT EXISTS trg_lot_relief_before_insert
 BEFORE INSERT ON lot_relief
 BEGIN
   SELECT CASE 
     WHEN (SELECT qty_remaining FROM lot WHERE id = NEW.lot_id) < NEW.quantity
-    THEN RAISE(ABORT, 'Insufficient quantity in lot - available: ' || 
-                     (SELECT qty_remaining FROM lot WHERE id = NEW.lot_id) || 
-                     ', requested: ' || NEW.quantity)
+    THEN RAISE(ABORT, 'Insufficient quantity in lot')
     END;
 END;
 
@@ -171,19 +167,22 @@ END;
 CREATE TABLE IF NOT EXISTS metal_price (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
   metal            TEXT NOT NULL,                -- 'Ag','Au','Pt','Pd'
-  price_per_oz_usd DECIMAL(10,2) NOT NULL,
-  quoted_at_utc    DATETIME NOT NULL
+  price_per_oz_usd REAL NOT NULL,
+  quoted_at_utc    TEXT NOT NULL               -- ISO datetime format
 );
-CREATE INDEX IF NOT EXISTS idx_metal_price_metal_time ON metal_price(metal, quoted_at_utc DESC);
+
+CREATE INDEX IF NOT EXISTS idx_metal_price_metal ON metal_price(metal);
+CREATE INDEX IF NOT EXISTS idx_metal_price_time ON metal_price(quoted_at_utc DESC);
 
 CREATE TABLE IF NOT EXISTS fx_rate (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   base_ccy        TEXT NOT NULL,
   quote_ccy       TEXT NOT NULL,
-  rate            DECIMAL(12,6) NOT NULL,
-  quoted_at_utc   DATETIME NOT NULL
+  rate            REAL NOT NULL,
+  quoted_at_utc   TEXT NOT NULL                -- ISO datetime format
 );
-CREATE INDEX IF NOT EXISTS idx_fx_rate_pair_time ON fx_rate(base_ccy, quote_ccy, quoted_at_utc DESC);
+CREATE INDEX IF NOT EXISTS idx_fx_rate_pair ON fx_rate(base_ccy, quote_ccy);
+CREATE INDEX IF NOT EXISTS idx_fx_rate_time ON fx_rate(quoted_at_utc DESC);
 
 /* ---------- Org ---------- */
 CREATE TABLE IF NOT EXISTS tag (
@@ -214,14 +213,15 @@ CREATE TABLE IF NOT EXISTS guide_price (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   coin_type_id  INTEGER NOT NULL REFERENCES coin_type(id) ON DELETE CASCADE,
   grade_text    TEXT NOT NULL,
-  numeric_grade DECIMAL(4,1),
-  price_usd     DECIMAL(10,2) NOT NULL,
-  as_of         DATE NOT NULL,
+  numeric_grade REAL,
+  price_usd     REAL NOT NULL,
+  as_of         TEXT NOT NULL,                -- ISO date format YYYY-MM-DD
   source        TEXT,
   UNIQUE (coin_type_id, grade_text, as_of)
 );
 CREATE INDEX IF NOT EXISTS idx_guide_price_coin_type_id ON guide_price(coin_type_id);
-CREATE INDEX IF NOT EXISTS idx_guide_price_grade_date ON guide_price(coin_type_id, grade_text, as_of DESC);
+CREATE INDEX IF NOT EXISTS idx_guide_price_grade ON guide_price(coin_type_id, grade_text);
+CREATE INDEX IF NOT EXISTS idx_guide_price_date ON guide_price(as_of DESC);
 
 /* ---------- Views ---------- */
 /* Latest spot per metal */
@@ -282,9 +282,7 @@ WHERE l.qty_remaining > 0 AND cm.metal IN ('Ag','Au','Pt','Pd')
 GROUP BY cm.metal;
 
 /* Per Lot chosen valuation*/
-DROP VIEW IF EXISTS v_lot_value_details;
-
-CREATE VIEW v_lot_value_details AS
+CREATE VIEW IF NOT EXISTS v_lot_value_details AS
 SELECT
   l.id AS lot_id,
   cm.series, ct.year, ct.mint_mark, ct.variety,
@@ -360,8 +358,7 @@ JOIN coin_master cm ON cm.id = ct.master_id
 GROUP BY tl.id;
 
 /* Bullion: by category (ROUND/BAR/BULLION COIN) */
-DROP VIEW IF EXISTS v_inventory_bullion_by_category;
-CREATE VIEW v_inventory_bullion_by_category AS
+CREATE VIEW IF NOT EXISTS v_inventory_bullion_by_category AS
 WITH latest AS (SELECT metal, price_per_oz_usd FROM v_latest_spot)
 SELECT
   COALESCE(cm.asset_category,'COIN') AS category,
@@ -381,8 +378,7 @@ WHERE l.qty_remaining > 0 AND COALESCE(cm.asset_category,'COIN') IN ('ROUND','BA
 GROUP BY COALESCE(cm.asset_category,'COIN'), cm.metal;
 
 /* Bullion: by series (ROUND/BAR/BULLION COIN) */
-DROP VIEW IF EXISTS v_inventory_bullion_by_series;
-CREATE VIEW v_inventory_bullion_by_series AS
+CREATE VIEW IF NOT EXISTS v_inventory_bullion_by_series AS
 WITH latest AS (SELECT metal, price_per_oz_usd FROM v_latest_spot)
 SELECT
   COALESCE(cm.asset_category,'COIN') AS category,
