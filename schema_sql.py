@@ -259,39 +259,58 @@ JOIN coin_master cm ON cm.id = ct.master_id
 WHERE l.qty_remaining > 0 AND cm.metal IN ('Ag','Au','Pt','Pd')
 GROUP BY cm.metal;
 
-/* Per-lot chosen valuation */
-CREATE VIEW IF NOT EXISTS v_lot_value_details AS
+/* Per Lot chosen valuation*/
+DROP VIEW IF EXISTS v_lot_value_details;
+
+CREATE VIEW v_lot_value_details AS
 SELECT
   l.id AS lot_id,
   cm.series, ct.year, ct.mint_mark, ct.variety,
   l.qty_remaining,
   l.valuation_method,
   COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade_for_pricing,
+
   (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
     * (SELECT price_per_oz_usd FROM v_latest_spot s WHERE s.metal = cm.metal) AS melt_unit_value,
+
   (SELECT g.price_usd
      FROM v_latest_guide g
     WHERE g.coin_type_id = l.coin_type_id
       AND g.grade_text   = COALESCE(l.estimated_grade_text, l.purchase_grade_text)) AS guide_unit_value,
+
   CASE l.valuation_method
     WHEN 'MELT_ONLY'  THEN (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
                          * (SELECT price_per_oz_usd FROM v_latest_spot s WHERE s.metal = cm.metal)
-    WHEN 'GUIDE_ONLY' THEN (SELECT g.price_usd FROM v_latest_guide g
+
+    WHEN 'GUIDE_ONLY' THEN (SELECT g.price_usd
+                              FROM v_latest_guide g
                              WHERE g.coin_type_id = l.coin_type_id
                                AND g.grade_text   = COALESCE(l.estimated_grade_text, l.purchase_grade_text))
+
     WHEN 'MANUAL'     THEN l.manual_est_unit_value
+
     ELSE COALESCE(
-      (SELECT g.price_usd FROM v_latest_guide g
+      (SELECT g.price_usd
+         FROM v_latest_guide g
         WHERE g.coin_type_id = l.coin_type_id
           AND g.grade_text   = COALESCE(l.estimated_grade_text, l.purchase_grade_text)),
+
       (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
-      * (SELECT price_per_oz_usd FROM v_latest_spot s WHERE s.metal = cm.metal)
+      * (SELECT price_per_oz_usd FROM v_latest_spot s WHERE s.metal = cm.metal),
+
+      NULLIF(l.manual_est_unit_value, 0)
+
+      , NULLIF(l.unit_cost, 0)
+
+      , 0
     )
   END AS chosen_unit_value
+
 FROM lot l
-JOIN coin_type ct ON ct.id = l.coin_type_id
+JOIN coin_type  ct ON ct.id = l.coin_type_id
 JOIN coin_master cm ON cm.id = ct.master_id
 WHERE l.qty_remaining > 0;
+
 
 /* Portfolio summary */
 CREATE VIEW IF NOT EXISTS v_portfolio_value_summary AS
