@@ -71,7 +71,6 @@ def upsert_coin_master(
 ) -> int:
     # normalize empties to None so we don’t overwrite with '' via COALESCE
     def _n(v):
-        print(v)
         if v is None:
             return None
         s = str(v).strip()
