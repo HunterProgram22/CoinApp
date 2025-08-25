@@ -4,6 +4,29 @@ Shared constants for the Coin Tracker application.
 Centralizes all enum-like values to avoid duplication across modules.
 """
 
+# Navigation configuration
+NAVIGATION_ITEMS = [
+    ("Home.py", "Home", "🏠"),
+    ("pages/1_Dashboard.py", "Dashboard", "📊"),
+    ("pages/2_Inventory.py", "Inventory", "📦"),
+    ("pages/3_Type_Sets.py", "Type Sets", "📚"),
+    ("pages/4_Specimens.py", "Specimens", "🏷️"),
+    ("pages/5_Transactions.py", "Transactions", "➕"),
+    ("pages/6_World_Coins.py", "World Coins", "🌍️"),
+    ("pages/7_Coin_Type_Editor.py", "Coin Type Editor", "🧩"),
+    ("pages/8_Admin.py", "Admin", "🛠️"),
+    ("pages/9_Data_Import.py", "Data Import", "📥"),
+    ("pages/10_Bullion.py", "Bullion", "💰"),
+    ("pages/11_Coin_Catalog.py", "Coin Catalog", "📚"),
+    ("pages/12_DB_Patches.py", "DB Patches", "🧩"),
+    ("pages/13_Diagnostics.py", "Diagnostics", "🧪")
+]
+
+# App configuration
+APP_TITLE = "Coin Tracker"
+APP_SUBTITLE = "Inventory • Transactions • Storage • Analytics"
+
+
 # Asset Categories
 ASSET_CATEGORIES = ["COIN", "ROUND", "BAR", "BULLION COIN"]
 
