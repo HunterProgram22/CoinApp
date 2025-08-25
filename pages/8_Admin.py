@@ -2,7 +2,7 @@
 import io
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, UTC
 
 import pandas as pd
 import streamlit as st
@@ -405,7 +405,7 @@ with tab_prices:
     c1, c2, c3 = st.columns(3)
     metal = c1.selectbox("Metal", ["Ag","Au","Pt","Pd"], index=0, key="mp_metal")
     price = c2.number_input("Price per oz (USD)", min_value=0.0, step=0.01, value=0.0, key="mp_price")
-    now = datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
     if st.button("Save Price", key="mp_save"):
         with get_conn() as cx:
@@ -438,7 +438,7 @@ with tab_prices:
                         with get_conn() as cx:
                             cx.execute(
                                 "INSERT INTO metal_price (metal, price_per_oz_usd, quoted_at_utc) VALUES (?,?,?)",
-                                (m, last, datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")),
+                                (m, last, datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")),
                             )
                         updated.append((m, last))
                     except Exception as ex:
