@@ -18,12 +18,21 @@ def execute_query_all(query: str, params=()) -> List[Dict[str, Any]]:
         results = cx.execute(query, params).fetchall()
         return [dict(row) for row in results]
 
-
 def execute_insert(query: str, params=()) -> Optional[int]:
-    """Execute INSERT and return lastrowid."""
+    from db import get_conn
     with get_conn() as cx:
         cursor = cx.execute(query, params)
-        return cursor.lastrowid
+        result = cursor.lastrowid
+        # Force commit for debugging
+        if hasattr(cx, 'commit'):
+            cx.commit()
+        return result
+
+# def execute_insert(query: str, params=()) -> Optional[int]:
+#     """Execute INSERT and return lastrowid."""
+#     with get_conn() as cx:
+#         cursor = cx.execute(query, params)
+#         return cursor.lastrowid
 
 
 def execute_update(query: str, params=()) -> int:

@@ -217,27 +217,52 @@ with tab_master:
                 if not (new_country and new_denom and new_series):
                     st.error("Country, Denomination, and Series are required.")
                 else:
-                    with get_conn() as cx:
-                        cx.execute(
-                            """
-                            INSERT INTO coin_master (country, denomination, series, metal, fineness, weight_grams,
-                                                     diameter_mm, thickness_mm, edge,
-                                                     years_start, years_end, asset_category, numista_url, notes)
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                            """,
-                            (
-                                _clean_str(new_country), _clean_str(new_denom),
-                                _clean_str(new_series),
-                                _clean_str(new_metal), float(new_fineness or 0) or None,
-                                float(new_weight or 0) or None,
-                                float(new_diameter or 0) or None, float(new_thickness or 0) or None,
-                                _clean_str(new_edge),
-                                int(new_start or 0) or None, int(new_end or 0) or None,
-                                new_asset_cat, _clean_str(new_numista), _clean_str(new_notes),
-                            )
+                    try:
+                        from queries import create_or_update_coin_master
+
+                        result_id = create_or_update_coin_master(
+                            new_country, new_denom, new_series,
+                            metal=new_metal if new_metal else None,
+                            fineness=float(new_fineness) if new_fineness else None,
+                            weight_grams=float(new_weight) if new_weight else None,
+                            diameter_mm=float(new_diameter) if new_diameter else None,
+                            thickness_mm=float(new_thickness) if new_thickness else None,
+                            edge=new_edge if new_edge else None,
+                            years_start=int(new_start) if new_start else None,
+                            years_end=int(new_end) if new_end else None,
+                            asset_category=new_asset_cat,
+                            numista_url=new_numista if new_numista else None,
+                            notes=new_notes if new_notes else None
                         )
-                    st.success("New coin master created.")
-                    st.rerun()
+                        st.success(f"New coin master created with ID: {result_id}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to create coin master: {e}")
+            # if submitted:
+            #     if not (new_country and new_denom and new_series):
+            #         st.error("Country, Denomination, and Series are required.")
+            #     else:
+            #         with get_conn() as cx:
+            #             cx.execute(
+            #                 """
+            #                 INSERT INTO coin_master (country, denomination, series, metal, fineness, weight_grams,
+            #                                          diameter_mm, thickness_mm, edge,
+            #                                          years_start, years_end, asset_category, numista_url, notes)
+            #                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            #                 """,
+            #                 (
+            #                     _clean_str(new_country), _clean_str(new_denom),
+            #                     _clean_str(new_series),
+            #                     _clean_str(new_metal), float(new_fineness or 0) or None,
+            #                     float(new_weight or 0) or None,
+            #                     float(new_diameter or 0) or None, float(new_thickness or 0) or None,
+            #                     _clean_str(new_edge),
+            #                     int(new_start or 0) or None, int(new_end or 0) or None,
+            #                     new_asset_cat, _clean_str(new_numista), _clean_str(new_notes),
+            #                 )
+            #             )
+            #         st.success("New coin master created.")
+            #         st.rerun()
 
 
 # =====================================================
