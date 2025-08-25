@@ -491,3 +491,34 @@ def get_specimens_on_hand(filter_series: str = None) -> List[Dict[str, Any]]:
         {where_clause}
         ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, s.code
     """, params)
+
+
+# Add this to the end of your queries.py file for backward compatibility
+
+# Backward compatibility aliases for existing pages
+list_specimens_on_hand = get_specimens_on_hand
+list_coin_types = get_all_coin_types
+upsert_coin_master = create_or_update_coin_master
+get_latest_spot = get_latest_metal_prices
+upsert_coin_type = create_or_update_coin_type
+upsert_party = create_or_update_party
+upsert_storage = create_or_update_storage
+list_lots = get_all_lots
+inventory_by_type = get_inventory_by_type
+inventory_by_series_summary = get_inventory_by_series
+list_storage_locations = get_storage_locations
+list_series_for_filter = get_available_series
+inventory_details_by_series = get_inventory_details_by_series
+inventory_details_proof = get_proof_inventory
+inventory_details_slabbed = get_slabbed_inventory
+dashboard_series_rollup = get_dashboard_series_rollup
+bullion_by_category = get_bullion_by_category
+bullion_by_series = get_bullion_by_series
+search_transactions = search_transactions  # same name
+get_tx_lines = get_transaction_details
+spending_log = get_spending_summary
+spending_log_items = get_spending_details
+
+# Specimen function compatibility
+upsert_series_code = create_or_update_series_code
+allocate_specimen_code_for_series = allocate_single_specimen_code
