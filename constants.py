@@ -26,6 +26,50 @@ NAVIGATION_ITEMS = [
 APP_TITLE = "Coin Tracker"
 APP_SUBTITLE = "Inventory • Transactions • Storage • Analytics"
 
+# Metal ordering for display
+METAL_DISPLAY_ORDER = ["Ag", "Au", "Pt", "Pd"]
+
+# Silver coin specifications (fine troy ounces)
+SILVER_COIN_SPECS = {
+    "American Silver Eagle (1 oz)": 1.00000,
+    "Morgan/Peace Dollar (90%)": 0.77344,  # 26.73g, .900 fine
+    "Pre-1965 US Half Dollar (90%)": 0.36169,  # 12.50g, .900 fine
+    "Pre-1965 US Quarter (90%)": 0.18084,  # 6.25g, .900 fine
+    "Pre-1965 US Dime (90%)": 0.07234,  # 2.50g, .900 fine
+    "Pre-1968 Canadian Quarter (80%)": 0.15000,    # 5.83g, .800 fine
+    "US Kennedy Half Dollar 1965-1970 (40%)": 0.14792, # 11.50g, .400 fine
+    "US War Nickel 1942-1945 (35%)": 0.05626,     # 5.00g, .350 fine
+}
+
+# Column configurations for common data types
+COLUMN_CONFIGS = {
+    "currency": lambda format_str="$%.2f": {
+        "format": format_str
+    },
+    "integer": {
+        "format": "%d"
+    },
+    "percentage": {
+        "format": "%.2f"
+    },
+    "decimal": lambda precision=5: {
+        "format": f"%.{precision}f"
+    }
+}
+
+# Dashboard column mappings
+DASHBOARD_COLUMN_RENAMES = {
+    "metal": "Metal",
+    "price_per_oz_usd": "Price Per Oz. (USD)",
+    "series": "Series",
+    "coins": "Coins",
+    "melt_total_usd": "Melt Value (USD)",
+    "numi_total_usd": "Numismatic Value (USD)",
+    "cost_total_usd": "Total Cost (USD)",
+    "chosen_total_usd": "Est. Value (USD)",
+    "unreal_gl_usd": "Unrealized G/L (USD)",
+    "unreal_gl_pct": "Unrealized G/L (%)",
+}
 
 # Asset Categories
 ASSET_CATEGORIES = ["COIN", "ROUND", "BAR", "BULLION COIN"]
