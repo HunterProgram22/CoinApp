@@ -1,7 +1,7 @@
 # pages/1_Dashboard.py
 import pandas as pd
 import streamlit as st
-from queries import get_portfolio_summary, get_latest_spot
+from queries import get_portfolio_summary, get_latest_metal_prices, get_dashboard_series_rollup
 from dashboard_helpers import (
     format_metal_prices_dataframe,
     calculate_silver_melt_values,
@@ -11,12 +11,6 @@ from dashboard_helpers import (
     prepare_series_export_data,
     apply_gain_loss_styling
 )
-
-# Optional helper (append its patch to queries.py if missing)
-try:
-    from queries import dashboard_series_rollup
-except ImportError:  # More specific exception
-    dashboard_series_rollup = None
 
 st.header("Dashboard")
 
@@ -39,7 +33,7 @@ def render_spot_prices():
     """Render the latest spot prices section."""
     st.subheader("Latest Spot Prices")
     
-    spots_data = get_latest_spot()
+    spots_data = get_latest_metal_prices()
     df = format_metal_prices_dataframe(spots_data)
     
     if df is not None:
@@ -74,11 +68,7 @@ def render_silver_melt_reference(spot_prices):
 
 def render_series_summary():
     """Render the series summary tab."""
-    if dashboard_series_rollup is None:
-        st.warning("Series rollup helper not found in queries.py. Please apply the provided patch, then reload.")
-        return
-    
-    rows = dashboard_series_rollup()
+    rows = get_dashboard_series_rollup()
     if not rows:
         st.info("No inventory yet.")
         return
