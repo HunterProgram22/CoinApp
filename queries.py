@@ -498,7 +498,7 @@ def get_specimens_on_hand(filter_series: str = None) -> List[Dict[str, Any]]:
 # Backward compatibility aliases for existing pages
 list_specimens_on_hand = get_specimens_on_hand
 list_coin_types = get_all_coin_types
-upsert_coin_master = create_or_update_coin_master
+# upsert_coin_master = create_or_update_coin_master
 get_latest_spot = get_latest_metal_prices
 upsert_coin_type = create_or_update_coin_type
 upsert_party = create_or_update_party
@@ -522,3 +522,19 @@ spending_log_items = get_spending_details
 # Specimen function compatibility
 upsert_series_code = create_or_update_series_code
 allocate_specimen_code_for_series = allocate_single_specimen_code
+
+# Replace this line in your compatibility shim:
+# upsert_coin_master = create_or_update_coin_master
+# With this wrapper function:
+def upsert_coin_master(country, denomination, series, metal=None, fineness=None,
+                      weight_grams=None, diameter_mm=None, thickness_mm=None,
+                      edge=None, years_start=None, years_end=None, notes=None,
+                      asset_category=None, numista_url=None):
+    """Backward compatibility wrapper for upsert_coin_master."""
+    return create_or_update_coin_master(
+        country, denomination, series,
+        metal=metal, fineness=fineness, weight_grams=weight_grams,
+        diameter_mm=diameter_mm, thickness_mm=thickness_mm, edge=edge,
+        years_start=years_start, years_end=years_end, notes=notes,
+        asset_category=asset_category, numista_url=numista_url
+    )
