@@ -298,6 +298,9 @@ with tab_types:
 
             if st.button("Create Type", type="primary", key="ct_add_submit"):
                 try:
+                    st.write(
+                        f"DEBUG: Creating coin type - master_id={master_id}, year={year}, mint_mark='{mint_mark}', variety='{variety}'")
+
                     result_id = create_or_update_coin_type(
                         master_id,
                         int(year or 0),
@@ -306,10 +309,29 @@ with tab_types:
                         mintage=int(mintage or 0),
                         is_proof=1 if is_proof else 0
                     )
+                    st.write(f"DEBUG: Result ID: {result_id}")
                     st.success(f"Coin Type created with ID: {result_id}")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to create coin type: {e}")
+                    import traceback
+
+                    st.write(traceback.format_exc())
+
+            # if st.button("Create Type", type="primary", key="ct_add_submit"):
+            #     try:
+            #         result_id = create_or_update_coin_type(
+            #             master_id,
+            #             int(year or 0),
+            #             clean_str(mint_mark),
+            #             clean_str(variety),
+            #             mintage=int(mintage or 0),
+            #             is_proof=1 if is_proof else 0
+            #         )
+            #         st.success(f"Coin Type created with ID: {result_id}")
+            #         st.rerun()
+            #     except Exception as e:
+            #         st.error(f"Failed to create coin type: {e}")
 
         st.divider()
 
