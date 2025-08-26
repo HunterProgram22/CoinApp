@@ -12,38 +12,6 @@ from dashboard_helpers import (
     apply_gain_loss_styling
 )
 
-# Debug coin master creation
-if st.button("Test Coin Master Insert"):
-    try:
-        from queries import create_or_update_coin_master
-
-        result = create_or_update_coin_master(
-            "United States",
-            "Dollar",
-            "Morgan Dollar",
-            metal="Ag",
-            fineness=0.900,
-            weight_grams=26.73
-        )
-        st.write(f"Coin master result: {result}")
-        print(f"Coin master result: {result}")
-
-        # Check if it exists
-        from db_operations import execute_query_all
-
-        records = execute_query_all("SELECT * FROM coin_master WHERE series = 'Morgan Dollar'")
-        st.write(f"Found {len(records)} Morgan Dollar records")
-        print(f"Found {len(records)} Morgan Dollar records")
-        if records:
-            st.write("Record data:", records[0])
-
-    except Exception as e:
-        st.error(f"Coin master failed: {e}")
-        import traceback
-
-        st.write(traceback.format_exc())
-        print(traceback.format_exc())
-
 
 st.header("Dashboard")
 
