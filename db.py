@@ -37,14 +37,20 @@ def init_db():
     else:
         _init_sqlite_schema()
 
+
 def _init_cloud_schema():
     """Initialize schema for cloud PostgreSQL database."""
     from schema_postgresql import SCHEMA_SQL as POSTGRESQL_SCHEMA
-    with _engine.begin() as conn:
-        statements = POSTGRESQL_SCHEMA.strip().split(';')
-        for statement in statements:
-            if statement.strip():
-                conn.exec_driver_sql(statement.strip())
+
+    # Get raw psycopg2 connection instead of SQLAlchemy wrapper
+    raw_conn = _engine.raw_connection()
+    try:
+        with raw_conn.cursor() as cursor:
+            cursor.execute(POSTGRESQL_SCHEMA)
+        raw_conn.commit()
+    finally:
+        raw_conn.close()
+
 
 def _init_sqlite_schema():
     """Initialize schema for SQLite database."""
