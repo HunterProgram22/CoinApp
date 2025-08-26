@@ -119,7 +119,7 @@ class SQLAlchemyConnectionWrapper:
 
         result = self._conn.exec_driver_sql(sql, params)
         wrapper = SQLAlchemyResultWrapper(result, self._conn)
-        
+
         # Handle lastrowid for INSERT statements
         if self._is_insert_query(sql):
             try:
