@@ -1,6 +1,7 @@
 country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,notes
 Canada,25 Cents,George VI,Ag,0.9,5.83,23.62,1.61,Reeded,1937,1947,COIN,https://en.numista.com/catalogue/pieces371.html,
 France,1 Franc,Vichy State,Aluminum,1,1.28,23.02,1.45,Plain,1942,1944,COIN,https://en.numista.com/catalogue/pieces298.html,Light type Francisque design - Vichy French State
+France,2 Francs,Vichy State,Aluminum,1,2.2,27,1.7,Plain,1943,1944,COIN,https://en.numista.com/catalogue/pieces299.html,
 France,10 Centimes,Third Republic,Copper-nickel,1,4,21,1.68,Reeded,1917,1938,COIN,https://en.numista.com/catalogue/pieces321.html,Third Republic design with Marianne
 France,2 Francs,Third Republic,Cu-Al,1,8,27,2.14,Reeded,1920,1927,COIN,https://en.numista.com/catalogue/pieces699.html,
 France,2 Francs,Third Republic,Cu-Al,1,8,27,2.14,Plain,1931,1941,COIN,https://en.numista.com/catalogue/pieces709.html,

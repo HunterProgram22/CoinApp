@@ -242,31 +242,6 @@ with tab_master:
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed to create coin master: {e}")
-            # if submitted:
-            #     if not (new_country and new_denom and new_series):
-            #         st.error("Country, Denomination, and Series are required.")
-            #     else:
-            #         with get_conn() as cx:
-            #             cx.execute(
-            #                 """
-            #                 INSERT INTO coin_master (country, denomination, series, metal, fineness, weight_grams,
-            #                                          diameter_mm, thickness_mm, edge,
-            #                                          years_start, years_end, asset_category, numista_url, notes)
-            #                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            #                 """,
-            #                 (
-            #                     _clean_str(new_country), _clean_str(new_denom),
-            #                     _clean_str(new_series),
-            #                     _clean_str(new_metal), float(new_fineness or 0) or None,
-            #                     float(new_weight or 0) or None,
-            #                     float(new_diameter or 0) or None, float(new_thickness or 0) or None,
-            #                     _clean_str(new_edge),
-            #                     int(new_start or 0) or None, int(new_end or 0) or None,
-            #                     new_asset_cat, _clean_str(new_numista), _clean_str(new_notes),
-            #                 )
-            #             )
-            #         st.success("New coin master created.")
-            #         st.rerun()
 
 
 # =====================================================
