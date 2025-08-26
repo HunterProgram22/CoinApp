@@ -39,6 +39,10 @@ UI/UX Improvements
  Fix Admin page field-tabbing reloads on Streamlit Cloud - Wrap coin master editor in st.form()
  Mobile responsiveness validation
  Cross-browser compatibility testing
+ Investigate delete lot functionality (rows affected 0 vs actual deletion)
+Consider removing delete lot feature entirely during Transactions page refactor
+ Remove Delete Lot - is this necessary or useful.
+ Add Edit Transaction.
 
 Testing & Documentation
 
