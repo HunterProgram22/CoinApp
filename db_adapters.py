@@ -67,19 +67,20 @@ class SQLAlchemyResultWrapper:
 
 class SQLAlchemyConnectionWrapper:
     """SQLite-compatible wrapper for SQLAlchemy connections."""
-    
+
     def __init__(self, engine):
         self._engine = engine
         self._conn = None
         self._trans = None
         self.row_factory = None  # Compatibility attribute
-    
+        self._is_postgresql = "postgresql" in str(engine.url).lower()
+
     def __enter__(self):
         self._conn = self._engine.connect()
         self._trans = self._conn.begin()
-        self._enable_foreign_keys()
+        self._enable_constraints()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
             if self._trans is not None:
@@ -92,25 +93,35 @@ class SQLAlchemyConnectionWrapper:
                 self._conn.close()
                 self._conn = None
             self._trans = None
-    
-    def _enable_foreign_keys(self):
-        """Enable foreign key constraints."""
-        self._conn.exec_driver_sql(PRAGMA_FOREIGN_KEYS)
-    
+
+    def _enable_constraints(self):
+        """Enable foreign key constraints - database specific."""
+        if self._is_postgresql:
+            # PostgreSQL has foreign keys enabled by default, no action needed
+            pass
+        else:
+            # SQLite/other databases
+            self._conn.exec_driver_sql(PRAGMA_FOREIGN_KEYS)
+
     def _is_insert_query(self, sql: str) -> bool:
         """Check if SQL query is an INSERT statement."""
         try:
             return sql.lstrip().upper().startswith("INSERT")
         except Exception:
             return False
-    
+
     def _get_lastrowid(self) -> Optional[int]:
-        """Get the last inserted row ID."""
+        """Get the last inserted row ID - database specific."""
         try:
-            return self._conn.exec_driver_sql(LASTROWID_QUERY).scalar()
+            if self._is_postgresql:
+                # PostgreSQL doesn't have lastrowid in the same way
+                # This would need to be handled differently for PostgreSQL
+                return None
+            else:
+                return self._conn.exec_driver_sql(LASTROWID_QUERY).scalar()
         except Exception:
             return None
-    
+
     def execute(self, sql: str, params=()) -> SQLAlchemyResultWrapper:
         """Execute SQL query with parameters."""
         # Ensure params is a tuple, not a list
@@ -126,9 +137,73 @@ class SQLAlchemyConnectionWrapper:
                 wrapper._lastrowid = result.lastrowid or self._get_lastrowid()
             except Exception:
                 wrapper._lastrowid = None
-        
+
         return wrapper
 
+# class SQLAlchemyConnectionWrapper:
+#     """SQLite-compatible wrapper for SQLAlchemy connections."""
+#
+#     def __init__(self, engine):
+#         self._engine = engine
+#         self._conn = None
+#         self._trans = None
+#         self.row_factory = None  # Compatibility attribute
+#
+#     def __enter__(self):
+#         self._conn = self._engine.connect()
+#         self._trans = self._conn.begin()
+#         self._enable_foreign_keys()
+#         return self
+#
+#     def __exit__(self, exc_type, exc_val, exc_tb):
+#         try:
+#             if self._trans is not None:
+#                 if exc_type is None:
+#                     self._trans.commit()
+#                 else:
+#                     self._trans.rollback()
+#         finally:
+#             if self._conn is not None:
+#                 self._conn.close()
+#                 self._conn = None
+#             self._trans = None
+#
+#     def _enable_foreign_keys(self):
+#         """Enable foreign key constraints."""
+#         self._conn.exec_driver_sql(PRAGMA_FOREIGN_KEYS)
+#
+#     def _is_insert_query(self, sql: str) -> bool:
+#         """Check if SQL query is an INSERT statement."""
+#         try:
+#             return sql.lstrip().upper().startswith("INSERT")
+#         except Exception:
+#             return False
+#
+#     def _get_lastrowid(self) -> Optional[int]:
+#         """Get the last inserted row ID."""
+#         try:
+#             return self._conn.exec_driver_sql(LASTROWID_QUERY).scalar()
+#         except Exception:
+#             return None
+#
+#     def execute(self, sql: str, params=()) -> SQLAlchemyResultWrapper:
+#         """Execute SQL query with parameters."""
+#         # Ensure params is a tuple, not a list
+#         if isinstance(params, list):
+#             params = tuple(params)
+#
+#         result = self._conn.exec_driver_sql(sql, params)
+#         wrapper = SQLAlchemyResultWrapper(result, self._conn)
+#
+#         # Handle lastrowid for INSERT statements
+#         if self._is_insert_query(sql):
+#             try:
+#                 wrapper._lastrowid = result.lastrowid or self._get_lastrowid()
+#             except Exception:
+#                 wrapper._lastrowid = None
+#
+#         return wrapper
+#
 
 class SQLiteConnectionWrapper:
     """Standard SQLite connection with consistent interface."""
