@@ -43,7 +43,7 @@ def get_coin_masters():
         SELECT id, country, denomination, series, metal, fineness, weight_grams,
             diameter_mm, thickness_mm, edge, 
             years_start, years_end, asset_category,
-            numista_url, notes
+            numista_url, ngc_url, pcgs_url, notes
         FROM coin_master
         ORDER BY country, denomination, series
     """)
@@ -186,16 +186,30 @@ with tab_master:
             if numista_url:
                 st.link_button("Open Numista", numista_url, type="secondary")
 
+            ngc_url = st.text_input("NGC URL (optional)", m.get("ngc_url") or "",
+                                    placeholder="https://www.ngccoin.com/price-guide/...",
+                                    key=f"cm_ngc_{mid}")
+            if ngc_url:
+                st.link_button("Open NGC", ngc_url, type="secondary")
+
+            pcgs_url = st.text_input("PCGS URL (optional)", m.get("pcgs_url") or "",
+                                     placeholder="https://www.pcgs.com/prices/...",
+                                     key=f"cm_pcgs_{mid}")
+            if pcgs_url:
+                st.link_button("Open PCGS", pcgs_url, type="secondary")
+
             notes = st.text_area("Notes", m.get("notes") or "", height=80, key=f"cm_notes_{mid}")
 
-            if st.button("Save changes", type="primary", use_container_width=False, key=f"cm_save_{mid}"):
+            if st.button("Save changes", type="primary", use_container_width=False,
+                         key=f"cm_save_{mid}"):
                 try:
                     rows_affected = execute_update(
                         """
                         UPDATE coin_master
                         SET country=?, denomination=?, series=?, metal=?, fineness=?, 
                             weight_grams=?, diameter_mm=?, thickness_mm=?, edge=?,
-                            years_start=?, years_end=?, asset_category=?, numista_url=?, notes=?
+                            years_start=?, years_end=?, asset_category=?, 
+                            numista_url=?, ngc_url=?, pcgs_url=?, notes=?
                         WHERE id=?
                         """,
                         (
@@ -210,6 +224,8 @@ with tab_master:
                             years_end,
                             asset_category,
                             numista_url if numista_url else None,
+                            ngc_url if ngc_url else None,
+                            pcgs_url if pcgs_url else None,
                             notes if notes else None,
                             mid
                         )
@@ -243,6 +259,12 @@ with tab_master:
             new_end = y2.number_input("Years end", min_value=0, step=1, value=0, key="cm_add_yend")
             new_asset_cat = st.selectbox("Asset Category", ASSET_CATEGORIES, index=0, key="cm_add_asset_cat")
             new_numista = st.text_input("Numista URL (optional)", placeholder="https://en.numista.com/catalogue/...", key="cm_add_numista")
+            new_ngc = st.text_input("NGC URL (optional)",
+                                    placeholder="https://www.ngccoin.com/price-guide/...",
+                                    key="cm_add_ngc")
+            new_pcgs = st.text_input("PCGS URL (optional)",
+                                     placeholder="https://www.pcgs.com/prices/...",
+                                     key="cm_add_pcgs")
             new_notes = st.text_area("Notes", height=80, key="cm_add_notes")
 
             submitted = st.form_submit_button("Create master")
@@ -263,6 +285,8 @@ with tab_master:
                             years_end=int(new_end) if new_end else None,
                             asset_category=new_asset_cat,
                             numista_url=new_numista if new_numista else None,
+                            ngc_url=new_ngc if new_ngc else None,
+                            pcgs_url=new_pcgs if new_pcgs else None,
                             notes=new_notes if new_notes else None
                         )
                         st.success(f"New coin master created with ID: {result_id}")
