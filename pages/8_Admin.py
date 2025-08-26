@@ -298,9 +298,6 @@ with tab_types:
 
             if st.button("Create Type", type="primary", key="ct_add_submit"):
                 try:
-                    print(
-                        f"DEBUG: Creating coin type - master_id={master_id}, year={year}, mint_mark='{mint_mark}', variety='{variety}'")
-
                     result_id = create_or_update_coin_type(
                         master_id,
                         int(year or 0),
@@ -309,9 +306,6 @@ with tab_types:
                         mintage=int(mintage or 0),
                         is_proof=1 if is_proof else 0
                     )
-                    print(f"DEBUG: Result ID: {result_id}")
-                    print(f"DEBUG: Function completed successfully")
-
                     # Also use st.write with a container that persists longer
                     with st.container():
                         st.success(f"Coin Type created with ID: {result_id}")
@@ -319,8 +313,6 @@ with tab_types:
 
                     st.rerun()
                 except Exception as e:
-                    print(f"ERROR: Failed to create coin type: {e}")
-                    print(f"ERROR: Traceback: {traceback.format_exc()}")
                     st.error(f"Failed to create coin type: {e}")
                     import traceback
 
