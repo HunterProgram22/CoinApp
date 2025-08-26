@@ -2,12 +2,10 @@
 """Database query functions for the coin tracker application."""
 
 from typing import List, Optional, Dict, Any
-from db import get_conn
 from db_operations import (
     execute_query_single, execute_query_all, execute_insert, upsert_record,
     find_or_create_party, find_or_create_storage, normalize_text_field, normalize_for_upsert
 )
-from query_builders import WhereClauseBuilder, InventoryQueryBuilder, SpecimenQueryHelper, SQLTemplates
 from business_logic import TransactionBuilder
 
 
@@ -24,6 +22,7 @@ def create_or_update_storage(name: str, category: str = None, description: str =
     """Create or update a storage location record."""
     return find_or_create_storage(name, category, description)
 
+
 def create_or_update_coin_master(country: str, denomination: str, series: str, **kwargs) -> int:
     """Create or update a coin master record."""
     # Normalize optional fields
@@ -36,19 +35,6 @@ def create_or_update_coin_master(country: str, denomination: str, series: str, *
     search_fields = {'country': country, 'denomination': denomination, 'series': series}
     return upsert_record('coin_master', search_fields, normalized_fields)
 
-#
-# def create_or_update_coin_master(country: str, denomination: str, series: str, **kwargs) -> int:
-#     """Create or update a coin master record."""
-#     # Normalize optional fields
-#     normalized_fields = {field: normalize_for_upsert(value) for field, value in kwargs.items()}
-#
-#     # Set default asset category
-#     if normalized_fields.get('asset_category') is None:
-#         normalized_fields['asset_category'] = 'COIN'
-#
-#     search_fields = {'country': country, 'denomination': denomination, 'series': series}
-#     return upsert_record('coin_master', search_fields, normalized_fields)
-#
 
 def create_or_update_coin_type(master_id: int, year: int, mint_mark: str = None, variety: str = None, **kwargs) -> int:
     """Create or update a coin type record."""
@@ -131,48 +117,107 @@ def search_transactions(date_from: Optional[str] = None, date_to: Optional[str] 
                        tx_types: Optional[List[str]] = None, party_query: Optional[str] = None,
                        limit: int = 25, offset: int = 0) -> List[Dict[str, Any]]:
     """Search transactions with optional filters."""
-    builder = WhereClauseBuilder()
-    builder.add_date_range(date_from, date_to)
-    builder.add_in_clause("t.tx_type", tx_types)
-    builder.add_like_clause("p.name", party_query)
+    conditions = []
+    params = []
     
-    where_clause, params = builder.build()
+    if date_from:
+        conditions.append("t.tx_date >= ?")
+        params.append(date_from)
+    if date_to:
+        conditions.append("t.tx_date <= ?")
+        params.append(date_to)
+    if tx_types:
+        placeholders = ",".join(["?"] * len(tx_types))
+        conditions.append(f"t.tx_type IN ({placeholders})")
+        params.extend(tx_types)
+    if party_query:
+        conditions.append("COALESCE(p.name, '') LIKE ?")
+        params.append(f"%{party_query}%")
+    
+    where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
     params.extend([limit, offset])
     
-    return execute_query_all(SQLTemplates.TRANSACTION_SEARCH.format(where_clause=where_clause), params)
+    return execute_query_all(f"""
+        SELECT t.id, t.tx_date, t.tx_type, p.name AS party,
+               t.currency, t.shipping, t.tax, t.fees, t.notes
+        FROM tx t
+        LEFT JOIN party p ON p.id = t.party_id
+        {where_clause}
+        ORDER BY t.tx_date DESC, t.id DESC
+        LIMIT ? OFFSET ?
+    """, params)
 
 
 def get_transaction_details(tx_id: int) -> List[Dict[str, Any]]:
     """Get transaction line details for a specific transaction."""
-    return execute_query_all(SQLTemplates.TX_LINES, (tx_id,))
+    return execute_query_all("""
+        SELECT tl.id AS line_id, cm.series, ct.year, ct.mint_mark, 
+               COALESCE(ct.variety,'') AS variety, ABS(tl.quantity) AS quantity, 
+               tl.unit_price, tl.grade_company, tl.grade_text, 
+               tl.numeric_grade, tl.slab_cert
+        FROM tx_line tl
+        LEFT JOIN coin_type ct ON ct.id = tl.coin_type_id
+        LEFT JOIN coin_master cm ON cm.id = ct.master_id
+        WHERE tl.tx_id = ?
+        ORDER BY tl.id
+    """, (tx_id,))
 
 
 def get_spending_summary(date_from: Optional[str] = None, date_to: Optional[str] = None,
                         party_query: Optional[str] = None, limit: int = 25, offset: int = 0) -> List[Dict[str, Any]]:
     """Get spending summary grouped by date and party."""
-    builder = WhereClauseBuilder()
-    builder.add_condition("t.tx_type = 'BUY'")
-    builder.add_date_range(date_from, date_to)
-    builder.add_like_clause("p.name", party_query)
+    conditions = ["t.tx_type = 'BUY'"]
+    params = []
     
-    where_clause, params = builder.build()
+    if date_from:
+        conditions.append("t.tx_date >= ?")
+        params.append(date_from)
+    if date_to:
+        conditions.append("t.tx_date <= ?")
+        params.append(date_to)
+    if party_query:
+        conditions.append("COALESCE(p.name,'') LIKE ?")
+        params.append(f"%{party_query}%")
+    
+    where_clause = "WHERE " + " AND ".join(conditions)
     params.extend([limit, offset])
     
-    return execute_query_all(SQLTemplates.SPENDING_LOG.format(where_clause=where_clause), params)
+    return execute_query_all(f"""
+        WITH buys AS (
+            SELECT t.id, t.tx_date, COALESCE(p.name,'') AS party,
+                   COALESCE(t.shipping,0) AS shipping, COALESCE(t.tax,0) AS tax, COALESCE(t.fees,0) AS fees
+            FROM tx t
+            LEFT JOIN party p ON p.id = t.party_id
+            {where_clause}
+        ),
+        line_sub AS (
+            SELECT tl.tx_id, SUM(ABS(tl.quantity) * COALESCE(tl.unit_price,0)) AS line_subtotal
+            FROM tx_line tl
+            JOIN tx t2 ON t2.id = tl.tx_id AND t2.tx_type = 'BUY'
+            GROUP BY tl.tx_id
+        )
+        SELECT b.tx_date, b.party,
+               ROUND(SUM(COALESCE(ls.line_subtotal,0) + b.shipping + b.tax + b.fees), 2) AS spent_usd
+        FROM buys b
+        LEFT JOIN line_sub ls ON ls.tx_id = b.id
+        GROUP BY b.tx_date, b.party
+        ORDER BY b.tx_date DESC, b.party
+        LIMIT ? OFFSET ?
+    """, params)
 
 
 def get_spending_details(tx_date: str, party: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get items purchased on a specific date from a specific party."""
-    builder = WhereClauseBuilder()
-    builder.add_condition("t.tx_type = 'BUY'")
-    builder.add_condition("t.tx_date = ?", tx_date)
+    conditions = ["t.tx_type = 'BUY'", "t.tx_date = ?"]
+    params = [tx_date]
     
     if party is None or party == '':
-        builder.add_condition("COALESCE(p.name,'') = ''")
+        conditions.append("COALESCE(p.name,'') = ''")
     else:
-        builder.add_condition("COALESCE(p.name,'') = ?", party)
+        conditions.append("COALESCE(p.name,'') = ?")
+        params.append(party)
     
-    where_clause, params = builder.build()
+    where_clause = "WHERE " + " AND ".join(conditions)
     
     return execute_query_all(f"""
         SELECT cm.series, SUM(ABS(tl.quantity)) AS qty
@@ -193,12 +238,17 @@ def get_spending_details(tx_date: str, party: Optional[str] = None) -> List[Dict
 
 def get_all_lots() -> List[Dict[str, Any]]:
     """Get all lots with basic information."""
-    return execute_query_all(f"""
+    return execute_query_all("""
         SELECT l.id, cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety,
                l.qty_remaining, l.unit_cost, l.valuation_method,
                COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade,
                l.manual_est_unit_value
-        {InventoryQueryBuilder.base_lot_query()}
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        JOIN tx_line tl ON tl.id = l.acquisition_line_id
+        JOIN tx t ON t.id = tl.tx_id
+        LEFT JOIN party p ON p.id = t.party_id
         ORDER BY l.acquired_date DESC, l.id DESC
     """)
 
@@ -211,10 +261,8 @@ def get_inventory_by_type() -> List[Dict[str, Any]]:
 def get_inventory_by_series() -> List[Dict[str, Any]]:
     """Get series-level inventory summary."""
     return execute_query_all("""
-        SELECT
-            series,
-            SUM(qty_remaining) AS coins,
-            ROUND(SUM(qty_remaining * COALESCE(chosen_unit_value,0)), 2) AS est_value_usd
+        SELECT series, SUM(qty_remaining) AS coins,
+               ROUND(SUM(qty_remaining * COALESCE(chosen_unit_value,0)), 2) AS est_value_usd
         FROM v_lot_value_details
         GROUP BY series
         ORDER BY est_value_usd DESC, series
@@ -248,72 +296,75 @@ def get_available_series(only_on_hand: bool = True) -> List[str]:
     return [row['series'] if isinstance(row, dict) else row[0] for row in results]
 
 
-# ------------------------------------------------------------------
-# Detailed inventory queries
-# ------------------------------------------------------------------
-
-def _build_detailed_inventory_query(additional_where: str = "", additional_fields: str = "") -> str:
-    """Build detailed inventory query template."""
-    return f"""
-        {InventoryQueryBuilder.melt_value_cte()}
-        SELECT
-            {InventoryQueryBuilder.standard_lot_fields()},
-            {InventoryQueryBuilder.melt_calculation_fields()}
-            {additional_fields}
-        {InventoryQueryBuilder.base_lot_query()}
-        {{specimen_join}}
-        WHERE l.qty_remaining > 0 {additional_where}
-        {InventoryQueryBuilder.standard_order_by()}
-    """
-
-
 def get_inventory_details_by_series(series: str) -> List[Dict[str, Any]]:
     """Get detailed inventory for a specific series."""
     if not series:
         return []
     
-    with get_conn() as cx:
-        has_specimen, has_specimen_code = SpecimenQueryHelper.detect_specimen_table(cx)
-        specimen_join = SpecimenQueryHelper.specimen_join_clause(has_specimen, has_specimen_code)
-        specimen_field = SpecimenQueryHelper.specimen_select_field(has_specimen, has_specimen_code)
-        
-        query = _build_detailed_inventory_query("AND cm.series = ?", specimen_field)
-        query = query.format(specimen_join=specimen_join)
-        
-        results = cx.execute(query, (series,)).fetchall()
-        return [dict(row) for row in results]
+    return execute_query_all("""
+        WITH melt AS (
+            SELECT metal, price_per_oz_usd FROM v_latest_spot
+        )
+        SELECT l.acquired_date, cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety,
+               l.qty_remaining, COALESCE(p.name,'') AS party, ROUND(l.unit_cost, 2) AS unit_cost_usd,
+               COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade,
+               ROUND((cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                     * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 2) AS melt_unit_usd,
+               ROUND(l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                     * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 2) AS melt_total_usd
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        JOIN tx_line tl ON tl.id = l.acquisition_line_id
+        JOIN tx t ON t.id = tl.tx_id
+        LEFT JOIN party p ON p.id = t.party_id
+        WHERE l.qty_remaining > 0 AND cm.series = ?
+        ORDER BY ct.year, ct.mint_mark, ct.variety, l.acquired_date
+    """, (series,))
 
 
 def get_proof_inventory() -> List[Dict[str, Any]]:
     """Get detailed inventory for proof coins."""
-    with get_conn() as cx:
-        has_specimen, has_specimen_code = SpecimenQueryHelper.detect_specimen_table(cx)
-        specimen_join = SpecimenQueryHelper.specimen_join_clause(has_specimen, has_specimen_code)
-        specimen_field = SpecimenQueryHelper.specimen_select_field(has_specimen, has_specimen_code)
-        
-        additional_fields = f"{specimen_field}, ct.is_proof"
-        query = _build_detailed_inventory_query("AND ct.is_proof = 1", additional_fields)
-        query = query.format(specimen_join=specimen_join)
-        
-        results = cx.execute(query).fetchall()
-        return [dict(row) for row in results]
+    return execute_query_all("""
+        WITH melt AS (SELECT metal, price_per_oz_usd FROM v_latest_spot)
+        SELECT l.acquired_date, cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety,
+               l.qty_remaining, COALESCE(p.name,'') AS party, ROUND(l.unit_cost, 2) AS unit_cost_usd,
+               COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade, ct.is_proof,
+               ROUND((cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                     * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 2) AS melt_unit_usd,
+               ROUND(l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                     * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 2) AS melt_total_usd
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        JOIN tx_line tl ON tl.id = l.acquisition_line_id
+        JOIN tx t ON t.id = tl.tx_id
+        LEFT JOIN party p ON p.id = t.party_id
+        WHERE l.qty_remaining > 0 AND ct.is_proof = 1
+        ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, l.acquired_date
+    """)
 
 
 def get_slabbed_inventory() -> List[Dict[str, Any]]:
     """Get detailed inventory for slabbed coins."""
-    with get_conn() as cx:
-        has_specimen, has_specimen_code = SpecimenQueryHelper.detect_specimen_table(cx)
-        specimen_join = SpecimenQueryHelper.specimen_join_clause(has_specimen, has_specimen_code)
-        specimen_field = SpecimenQueryHelper.specimen_select_field(has_specimen, has_specimen_code)
-        
-        additional_where = "AND l.slab_cert IS NOT NULL AND TRIM(l.slab_cert) <> ''"
-        additional_fields = f", l.slab_cert{specimen_field}"
-        
-        query = _build_detailed_inventory_query(additional_where, additional_fields)
-        query = query.format(specimen_join=specimen_join)
-        
-        results = cx.execute(query).fetchall()
-        return [dict(row) for row in results]
+    return execute_query_all("""
+        WITH melt AS (SELECT metal, price_per_oz_usd FROM v_latest_spot)
+        SELECT l.acquired_date, cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety,
+               l.qty_remaining, COALESCE(p.name,'') AS party, ROUND(l.unit_cost, 2) AS unit_cost_usd,
+               COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade, l.slab_cert,
+               ROUND((cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                     * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 2) AS melt_unit_usd,
+               ROUND(l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                     * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 2) AS melt_total_usd
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        JOIN tx_line tl ON tl.id = l.acquisition_line_id
+        JOIN tx t ON t.id = tl.tx_id
+        LEFT JOIN party p ON p.id = t.party_id
+        WHERE l.qty_remaining > 0 AND l.slab_cert IS NOT NULL AND TRIM(l.slab_cert) <> ''
+        ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, l.acquired_date
+    """)
 
 
 # ------------------------------------------------------------------
@@ -323,18 +374,12 @@ def get_slabbed_inventory() -> List[Dict[str, Any]]:
 def get_dashboard_series_rollup() -> List[Dict[str, Any]]:
     """Get series-level rollup for dashboard display."""
     return execute_query_all("""
-        SELECT
-            cm.series AS series,
-            SUM(l.qty_remaining) AS coins,
-            ROUND(SUM(l.qty_remaining * v.melt_unit_value), 2) AS melt_total_usd,
-            ROUND(SUM(
-                l.qty_remaining * COALESCE(
-                    v.guide_unit_value,
-                    CASE WHEN l.valuation_method = 'MANUAL' THEN l.manual_est_unit_value END
-                )
-            ), 2) AS numi_total_usd,
-            ROUND(SUM(l.qty_remaining * l.unit_cost), 2) AS cost_total_usd,
-            ROUND(SUM(l.qty_remaining * v.chosen_unit_value), 2) AS chosen_total_usd
+        SELECT cm.series AS series, SUM(l.qty_remaining) AS coins,
+               ROUND(SUM(l.qty_remaining * v.melt_unit_value), 2) AS melt_total_usd,
+               ROUND(SUM(l.qty_remaining * COALESCE(v.guide_unit_value,
+                 CASE WHEN l.valuation_method = 'MANUAL' THEN l.manual_est_unit_value END)), 2) AS numi_total_usd,
+               ROUND(SUM(l.qty_remaining * l.unit_cost), 2) AS cost_total_usd,
+               ROUND(SUM(l.qty_remaining * v.chosen_unit_value), 2) AS chosen_total_usd
         FROM v_lot_value_details v
         JOIN lot l ON l.id = v.lot_id
         JOIN coin_type ct ON ct.id = l.coin_type_id
@@ -372,6 +417,7 @@ def get_bullion_by_series() -> List[Dict[str, Any]]:
 
 def _ensure_specimen_tables():
     """Ensure specimen tables exist (for backward compatibility)."""
+    from db import get_conn
     with get_conn() as cx:
         cx.execute("""
         CREATE TABLE IF NOT EXISTS series_code (
@@ -394,7 +440,6 @@ def _ensure_specimen_tables():
 def create_or_update_series_code(series: str, prefix: str) -> int:
     """Create or update series code configuration."""
     _ensure_specimen_tables()
-    
     series = series.strip()
     prefix = prefix.strip().upper()[:3]
     
@@ -416,7 +461,8 @@ def allocate_specimen_codes(series: str, qty: int) -> List[str]:
     start = sc["next_seq"]
     codes = [f"{sc['prefix']}{i}" for i in range(start, start + qty)]
     
-    execute_query_single("UPDATE series_code SET next_seq = ? WHERE id=?", (start + qty, sc["id"]))
+    from db_operations import execute_update
+    execute_update("UPDATE series_code SET next_seq = ? WHERE id=?", (start + qty, sc["id"]))
     return codes
 
 
@@ -487,13 +533,14 @@ def get_specimens_on_hand(filter_series: str = None) -> List[Dict[str, Any]]:
     """Get specimens currently on hand."""
     _ensure_specimen_tables()
     
-    builder = WhereClauseBuilder()
-    builder.add_condition("s.sold_line_id IS NULL")
+    conditions = ["s.sold_line_id IS NULL"]
+    params = []
     
     if filter_series and filter_series.strip():
-        builder.add_like_clause("cm.series", filter_series.strip(), nullable=False)
+        conditions.append("cm.series LIKE ?")
+        params.append(f"%{filter_series.strip()}%")
     
-    where_clause, params = builder.build()
+    where_clause = "WHERE " + " AND ".join(conditions)
     
     return execute_query_all(f"""
         SELECT s.code, cm.series, ct.year, ct.mint_mark, ct.variety, s.lot_id
@@ -505,12 +552,13 @@ def get_specimens_on_hand(filter_series: str = None) -> List[Dict[str, Any]]:
     """, params)
 
 
-# Add this to the end of your queries.py file for backward compatibility
+# ------------------------------------------------------------------
+# Backward compatibility aliases
+# ------------------------------------------------------------------
 
-# Backward compatibility aliases for existing pages
+# Main function aliases
 list_specimens_on_hand = get_specimens_on_hand
 list_coin_types = get_all_coin_types
-# upsert_coin_master = create_or_update_coin_master
 get_latest_spot = get_latest_metal_prices
 upsert_coin_type = create_or_update_coin_type
 upsert_party = create_or_update_party
@@ -526,18 +574,11 @@ inventory_details_slabbed = get_slabbed_inventory
 dashboard_series_rollup = get_dashboard_series_rollup
 bullion_by_category = get_bullion_by_category
 bullion_by_series = get_bullion_by_series
-search_transactions = search_transactions  # same name
 get_tx_lines = get_transaction_details
 spending_log = get_spending_summary
 spending_log_items = get_spending_details
-
-# Specimen function compatibility
 upsert_series_code = create_or_update_series_code
 allocate_specimen_code_for_series = allocate_single_specimen_code
-
-# Replace this line in your compatibility shim:
-# upsert_coin_master = create_or_update_coin_master
-# With this wrapper function:
 
 
 def upsert_coin_master(country, denomination, series, metal=None, fineness=None,

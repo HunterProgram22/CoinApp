@@ -55,3 +55,74 @@ Completed Items:
 
  Add robust NULL/empty value handling in Data Import
  Add diameter_mm and thickness_mm fields to Admin Coin Master editor
+
+#### APP SUMMARY ON 8/26/25 ####
+
+Coin Tracker App - Current State Summary
+Architecture & Tech Stack
+
+Framework: Streamlit (Python)
+Database: SQLite everywhere (local + cloud via embedded file)
+Deployment: Streamlit Cloud with SQLite file committed to GitHub repo
+Structure: Multi-page app with 13+ pages including Dashboard, Inventory, Admin, etc.
+
+Recent Major Refactoring (Completed)
+
+Database Layer: Completely refactored from monolithic 600+ line queries.py into modular architecture
+
+db.py - SQLite connection handling
+db_operations.py - Generic database operations (execute_query_*, upsert_record, etc.)
+query_builders.py - SQL building utilities (WhereClauseBuilder, etc.)
+business_logic.py - Transaction processing, cost allocation (TransactionBuilder class)
+dashboard_helpers.py - Dashboard-specific data processing functions
+constants.py - Centralized constants (navigation, silver coin specs, column configs)
+
+
+Database Migration: Successfully moved from Turso (cloud PostgreSQL) back to SQLite everywhere for simplicity
+Admin Page: Fully refactored from direct SQL to proper function calls
+Compatibility Layer: Temporary shims in queries.py for old function names
+
+Key Features Implemented
+
+Coin master & type management with NGC/PCGS URL fields (recently added)
+Transaction processing (BUY/SELL with FIFO inventory tracking)
+Multi-tab dashboard with portfolio summary, metal prices, series rollups
+Data import functionality (CSV uploads for coin masters, types, transactions)
+Admin interface for all CRUD operations
+Silver melt value calculator with configurable coin specifications
+
+Current Data Schema
+
+Full relational schema with coin_master, coin_type, transactions, lots, inventory tracking
+Includes bullion support, specimen tracking, metal pricing, guide pricing
+Complex view system for inventory valuation (melt, numismatic, manual methods)
+
+Testing Status
+
+✅ Local SQLite: All core functionality working
+✅ Cloud SQLite: All core functionality working
+✅ Data Import: Coin masters, coin types, transactions all working
+✅ Admin Operations: Add/edit coin masters and types working
+✅ Transactions: Creation, viewing, voiding all working
+
+Known Issues & Cleanup Needed
+
+Pandas deprecation warning: applymap → map in dashboard_helpers.py
+Test buttons/debug code still present in some pages
+Compatibility shims can be removed once all pages use new function names
+Some pages still need refactoring to eliminate remaining direct SQL calls
+
+To-Do Items
+
+Continue systematic page refactoring to use cleaned architecture
+Remove compatibility shims after all pages updated
+Add utils/ directory structure
+Remove coin type editing from Coin Type Editor page (keep only price guide)
+Various UI/UX improvements and feature additions
+
+Architecture Strengths
+
+Clean separation of concerns between data access, business logic, and UI
+Consistent database operations across all pages
+Single SQLite database eliminates cloud/local compatibility issues
+Modular design makes maintenance and testing much easier
