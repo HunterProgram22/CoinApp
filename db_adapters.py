@@ -113,6 +113,10 @@ class SQLAlchemyConnectionWrapper:
     
     def execute(self, sql: str, params=()) -> SQLAlchemyResultWrapper:
         """Execute SQL query with parameters."""
+        # Ensure params is a tuple, not a list
+        if isinstance(params, list):
+            params = tuple(params)
+
         result = self._conn.exec_driver_sql(sql, params)
         wrapper = SQLAlchemyResultWrapper(result, self._conn)
         
