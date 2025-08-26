@@ -1,0 +1,53 @@
+Immediate Priorities (Current Session)
+
+ Test transaction imports and functionality (morning testing)
+ Test cloud deployment of all current changes
+ Complete compatibility shim removal as pages are refactored
+
+Database & Schema
+
+ Add NGC and PCGS URL fields to coin_master table and related functions
+ Create centralized bullion category helper - Add view/function to define bullion categories (ROUND, BAR, BULLION COIN) in one place
+ Audit all views for asset_category handling - Check if other views need similar updates for bullion categories
+ Review foreign key constraint timing - Potential differences between SQLite and Turso execution order
+
+Code Organization & Architecture
+
+ Create utils/ directory structure for better organization
+ Systematic page refactoring to eliminate remaining direct SQL calls
+ Remove coin type editing from 7_Coin_Type_Editor.py, keep only Price Guide functionality
+ Constants consolidation audit - Search codebase for other hardcoded lists that should use centralized constants.py
+ Remove duplicate validation logic - Eliminate remaining duplicate category/validation lists
+ Database connection pattern consistency - Standardize transaction handling between SQLite and Turso
+
+Code Quality & Technical Debt
+
+ Remove backward compatibility shims after all pages are updated
+ Error handling improvements - Add better error messages for constraint violations
+ Input validation standardization - Consistent approach to cleaning/validating user inputs across forms
+ Review and potentially refactor remaining pages (2_Inventory.py, 3_Type_Sets.py, etc.)
+
+New Features
+
+ Individual coin data editing capability - Add forms/interface to edit existing coin records
+ Enhance Coin Catalog with NGC/PCGS URL display
+ Improve price guide functionality in Coin Type Editor
+ GIFT_IN transaction type implementation - Add support for gift transactions
+
+UI/UX Improvements
+
+ Fix Admin page field-tabbing reloads on Streamlit Cloud - Wrap coin master editor in st.form()
+ Mobile responsiveness validation
+ Cross-browser compatibility testing
+
+Testing & Documentation
+
+ Complete end-to-end testing with real data
+ Performance testing with larger datasets
+ Update README with new architecture
+ Document refactored function APIs
+
+Completed Items:
+
+ Add robust NULL/empty value handling in Data Import
+ Add diameter_mm and thickness_mm fields to Admin Coin Master editor
