@@ -1,7 +1,7 @@
 # db_operations.py
 """Simplified database operation helpers for SQLite."""
-
 from typing import List, Dict, Any, Optional
+
 from db import get_conn
 
 

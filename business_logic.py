@@ -1,8 +1,9 @@
 # business_logic.py
 """Business logic helpers for transactions and inventory operations."""
-
 from typing import List, Dict, Any, Optional
-from db_operations import execute_insert, execute_query_all, execute_query_single, TransactionContext
+
+from db import get_conn
+from db_operations import execute_insert, execute_query_all, execute_query_single
 
 
 class CostAllocationCalculator:
@@ -136,7 +137,7 @@ class TransactionBuilder:
         
         party_id = find_or_create_party(self.tx_data.get('party_name')) if self.tx_data.get('party_name') else None
         
-        with TransactionContext() as cx:
+        with get_conn() as cx:
             # Create transaction header
             tx_id = execute_insert(
                 "INSERT INTO tx(tx_date, tx_type, party_id, currency, shipping, tax, fees, notes) VALUES (?,?,?,?,?,?,?,?)",
@@ -226,7 +227,7 @@ class TransactionBuilder:
         
         party_id = find_or_create_party(self.tx_data.get('party_name')) if self.tx_data.get('party_name') else None
         
-        with TransactionContext() as cx:
+        with get_conn() as cx:
             # Create transaction header
             tx_id = execute_insert(
                 "INSERT INTO tx(tx_date, tx_type, party_id, currency, shipping, tax, fees, notes) VALUES (?,?,?,?,?,?,?,?)",
