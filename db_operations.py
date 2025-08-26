@@ -34,12 +34,20 @@ def execute_insert(query: str, params=()) -> Optional[int]:
 #         cursor = cx.execute(query, params)
 #         return cursor.lastrowid
 
-
 def execute_update(query: str, params=()) -> int:
-    """Execute UPDATE/DELETE and return number of affected rows."""
+    from db import get_conn
     with get_conn() as cx:
         cursor = cx.execute(query, params)
-        return cursor.rowcount if hasattr(cursor, 'rowcount') else 0
+        rows_affected = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
+        # Force commit for debugging
+        if hasattr(cx, 'commit'):
+            cx.commit()
+        return rows_affected
+# def execute_update(query: str, params=()) -> int:
+#     """Execute UPDATE/DELETE and return number of affected rows."""
+#     with get_conn() as cx:
+#         cursor = cx.execute(query, params)
+#         return cursor.rowcount if hasattr(cursor, 'rowcount') else 0
 
 
 def upsert_record(

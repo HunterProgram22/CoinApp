@@ -150,38 +150,81 @@ with tab_master:
 
             notes = st.text_area("Notes", m.get("notes") or "", height=80, key=f"cm_notes_{mid}")
 
-            if st.button("Save changes", type="primary", use_container_width=False, key=f"cm_save_{mid}"):
-                with get_conn() as cx:
-                    cx.execute(
+            if st.button("Save changes", type="primary", use_container_width=False,
+                         key=f"cm_save_{mid}"):
+                try:
+                    from db_operations import execute_update
+
+                    rows_affected = execute_update(
                         """
                         UPDATE coin_master
-                           SET country=?,
-                               denomination=?,
-                               series=?,
-                               metal=?,
-                               fineness=?,
-                               weight_grams=?,
-                               diameter_mm=?,
-                               thickness_mm=?,
-                               edge=?,
-                               years_start=?,
-                               years_end=?,
-                               asset_category=?,
-                               numista_url=?,
-                               notes=?
-                         WHERE id=?
-                        """
-                        ,
+                        SET country=?, denomination=?, series=?, metal=?, fineness=?, 
+                            weight_grams=?, diameter_mm=?, thickness_mm=?, edge=?,
+                            years_start=?, years_end=?, asset_category=?, numista_url=?, notes=?
+                        WHERE id=?
+                        """,
                         (
-                            _clean_str(country), _clean_str(denomination), _clean_str(series),
-                            _clean_str(metal), fineness or None, weight_grams or None,
-                            diameter_mm or None, thickness_mm or None, _clean_str(edge),
-                            years_start or None, years_end or None,
-                            asset_category, _clean_str(numista_url), _clean_str(notes), mid,
+                            country, denomination, series,
+                            metal if metal else None,
+                            fineness,
+                            weight_grams,
+                            diameter_mm,
+                            thickness_mm,
+                            edge if edge else None,
+                            years_start,
+                            years_end,
+                            asset_category,
+                            numista_url if numista_url else None,
+                            notes if notes else None,
+                            mid
                         )
                     )
-                st.success("Saved.")
-                st.rerun()
+                    st.success(f"Saved. Rows affected: {rows_affected}")
+                    print(f"Saved. Rows affected: {rows_affected}")
+                    st.write(f"DEBUG: Updated record ID {mid}")
+                    print(f"DEBUG: Updated record ID {mid}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to save changes: {e}")
+                    print(f"Failed to save changes: {e}")
+                    import traceback
+
+                    st.write(traceback.format_exc())
+                    print(traceback.format_exc())
+
+
+            # if st.button("Save changes", type="primary", use_container_width=False, key=f"cm_save_{mid}"):
+            #     with get_conn() as cx:
+            #         cx.execute(
+            #             """
+            #             UPDATE coin_master
+            #                SET country=?,
+            #                    denomination=?,
+            #                    series=?,
+            #                    metal=?,
+            #                    fineness=?,
+            #                    weight_grams=?,
+            #                    diameter_mm=?,
+            #                    thickness_mm=?,
+            #                    edge=?,
+            #                    years_start=?,
+            #                    years_end=?,
+            #                    asset_category=?,
+            #                    numista_url=?,
+            #                    notes=?
+            #              WHERE id=?
+            #             """
+            #             ,
+            #             (
+            #                 _clean_str(country), _clean_str(denomination), _clean_str(series),
+            #                 _clean_str(metal), fineness or None, weight_grams or None,
+            #                 diameter_mm or None, thickness_mm or None, _clean_str(edge),
+            #                 years_start or None, years_end or None,
+            #                 asset_category, _clean_str(numista_url), _clean_str(notes), mid,
+            #             )
+            #         )
+            #     st.success("Saved.")
+            #     st.rerun()
 
             st.divider()
             st.caption("All masters (read-only)")
