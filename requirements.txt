@@ -5,6 +5,6 @@ pandas>=2.0
 openpyxl>=3.1
 yfinance>=0.2
 
-# Turso / libSQL (only used when TURSO_* secrets are set)
-SQLAlchemy>=2.0
-sqlalchemy-libsql==0.2.0
+# PostgresSQl / NeonDB
+psycopg2-binary>=2.9.6
+sqlalchemy>=2.0.0
