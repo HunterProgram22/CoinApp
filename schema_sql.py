@@ -17,9 +17,11 @@ CREATE TABLE IF NOT EXISTS coin_master (
   edge            TEXT,
   years_start     INTEGER,
   years_end       INTEGER,
-  notes           TEXT,
   asset_category  TEXT NOT NULL DEFAULT 'COIN',
   numista_url     TEXT,
+  ngc_url         TEXT,
+  pcgs_url        TEXT,
+  notes           TEXT,
   UNIQUE(country, denomination, series)
 );
 CREATE INDEX IF NOT EXISTS idx_coin_master_series ON coin_master(series);

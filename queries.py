@@ -24,19 +24,31 @@ def create_or_update_storage(name: str, category: str = None, description: str =
     """Create or update a storage location record."""
     return find_or_create_storage(name, category, description)
 
-
 def create_or_update_coin_master(country: str, denomination: str, series: str, **kwargs) -> int:
     """Create or update a coin master record."""
     # Normalize optional fields
     normalized_fields = {field: normalize_for_upsert(value) for field, value in kwargs.items()}
-    
+
     # Set default asset category
     if normalized_fields.get('asset_category') is None:
         normalized_fields['asset_category'] = 'COIN'
-    
+
     search_fields = {'country': country, 'denomination': denomination, 'series': series}
     return upsert_record('coin_master', search_fields, normalized_fields)
 
+#
+# def create_or_update_coin_master(country: str, denomination: str, series: str, **kwargs) -> int:
+#     """Create or update a coin master record."""
+#     # Normalize optional fields
+#     normalized_fields = {field: normalize_for_upsert(value) for field, value in kwargs.items()}
+#
+#     # Set default asset category
+#     if normalized_fields.get('asset_category') is None:
+#         normalized_fields['asset_category'] = 'COIN'
+#
+#     search_fields = {'country': country, 'denomination': denomination, 'series': series}
+#     return upsert_record('coin_master', search_fields, normalized_fields)
+#
 
 def create_or_update_coin_type(master_id: int, year: int, mint_mark: str = None, variety: str = None, **kwargs) -> int:
     """Create or update a coin type record."""
