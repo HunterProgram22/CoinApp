@@ -128,6 +128,19 @@ class SQLAlchemyConnectionWrapper:
         if isinstance(params, list):
             params = tuple(params)
 
+        # For PostgreSQL, convert ? placeholders to $1, $2, etc.
+        if self._is_postgresql and '?' in sql:
+            # Convert SQLite-style ? placeholders to PostgreSQL-style $1, $2, etc.
+            param_count = 0
+            converted_sql = ""
+            for char in sql:
+                if char == '?':
+                    param_count += 1
+                    converted_sql += f"${param_count}"
+                else:
+                    converted_sql += char
+            sql = converted_sql
+
         result = self._conn.exec_driver_sql(sql, params)
         wrapper = SQLAlchemyResultWrapper(result, self._conn)
 
@@ -139,8 +152,25 @@ class SQLAlchemyConnectionWrapper:
                 wrapper._lastrowid = None
 
         return wrapper
-
-# class SQLAlchemyConnectionWrapper:
+#     def execute(self, sql: str, params=()) -> SQLAlchemyResultWrapper:
+#         """Execute SQL query with parameters."""
+#         # Ensure params is a tuple, not a list
+#         if isinstance(params, list):
+#             params = tuple(params)
+#
+#         result = self._conn.exec_driver_sql(sql, params)
+#         wrapper = SQLAlchemyResultWrapper(result, self._conn)
+#
+#         # Handle lastrowid for INSERT statements
+#         if self._is_insert_query(sql):
+#             try:
+#                 wrapper._lastrowid = result.lastrowid or self._get_lastrowid()
+#             except Exception:
+#                 wrapper._lastrowid = None
+#
+#         return wrapper
+#
+# # class SQLAlchemyConnectionWrapper:
 #     """SQLite-compatible wrapper for SQLAlchemy connections."""
 #
 #     def __init__(self, engine):
