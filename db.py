@@ -37,21 +37,20 @@ def init_db():
     else:
         _init_sqlite_schema()
 
-
 def _init_cloud_schema():
     """Initialize schema for cloud PostgreSQL database."""
+    from schema_postgresql import SCHEMA_SQL as POSTGRESQL_SCHEMA
     with _engine.begin() as conn:
-        # PostgreSQL doesn't support executescript, so split and execute individually
-        statements = SCHEMA_SQL.strip().split(';')
+        statements = POSTGRESQL_SCHEMA.strip().split(';')
         for statement in statements:
             if statement.strip():
                 conn.exec_driver_sql(statement.strip())
 
-
 def _init_sqlite_schema():
     """Initialize schema for SQLite database."""
+    from schema_sql import SCHEMA_SQL as SQLITE_SCHEMA
     with get_conn() as conn:
-        conn.executescript(SCHEMA_SQL)
+        conn.executescript(SQLITE_SCHEMA)
 
 
 # Legacy compatibility exports (if needed by existing code)
