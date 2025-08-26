@@ -1,7 +1,7 @@
 # db_operations.py
-"""Common database operation helpers to reduce repetitive patterns."""
+"""Simplified database operation helpers for SQLite."""
 
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional
 from db import get_conn
 
 
@@ -18,55 +18,31 @@ def execute_query_all(query: str, params=()) -> List[Dict[str, Any]]:
         results = cx.execute(query, params).fetchall()
         return [dict(row) for row in results]
 
+
 def execute_insert(query: str, params=()) -> Optional[int]:
-    from db import get_conn
+    """Execute INSERT and return lastrowid."""
     with get_conn() as cx:
         cursor = cx.execute(query, params)
-        result = cursor.lastrowid
-        # Force commit for debugging
-        if hasattr(cx, 'commit'):
-            cx.commit()
-        return result
+        return cursor.lastrowid
+
 
 def execute_update(query: str, params=()) -> int:
-    from db import get_conn
+    """Execute UPDATE and return number of affected rows."""
     with get_conn() as cx:
         cursor = cx.execute(query, params)
-        rows_affected = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
-        # Force commit for debugging
-        if hasattr(cx, 'commit'):
-            cx.commit()
-        return rows_affected
+        return cursor.rowcount
+
 
 def execute_delete(query: str, params=()) -> int:
     """Execute DELETE and return number of affected rows."""
-    from db import get_conn
     with get_conn() as cx:
         cursor = cx.execute(query, params)
-        rows_affected = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
-        # Force commit for debugging
-        if hasattr(cx, 'commit'):
-            cx.commit()
-        return rows_affected
+        return cursor.rowcount
 
-def upsert_record(
-    table: str,
-    search_fields: Dict[str, Any],
-    update_fields: Dict[str, Any],
-    insert_fields: Optional[Dict[str, Any]] = None
-) -> int:
-    """
-    Generic upsert operation.
-    
-    Args:
-        table: Table name
-        search_fields: Fields to search for existing record
-        update_fields: Fields to update if record exists
-        insert_fields: Fields for insert (defaults to search_fields + update_fields)
-    
-    Returns:
-        Record ID (existing or newly inserted)
-    """
+
+def upsert_record(table: str, search_fields: Dict[str, Any], update_fields: Dict[str, Any],
+                  insert_fields: Optional[Dict[str, Any]] = None) -> int:
+    """Generic upsert operation for SQLite."""
     if insert_fields is None:
         insert_fields = {**search_fields, **update_fields}
     
@@ -95,31 +71,7 @@ def upsert_record(
         return execute_insert(insert_query, insert_params)
 
 
-class TransactionContext:
-    """Context manager for database transactions with better error handling."""
-    
-    def __init__(self):
-        self.connection = None
-    
-    def __enter__(self):
-        self.connection = get_conn().__enter__()
-        return self.connection
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.connection:
-            # Let the connection handle commit/rollback
-            return self.connection.__exit__(exc_type, exc_val, exc_tb)
-
-
-def with_connection(func: Callable) -> Callable:
-    """Decorator to automatically handle database connections."""
-    def wrapper(*args, **kwargs):
-        with get_conn() as cx:
-            return func(cx, *args, **kwargs)
-    return wrapper
-
-
-# Common query patterns
+# Helper functions
 def find_or_create_party(name: str, kind: str = None, contact: str = None) -> Optional[int]:
     """Find existing party or create new one."""
     if not name:
@@ -152,18 +104,6 @@ def find_or_create_storage(name: str, category: str = None, description: str = N
         "INSERT INTO storage_location(name, category, description) VALUES (?,?,?)",
         (name, category, description)
     )
-
-
-# Validation helpers
-def validate_required_fields(data: Dict[str, Any], required_fields: List[str]) -> None:
-    """Validate that required fields are present and not empty."""
-    missing = []
-    for field in required_fields:
-        if field not in data or not data[field]:
-            missing.append(field)
-    
-    if missing:
-        raise ValueError(f"Missing required fields: {', '.join(missing)}")
 
 
 def normalize_text_field(value: Any, nan_values: set = None) -> str:

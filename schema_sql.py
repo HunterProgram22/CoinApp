@@ -1,4 +1,4 @@
-# schema_sql.py - Turso Compatible Version
+# schema_sql.py - SQLite Version with NGC/PCGS URLs
 
 SCHEMA_SQL = r"""
 PRAGMA foreign_keys = ON;
@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS lot_relief (
 CREATE INDEX IF NOT EXISTS idx_lot_relief_lot_id ON lot_relief(lot_id);
 CREATE INDEX IF NOT EXISTS idx_lot_relief_sell_line_id ON lot_relief(sell_line_id);
 
-/* Triggers - Simplified for compatibility */
+/* Triggers */
 CREATE TRIGGER IF NOT EXISTS trg_lot_relief_before_insert
 BEFORE INSERT ON lot_relief
 BEGIN
@@ -332,7 +332,6 @@ FROM lot l
 JOIN coin_type  ct ON ct.id = l.coin_type_id
 JOIN coin_master cm ON cm.id = ct.master_id
 WHERE l.qty_remaining > 0;
-
 
 /* Portfolio summary */
 CREATE VIEW IF NOT EXISTS v_portfolio_value_summary AS

@@ -1,64 +1,50 @@
-# db.py — hybrid connector: Neon PostgreSQL in cloud, SQLite locally
+# db.py — SQLite everywhere
 """Database connection and initialization module."""
 
-from db_config import DatabaseConfig
-from db_adapters import SQLAlchemyConnectionWrapper, SQLiteConnectionWrapper
+import os
+import sqlite3
+from pathlib import Path
 from schema_sql import SCHEMA_SQL
 
+try:
+    import streamlit as st
+except ImportError:
+    st = None
+
+# Database configuration
+DEFAULT_DB_PATH = "data/coinapp.sqlite"
+
+def get_secret(name: str, default=None):
+    """Get configuration value from environment or Streamlit secrets."""
+    # Try environment first
+    val = os.environ.get(name)
+    if val is not None:
+        return val
+    
+    # Try Streamlit secrets if available
+    if st is not None:
+        try:
+            return st.secrets.get(name, default)
+        except Exception:
+            pass
+    
+    return default
+
 # Global configuration
-_config = DatabaseConfig()
-
-# Global engine for cloud connections
-_engine = None
-
-if _config.is_cloud:
-    from sqlalchemy import create_engine
-
-    _engine = create_engine(
-        _config.neon_url,
-        pool_pre_ping=True,
-        future=True,
-    )
-
+DB_PATH = Path(get_secret("COINAPP_DB_PATH", DEFAULT_DB_PATH))
 
 def get_conn():
-    """Get a database connection using the appropriate adapter."""
-    if _config.is_cloud:
-        return SQLAlchemyConnectionWrapper(_engine)
-    else:
-        _config.ensure_local_db_path()
-        return SQLiteConnectionWrapper(_config.db_path)
-
+    """Get a SQLite database connection."""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
+    return conn
 
 def init_db():
     """Initialize database schema."""
-    if _config.is_cloud:
-        _init_cloud_schema()
-    else:
-        _init_sqlite_schema()
-
-
-def _init_cloud_schema():
-    """Initialize schema for cloud PostgreSQL database."""
-    from schema_postgresql import SCHEMA_SQL as POSTGRESQL_SCHEMA
-
-    # Get raw psycopg2 connection instead of SQLAlchemy wrapper
-    raw_conn = _engine.raw_connection()
-    try:
-        with raw_conn.cursor() as cursor:
-            cursor.execute(POSTGRESQL_SCHEMA)
-        raw_conn.commit()
-    finally:
-        raw_conn.close()
-
-
-def _init_sqlite_schema():
-    """Initialize schema for SQLite database."""
-    from schema_sql import SCHEMA_SQL as SQLITE_SCHEMA
     with get_conn() as conn:
-        conn.executescript(SQLITE_SCHEMA)
+        conn.executescript(SCHEMA_SQL)
 
-
-# Legacy compatibility exports (if needed by existing code)
-IS_CLOUD = _config.is_cloud  # Updated from IS_TURSO
-DB_PATH = _config.db_path
+# Legacy compatibility exports
+IS_CLOUD = False  # Always SQLite now
