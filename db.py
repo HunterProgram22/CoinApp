@@ -1,4 +1,4 @@
-# db.py — hybrid connector: Turso (libSQL via SQLAlchemy) in deploy, SQLite locally
+# db.py — hybrid connector: Neon PostgreSQL in cloud, SQLite locally
 """Database connection and initialization module."""
 
 from db_config import DatabaseConfig
@@ -8,15 +8,14 @@ from schema_sql import SCHEMA_SQL
 # Global configuration
 _config = DatabaseConfig()
 
-# Global engine for Turso connections
+# Global engine for cloud connections
 _engine = None
 
-if _config.is_turso:
+if _config.is_cloud:
     from sqlalchemy import create_engine
-    
+
     _engine = create_engine(
-        _config.connection_string,
-        connect_args=_config.connect_args,
+        _config.neon_url,
         pool_pre_ping=True,
         future=True,
     )
@@ -24,7 +23,7 @@ if _config.is_turso:
 
 def get_conn():
     """Get a database connection using the appropriate adapter."""
-    if _config.is_turso:
+    if _config.is_cloud:
         return SQLAlchemyConnectionWrapper(_engine)
     else:
         _config.ensure_local_db_path()
@@ -33,21 +32,20 @@ def get_conn():
 
 def init_db():
     """Initialize database schema."""
-    if _config.is_turso:
-        _init_turso_schema()
+    if _config.is_cloud:
+        _init_cloud_schema()
     else:
         _init_sqlite_schema()
 
 
-def _init_turso_schema():
-    """Initialize schema for Turso database."""
+def _init_cloud_schema():
+    """Initialize schema for cloud PostgreSQL database."""
     with _engine.begin() as conn:
-        raw_conn = conn.connection
-        cursor = raw_conn.cursor()
-        try:
-            cursor.executescript(SCHEMA_SQL)
-        finally:
-            cursor.close()
+        # PostgreSQL doesn't support executescript, so split and execute individually
+        statements = SCHEMA_SQL.strip().split(';')
+        for statement in statements:
+            if statement.strip():
+                conn.exec_driver_sql(statement.strip())
 
 
 def _init_sqlite_schema():
@@ -57,5 +55,5 @@ def _init_sqlite_schema():
 
 
 # Legacy compatibility exports (if needed by existing code)
-IS_TURSO = _config.is_turso
+IS_CLOUD = _config.is_cloud  # Updated from IS_TURSO
 DB_PATH = _config.db_path
