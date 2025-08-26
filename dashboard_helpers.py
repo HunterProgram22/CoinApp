@@ -139,10 +139,10 @@ def apply_gain_loss_styling(df):
     styled = df_styled.style
     
     if 'Unrealized G/L (USD)' in df_styled.columns:
-        styled = styled.applymap(color_gl, subset=['Unrealized G/L (USD)'])
+        styled = styled.map(color_gl, subset=['Unrealized G/L (USD)'])
     
     if 'Unrealized G/L (%)' in df_styled.columns:
-        styled = styled.applymap(color_gl, subset=['Unrealized G/L (%)'])
+        styled = styled.map(color_gl, subset=['Unrealized G/L (%)'])
     
     # Format columns
     money_format = {col: "${:,.2f}" for col in money_cols if col in df_styled.columns}
