@@ -1,22 +1,22 @@
 # pages/8_Admin.py
 import io
 import os
-import sqlite3
 from datetime import datetime, UTC
 
 import pandas as pd
 import streamlit as st
 
-from db import get_conn, init_db, DB_PATH
+from db import init_db, DB_PATH
+from db_operations import execute_query_all, execute_query_single, execute_insert, execute_update, execute_delete
+from queries import create_or_update_coin_master, create_or_update_coin_type
 from constants import ASSET_CATEGORIES
-
 
 st.set_page_config(page_title="Admin", page_icon="🛠️", layout="wide")
 st.title("🛠️ Admin")
 
 TAB_LABELS = [
     "Coin Master Editor",
-    "Coin Type Editor",
+    "Coin Type Editor", 
     "Metal Prices",
     "Void / Delete Tools",
     "Reset DB",
@@ -25,9 +25,10 @@ tab_master, tab_types, tab_prices, tab_maint, tab_reset = st.tabs(TAB_LABELS)
 
 
 # --------------------------
-# Helpers
+# Helper Functions (refactored to use query functions)
 # --------------------------
-def _clean_str(val):
+def clean_str(val):
+    """Clean string input, handling NaN-like values."""
     if val is None:
         return None
     s = str(val).strip()
@@ -35,68 +36,107 @@ def _clean_str(val):
         return ""
     return s
 
-def _list_coin_masters():
-    with get_conn() as cx:
-        rows = cx.execute(
-            """
-            SELECT id, country, denomination, series, metal, fineness, weight_grams,
-                diameter_mm, thickness_mm, edge, 
-                years_start, years_end, asset_category,
-                numista_url, notes
-            FROM coin_master
-            ORDER BY country, denomination, series
-            """
-        ).fetchall()
-    return [dict(r) for r in rows]
 
-def _list_coin_types_for_master(master_id: int):
-    with get_conn() as cx:
-        rows = cx.execute(
-            """
-            SELECT id, year, COALESCE(mint_mark,'') AS mint_mark, COALESCE(variety,'') AS variety,
-                   mintage, is_proof, designer, obv_desc, rev_desc
-            FROM coin_type
-            WHERE master_id=?
-            ORDER BY year, mint_mark, variety
-            """, (master_id,)
-        ).fetchall()
-    return [dict(r) for r in rows]
+def get_coin_masters():
+    """Get all coin masters."""
+    return execute_query_all("""
+        SELECT id, country, denomination, series, metal, fineness, weight_grams,
+            diameter_mm, thickness_mm, edge, 
+            years_start, years_end, asset_category,
+            numista_url, notes
+        FROM coin_master
+        ORDER BY country, denomination, series
+    """)
 
-def _list_recent_transactions(n=50):
-    with get_conn() as cx:
-        rows = cx.execute(
-            """
-            SELECT t.id, t.tx_date, t.tx_type, p.name AS party, t.shipping, t.tax, t.fees, t.currency
-            FROM tx t
-            LEFT JOIN party p ON p.id = t.party_id
-            ORDER BY t.tx_date DESC, t.id DESC
-            LIMIT ?
-            """, (n,)
-        ).fetchall()
-    return [dict(r) for r in rows]
 
-def _list_open_lots():
-    with get_conn() as cx:
-        rows = cx.execute(
-            """
-            SELECT l.id, l.acquired_date, l.qty_acquired, l.qty_remaining, l.unit_cost,
-                   cm.country, cm.denomination, cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety
-            FROM lot l
-            JOIN coin_type ct ON ct.id = l.coin_type_id
-            JOIN coin_master cm ON cm.id = ct.master_id
-            ORDER BY l.acquired_date DESC, l.id DESC
-            """
-        ).fetchall()
-    return [dict(r) for r in rows]
+def get_coin_types_for_master(master_id: int):
+    """Get coin types for a specific master."""
+    return execute_query_all("""
+        SELECT id, year, COALESCE(mint_mark,'') AS mint_mark, COALESCE(variety,'') AS variety,
+               mintage, is_proof, designer, obv_desc, rev_desc
+        FROM coin_type
+        WHERE master_id=?
+        ORDER BY year, mint_mark, variety
+    """, (master_id,))
+
+
+def get_all_coin_types():
+    """Get all coin types with master information."""
+    return execute_query_all("""
+        SELECT ct.id, cm.country, cm.denomination, cm.series, ct.year,
+               COALESCE(ct.mint_mark,'') AS mint_mark, COALESCE(ct.variety,'') AS variety,
+               ct.mintage, ct.is_proof, ct.master_id
+        FROM coin_type ct
+        JOIN coin_master cm ON cm.id = ct.master_id
+        ORDER BY cm.country, cm.denomination, cm.series, ct.year, ct.mint_mark, ct.variety
+    """)
+
+
+def get_recent_transactions(limit: int = 50):
+    """Get recent transactions."""
+    return execute_query_all("""
+        SELECT t.id, t.tx_date, t.tx_type, p.name AS party, t.shipping, t.tax, t.fees, t.currency
+        FROM tx t
+        LEFT JOIN party p ON p.id = t.party_id
+        ORDER BY t.tx_date DESC, t.id DESC
+        LIMIT ?
+    """, (limit,))
+
+
+def get_open_lots():
+    """Get open lots."""
+    return execute_query_all("""
+        SELECT l.id, l.acquired_date, l.qty_acquired, l.qty_remaining, l.unit_cost,
+               cm.country, cm.denomination, cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        ORDER BY l.acquired_date DESC, l.id DESC
+    """)
+
+
+def get_latest_metal_prices():
+    """Get latest metal prices."""
+    return execute_query_all("""
+        SELECT metal, price_per_oz_usd, quoted_at_utc
+        FROM metal_price
+        WHERE (metal, quoted_at_utc) IN (
+            SELECT metal, MAX(quoted_at_utc) FROM metal_price GROUP BY metal
+        )
+        ORDER BY metal
+    """)
+
+
+def create_metal_price(metal: str, price: float, quoted_at: str) -> int:
+    """Create a metal price record."""
+    return execute_insert(
+        "INSERT INTO metal_price (metal, price_per_oz_usd, quoted_at_utc) VALUES (?,?,?)",
+        (metal, price, quoted_at)
+    )
+
+
+def delete_transaction(tx_id: int) -> int:
+    """Delete a transaction."""
+    return execute_delete("DELETE FROM tx WHERE id=?", (tx_id,))
+
+
+def delete_lot(lot_id: int) -> int:
+    """Delete a lot (only if no relief records exist)."""
+    # Check for existing relief records
+    relief_count = execute_query_single("SELECT COUNT(1) AS c FROM lot_relief WHERE lot_id=?", (lot_id,))
+    if relief_count and relief_count['c'] > 0:
+        raise ValueError("This lot has relief (sales) linked. Cannot delete.")
+    
+    return execute_delete("DELETE FROM lot WHERE id=?", (lot_id,))
 
 
 # =====================================================
-# Coin Master Editor (with Numista URL)
+# Coin Master Editor
 # =====================================================
 with tab_master:
     st.subheader("Coin Master Editor")
 
-    masters = _list_coin_masters()
+    masters = get_coin_masters()
     left, right = st.columns([2, 1])
 
     with left:
@@ -140,21 +180,16 @@ with tab_master:
                                           index=ASSET_CATEGORIES.index((m.get("asset_category") or "COIN")),
                                           key=f"cm_assetcat_{mid}")
 
-            # Numista URL
             numista_url = st.text_input("Numista URL (optional)", m.get("numista_url") or "",
                                         placeholder="https://en.numista.com/catalogue/...",
                                         key=f"cm_numista_{mid}")
             if numista_url:
-                # Older Streamlit builds don't accept `key=` here; omit it.
                 st.link_button("Open Numista", numista_url, type="secondary")
 
             notes = st.text_area("Notes", m.get("notes") or "", height=80, key=f"cm_notes_{mid}")
 
-            if st.button("Save changes", type="primary", use_container_width=False,
-                         key=f"cm_save_{mid}"):
+            if st.button("Save changes", type="primary", use_container_width=False, key=f"cm_save_{mid}"):
                 try:
-                    from db_operations import execute_update
-
                     rows_affected = execute_update(
                         """
                         UPDATE coin_master
@@ -183,9 +218,6 @@ with tab_master:
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to save changes: {e}")
-                    import traceback
-
-                    st.write(traceback.format_exc())
 
             st.divider()
             st.caption("All masters (read-only)")
@@ -203,17 +235,14 @@ with tab_master:
             new_fineness = row2.number_input("Fineness", min_value=0.0, max_value=1.0, step=0.001, value=0.0, key="cm_add_fineness")
             new_weight = row3.number_input("Weight (g)", min_value=0.0, step=0.001, value=0.0, key="cm_add_weight")
             dim1, dim2, dim3 = st.columns(3)
-            new_diameter = dim1.number_input("Diameter (mm)", min_value=0.0, step=0.1, value=0.0,
-                                             key="cm_add_diameter")
-            new_thickness = dim2.number_input("Thickness (mm)", min_value=0.0, step=0.01, value=0.0,
-                                              key="cm_add_thickness")
+            new_diameter = dim1.number_input("Diameter (mm)", min_value=0.0, step=0.1, value=0.0, key="cm_add_diameter")
+            new_thickness = dim2.number_input("Thickness (mm)", min_value=0.0, step=0.01, value=0.0, key="cm_add_thickness")
             new_edge = dim3.text_input("Edge", key="cm_add_edge")
             y1, y2 = st.columns(2)
             new_start = y1.number_input("Years start", min_value=0, step=1, value=0, key="cm_add_ystart")
             new_end = y2.number_input("Years end", min_value=0, step=1, value=0, key="cm_add_yend")
             new_asset_cat = st.selectbox("Asset Category", ASSET_CATEGORIES, index=0, key="cm_add_asset_cat")
-            new_numista = st.text_input("Numista URL (optional)", placeholder="https://en.numista.com/catalogue/...",
-                                        key="cm_add_numista")
+            new_numista = st.text_input("Numista URL (optional)", placeholder="https://en.numista.com/catalogue/...", key="cm_add_numista")
             new_notes = st.text_area("Notes", height=80, key="cm_add_notes")
 
             submitted = st.form_submit_button("Create master")
@@ -222,8 +251,6 @@ with tab_master:
                     st.error("Country, Denomination, and Series are required.")
                 else:
                     try:
-                        from queries import create_or_update_coin_master
-
                         result_id = create_or_update_coin_master(
                             new_country, new_denom, new_series,
                             metal=new_metal if new_metal else None,
@@ -245,12 +272,12 @@ with tab_master:
 
 
 # =====================================================
-# Coin Type Editor (create + edit)
+# Coin Type Editor
 # =====================================================
 with tab_types:
     st.subheader("Coin Type Editor")
 
-    masters = _list_coin_masters()
+    masters = get_coin_masters()
     if not masters:
         st.info("Add a Coin Master first.")
     else:
@@ -270,81 +297,26 @@ with tab_types:
             is_proof = c5.checkbox("Is Proof?", key="ct_add_proof")
 
             if st.button("Create Type", type="primary", key="ct_add_submit"):
-                with get_conn() as cx:
-                    try:
-                        st.write(
-                            f"DEBUG: Attempting to create coin type with master_id={master_id}, year={year}")
-
-                        cursor = cx.execute(
-                            """
-                            INSERT INTO coin_type(master_id, year, mint_mark, variety, mintage, is_proof)
-                            VALUES (?,?,?,?,?,?)
-                            """,
-                            (master_id, int(year or 0), _clean_str(mint_mark), _clean_str(variety),
-                             int(mintage or 0), 1 if is_proof else 0)
-                        )
-
-                        row_id = cursor.lastrowid
-                        print(f"DEBUG: Created coin type with ID {row_id}")
-                        st.write(f"DEBUG: Created coin type with ID {row_id}")
-
-                        # Immediately verify it exists
-                        verify = cx.execute("SELECT COUNT(*) FROM coin_type WHERE id = ?",
-                                            (row_id,)).fetchone()
-                        st.write(f"DEBUG: Verification count in coin_type table: {verify[0]}")
-                        print(f"DEBUG: Verification count in coin_type table: {verify[0]}")
-
-                        # Also check what we can query back
-                        created_record = cx.execute(
-                            "SELECT ct.id, cm.series FROM coin_type ct JOIN coin_master cm ON cm.id = ct.master_id WHERE ct.id = ?",
-                            (row_id,)
-                        ).fetchone()
-                        if created_record:
-                            st.write(
-                                f"DEBUG: Found created record - ID: {created_record[0]}, Series: {created_record[1]}")
-                        else:
-                            st.write("DEBUG: Could not find the created record in joined query")
-
-                        st.success("Coin Type created.")
-                        st.rerun()
-
-                    except sqlite3.IntegrityError as e:
-                        st.error(f"Could not create coin type (maybe it already exists): {e}")
-                    except Exception as e:
-                        st.error(f"Database error: {e}")
-
-            # if st.button("Create Type", type="primary", key="ct_add_submit"):
-            #     with get_conn() as cx:
-            #         try:
-            #             cx.execute(
-            #                 """
-            #                 INSERT INTO coin_type(master_id, year, mint_mark, variety, mintage, is_proof)
-            #                 VALUES (?,?,?,?,?,?)
-            #                 """
-            #                 , (master_id, int(year or 0), _clean_str(mint_mark), _clean_str(variety), int(mintage or 0), 1 if is_proof else 0)
-            #             )
-            #             st.success("Coin Type created.")
-            #             st.rerun()
-            #         except sqlite3.IntegrityError as e:
-            #             st.error(f"Could not create coin type (maybe it already exists): {e}")
+                try:
+                    result_id = create_or_update_coin_type(
+                        master_id,
+                        int(year or 0),
+                        clean_str(mint_mark),
+                        clean_str(variety),
+                        mintage=int(mintage or 0),
+                        is_proof=1 if is_proof else 0
+                    )
+                    st.success(f"Coin Type created with ID: {result_id}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to create coin type: {e}")
 
         st.divider()
 
         # Edit Type
         st.subheader("Edit Existing Type")
-        type_rows = []
-        with get_conn() as cx:
-            type_rows = cx.execute(
-                """
-                SELECT ct.id, cm.country, cm.denomination, cm.series, ct.year,
-                       COALESCE(ct.mint_mark,'') AS mint_mark, COALESCE(ct.variety,'') AS variety,
-                       ct.mintage, ct.is_proof
-                FROM coin_type ct
-                JOIN coin_master cm ON cm.id = ct.master_id
-                ORDER BY cm.country, cm.denomination, cm.series, ct.year, ct.mint_mark, ct.variety
-                """
-            ).fetchall()
-        type_rows = [dict(r) for r in type_rows]
+        type_rows = get_all_coin_types()
+        
         if not type_rows:
             st.info("No coin types yet.")
         else:
@@ -366,18 +338,20 @@ with tab_types:
             e_proof = c5.checkbox("Is Proof?", value=bool(row.get("is_proof")), key=f"ct_proof_{tid}")
 
             if st.button("Save Type Changes", key=f"ct_save_{tid}"):
-                with get_conn() as cx:
-                    cx.execute(
+                try:
+                    rows_affected = execute_update(
                         """
                         UPDATE coin_type
-                           SET year=?, mint_mark=?, variety=?, mintage=?, is_proof=?
-                         WHERE id=?
-                        """
-                        ,
-                        (int(e_year or 0), _clean_str(e_mint), _clean_str(e_var), int(e_mintage or 0), 1 if e_proof else 0, tid)
+                        SET year=?, mint_mark=?, variety=?, mintage=?, is_proof=?
+                        WHERE id=?
+                        """,
+                        (int(e_year or 0), clean_str(e_mint), clean_str(e_var), 
+                         int(e_mintage or 0), 1 if e_proof else 0, tid)
                     )
-                st.success("Type updated.")
-                st.rerun()
+                    st.success(f"Type updated. Rows affected: {rows_affected}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to update coin type: {e}")
 
 
 # =====================================================
@@ -387,19 +361,9 @@ with tab_prices:
     st.subheader("Metal Prices")
 
     # Show latest prices
-    with get_conn() as cx:
-        rows = cx.execute(
-            """
-            SELECT metal, price_per_oz_usd, quoted_at_utc
-            FROM metal_price
-            WHERE (metal, quoted_at_utc) IN (
-              SELECT metal, MAX(quoted_at_utc) FROM metal_price GROUP BY metal
-            )
-            ORDER BY metal
-            """
-        ).fetchall()
-    df = pd.DataFrame([dict(r) for r in rows])
-    if not df.empty:
+    prices = get_latest_metal_prices()
+    if prices:
+        df = pd.DataFrame(prices)
         df = df.rename(columns={"metal": "Metal", "price_per_oz_usd": "Price Per Oz. (USD)", "quoted_at_utc": "Quoted (UTC)"})
         st.dataframe(df, use_container_width=True)
     else:
@@ -412,13 +376,12 @@ with tab_prices:
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
     if st.button("Save Price", key="mp_save"):
-        with get_conn() as cx:
-            cx.execute(
-                "INSERT INTO metal_price (metal, price_per_oz_usd, quoted_at_utc) VALUES (?,?,?)",
-                (metal, float(price), now),
-            )
-        st.success(f"Saved {metal} = ${price:,.2f} @ {now} UTC")
-        st.rerun()
+        try:
+            create_metal_price(metal, float(price), now)
+            st.success(f"Saved {metal} = ${price:,.2f} @ {now} UTC")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Failed to save price: {e}")
 
     st.divider()
     st.markdown("**Fetch from Yahoo Finance (Futures)**")
@@ -431,22 +394,20 @@ with tab_prices:
             except Exception as e:
                 st.error(f"yfinance not available: {e}. Install it (requirements.txt) and redeploy.")
             else:
-                # Symbols you specified
                 sym_map = {"Ag": "SI=F", "Au": "GC=F", "Pt": "PL=F", "Pd": "PA=F"}
                 updated = []
+                timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+                
                 for m, sym in sym_map.items():
                     try:
                         t = yf.Ticker(sym)
                         data = t.history(period="1d")
                         last = float(data["Close"].iloc[-1])
-                        with get_conn() as cx:
-                            cx.execute(
-                                "INSERT INTO metal_price (metal, price_per_oz_usd, quoted_at_utc) VALUES (?,?,?)",
-                                (m, last, datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")),
-                            )
+                        create_metal_price(m, last, timestamp)
                         updated.append((m, last))
                     except Exception as ex:
                         st.warning(f"{m} ({sym}) update failed: {ex}")
+                
                 if updated:
                     st.success("Updated: " + ", ".join([f"{m} ${v:,.2f}" for m, v in updated]))
                     st.rerun()
@@ -459,7 +420,7 @@ with tab_prices:
 # =====================================================
 with tab_maint:
     st.subheader("Void an entire transaction")
-    tx_rows = _list_recent_transactions(100)
+    tx_rows = get_recent_transactions(100)
     if not tx_rows:
         st.info("No transactions yet.")
     else:
@@ -473,16 +434,15 @@ with tab_maint:
 
         if st.button("Void Transaction", type="primary", key="vd_tx_void"):
             try:
-                with get_conn() as cx:
-                    cx.execute("DELETE FROM tx WHERE id=?", (tx_id,))
-                st.success(f"Transaction #{tx_id} voided.")
+                rows_deleted = delete_transaction(tx_id)
+                st.success(f"Transaction #{tx_id} voided. Rows deleted: {rows_deleted}")
                 st.rerun()
             except Exception as e:
                 st.error(f"Could not void transaction: {e}")
 
     st.divider()
     st.subheader("Delete a lot (no relief)")
-    lots = _list_open_lots()
+    lots = get_open_lots()
     if not lots:
         st.info("No lots available.")
     else:
@@ -496,14 +456,9 @@ with tab_maint:
 
         if st.button("Delete Lot", type="secondary", key="vd_lot_delete"):
             try:
-                with get_conn() as cx:
-                    used = cx.execute("SELECT COUNT(1) AS c FROM lot_relief WHERE lot_id=?", (chosen["id"],)).fetchone()["c"]
-                    if used and used > 0:
-                        st.error("This lot has relief (sales) linked. Cannot delete.")
-                    else:
-                        cx.execute("DELETE FROM lot WHERE id=?", (chosen["id"],))
-                        st.success(f"Lot #{chosen['id']} deleted.")
-                        st.rerun()
+                rows_deleted = delete_lot(chosen["id"])
+                st.success(f"Lot #{chosen['id']} deleted. Rows deleted: {rows_deleted}")
+                st.rerun()
             except Exception as e:
                 st.error(f"Could not delete lot: {e}")
 
@@ -533,6 +488,7 @@ with tab_reset:
                 )
             except Exception as e:
                 st.error(f"Backup failed: {e}")
+    
     with c2:
         st.warning("Reset will delete the database file and rebuild with the current schema. This cannot be undone.")
         if st.button("💥 Reset DB (drop & recreate)", type="primary", key="reset_drop_btn"):

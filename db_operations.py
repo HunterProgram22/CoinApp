@@ -38,6 +38,17 @@ def execute_update(query: str, params=()) -> int:
             cx.commit()
         return rows_affected
 
+def execute_delete(query: str, params=()) -> int:
+    """Execute DELETE and return number of affected rows."""
+    from db import get_conn
+    with get_conn() as cx:
+        cursor = cx.execute(query, params)
+        rows_affected = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
+        # Force commit for debugging
+        if hasattr(cx, 'commit'):
+            cx.commit()
+        return rows_affected
+
 def upsert_record(
     table: str,
     search_fields: Dict[str, Any],
