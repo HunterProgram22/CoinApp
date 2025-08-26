@@ -283,56 +283,78 @@ with tab_types:
     else:
         # Create Type
         with st.expander("➕ Add a Coin Type", expanded=True):
-            labels = [f"{m['country']} • {m['denomination']} • {m['series']}" for m in masters]
-            lbl_to_id = {lab: m['id'] for lab, m in zip(labels, masters)}
-            pick_m_label = st.selectbox("Master", labels, key="ct_add_master")
-            master_id = lbl_to_id[pick_m_label]
+            with st.form("coin_type_create_form"):  # Add this form wrapper
+                labels = [f"{m['country']} • {m['denomination']} • {m['series']}" for m in masters]
+                lbl_to_id = {lab: m['id'] for lab, m in zip(labels, masters)}
+                pick_m_label = st.selectbox("Master", labels, key="ct_add_master")
+                master_id = lbl_to_id[pick_m_label]
 
-            c1, c2, c3 = st.columns(3)
-            year = c1.number_input("Year*", min_value=0, step=1, value=0, key="ct_add_year")
-            mint_mark = c2.text_input("Mint Mark ('', P, D, S, W ...)", value="", key="ct_add_mint")
-            variety = c3.text_input("Variety", value="", key="ct_add_variety")
-            c4, c5 = st.columns(2)
-            mintage = c4.number_input("Mintage", min_value=0, step=1, value=0, key="ct_add_mintage")
-            is_proof = c5.checkbox("Is Proof?", key="ct_add_proof")
+                c1, c2, c3 = st.columns(3)
+                year = c1.number_input("Year*", min_value=0, step=1, value=0, key="ct_add_year")
+                mint_mark = c2.text_input("Mint Mark ('', P, D, S, W ...)", value="",
+                                          key="ct_add_mint")
+                variety = c3.text_input("Variety", value="", key="ct_add_variety")
+                c4, c5 = st.columns(2)
+                mintage = c4.number_input("Mintage", min_value=0, step=1, value=0,
+                                          key="ct_add_mintage")
+                is_proof = c5.checkbox("Is Proof?", key="ct_add_proof")
 
-            if st.button("Create Type", type="primary", key="ct_add_submit"):
-                try:
-                    result_id = create_or_update_coin_type(
-                        master_id,
-                        int(year or 0),
-                        clean_str(mint_mark),
-                        clean_str(variety),
-                        mintage=int(mintage or 0),
-                        is_proof=1 if is_proof else 0
-                    )
-                    # Also use st.write with a container that persists longer
-                    with st.container():
-                        st.success(f"Coin Type created with ID: {result_id}. Refresh page to see"
-                                   f" new type in the Edit Existing Type dropdown menu below.")
+                # Change to form submit button
+                submitted = st.form_submit_button("Create Type", type="primary")
 
-                except Exception as e:
-                    st.error(f"Failed to create coin type: {e}")
-                    import traceback
+                if submitted:  # Change from st.button to form submission
+                    try:
+                        result_id = create_or_update_coin_type(
+                            master_id,
+                            int(year or 0),
+                            clean_str(mint_mark),
+                            clean_str(variety),
+                            mintage=int(mintage or 0),
+                            is_proof=1 if is_proof else 0
+                        )
+                        st.success(
+                            f"Coin Type created with ID: {result_id}. Refresh the page to see it in the edit list below.")
+                    except Exception as e:
+                        st.error(f"Failed to create coin type: {e}")
 
-                    st.write(traceback.format_exc())
 
-            # if st.button("Create Type", type="primary", key="ct_add_submit"):
-            #     try:
-            #         result_id = create_or_update_coin_type(
-            #             master_id,
-            #             int(year or 0),
-            #             clean_str(mint_mark),
-            #             clean_str(variety),
-            #             mintage=int(mintage or 0),
-            #             is_proof=1 if is_proof else 0
-            #         )
-            #         st.success(f"Coin Type created with ID: {result_id}")
-            #         st.rerun()
-            #     except Exception as e:
-            #         st.error(f"Failed to create coin type: {e}")
-
-        st.divider()
+        # Create Type
+        # with st.expander("➕ Add a Coin Type", expanded=True):
+        #     labels = [f"{m['country']} • {m['denomination']} • {m['series']}" for m in masters]
+        #     lbl_to_id = {lab: m['id'] for lab, m in zip(labels, masters)}
+        #     pick_m_label = st.selectbox("Master", labels, key="ct_add_master")
+        #     master_id = lbl_to_id[pick_m_label]
+        #
+        #     c1, c2, c3 = st.columns(3)
+        #     year = c1.number_input("Year*", min_value=0, step=1, value=0, key="ct_add_year")
+        #     mint_mark = c2.text_input("Mint Mark ('', P, D, S, W ...)", value="", key="ct_add_mint")
+        #     variety = c3.text_input("Variety", value="", key="ct_add_variety")
+        #     c4, c5 = st.columns(2)
+        #     mintage = c4.number_input("Mintage", min_value=0, step=1, value=0, key="ct_add_mintage")
+        #     is_proof = c5.checkbox("Is Proof?", key="ct_add_proof")
+        #
+        #     if st.button("Create Type", type="primary", key="ct_add_submit"):
+        #         try:
+        #             result_id = create_or_update_coin_type(
+        #                 master_id,
+        #                 int(year or 0),
+        #                 clean_str(mint_mark),
+        #                 clean_str(variety),
+        #                 mintage=int(mintage or 0),
+        #                 is_proof=1 if is_proof else 0
+        #             )
+        #             # Also use st.write with a container that persists longer
+        #             with st.container():
+        #                 st.success(f"Coin Type created with ID: {result_id}. Refresh page to see"
+        #                            f" new type in the Edit Existing Type dropdown menu below.")
+        #
+        #         except Exception as e:
+        #             st.error(f"Failed to create coin type: {e}")
+        #             import traceback
+        #
+        #             st.write(traceback.format_exc())
+        #
+        # st.divider()
 
         # Edit Type
         st.subheader("Edit Existing Type")
