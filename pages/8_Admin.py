@@ -308,10 +308,9 @@ with tab_types:
                     )
                     # Also use st.write with a container that persists longer
                     with st.container():
-                        st.success(f"Coin Type created with ID: {result_id}")
-                        st.write("Check the logs for debug details")
+                        st.success(f"Coin Type created with ID: {result_id}. Refresh page to see"
+                                   f" new type in the Edit Existing Type dropdown menu below.")
 
-                    st.rerun()
                 except Exception as e:
                     st.error(f"Failed to create coin type: {e}")
                     import traceback
