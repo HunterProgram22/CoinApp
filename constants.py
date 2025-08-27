@@ -77,10 +77,10 @@ ASSET_CATEGORIES = ["COIN", "ROUND", "BAR", "BULLION COIN"]
 # Transaction Types
 TRANSACTION_TYPES = ["BUY", "SELL", "FEE", "ADJUST", "GIFT_IN", "GIFT_OUT", "TRANSFER"]
 
-# Metals
+# Metals (ordered by common usage)
 METALS = ["Ag", "Au", "Pt", "Pd", "Cu", "Ni", "Zn"]
 
-# Currencies
+# Currencies (ordered by common usage)
 CURRENCIES = ["USD", "CAD", "EUR", "GBP"]
 
 # Lot Status Options
@@ -89,13 +89,13 @@ LOT_STATUS = ["OPEN", "CLOSED"]
 # Valuation Methods
 VALUATION_METHODS = ["AUTO", "MELT_ONLY", "GUIDE_ONLY", "MANUAL"]
 
-# Grade Companies
+# Grade Companies (ordered by popularity/recognition)
 GRADE_COMPANIES = [
     "PCGS", "NGC", "ANACS", "ICG", "PCI", "SEGS",
     "Raw", "Self-Graded", "Other"
 ]
 
-# Common Grade Text Values
+# Common Grade Text Values (properly ordered)
 GRADE_TEXT_VALUES = [
     "P-1", "FR-2", "AG-3", "G-4", "G-6", "VG-8", "VG-10",
     "F-12", "F-15", "VF-20", "VF-25", "VF-30", "VF-35",
@@ -120,8 +120,8 @@ STORAGE_CATEGORIES = [
     "Safety Deposit Box", "Personal Collection", "Display Case"
 ]
 
-# Party Types
-PARTY_TYPES = ["Dealer", "Private Seller", "Auction House", "Online Retailer", "Individual"]
+# Party Types (ordered by common usage)
+PARTY_TYPES = ["Dealer", "Online Retailer", "Auction House", "Private Seller", "Individual"]
 
 # Database Configuration
 DEFAULT_CURRENCY = "USD"
@@ -140,3 +140,17 @@ MIN_YEAR = 1000
 MAX_YEAR = 2100
 MIN_PRICE = 0.01
 MAX_PRICE = 1000000.00
+
+# Export Configuration
+CSV_EXPORT_ENCODING = "utf-8"
+EXCEL_EXPORT_ENGINE = "openpyxl"
+
+# Error Messages (commonly used)
+ERROR_MESSAGES = {
+    "INVALID_DATE": "Please enter a valid date in YYYY-MM-DD format",
+    "INVALID_PRICE": f"Price must be between ${MIN_PRICE} and ${MAX_PRICE:,.2f}",
+    "INVALID_YEAR": f"Year must be between {MIN_YEAR} and {MAX_YEAR}",
+    "REQUIRED_FIELD": "This field is required",
+    "INSUFFICIENT_INVENTORY": "Not enough inventory available for this transaction",
+    "DUPLICATE_RECORD": "A record with these details already exists"
+}
