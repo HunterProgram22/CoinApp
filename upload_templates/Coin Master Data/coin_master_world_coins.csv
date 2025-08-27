@@ -1,13 +1,13 @@
 country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,ngccoin_url,pcgs_url,notes
-Canada,25 Cents,George VI,Ag,0.9,5.83,23.62,1.61,Reeded,1937,1947,COIN,https://en.numista.com/catalogue/pieces371.html,,,
-France,1 Franc,Vichy State,Aluminum,1,1.28,23.02,1.45,Plain,1942,1944,COIN,https://en.numista.com/catalogue/pieces298.html,,,Light type Francisque design - Vichy French State
-France,2 Francs,Vichy State,Aluminum,1,2.2,27,1.7,Plain,1943,1944,COIN,https://en.numista.com/catalogue/pieces299.html,,,
-France,10 Centimes,Third Republic,Copper-nickel,1,4,21,1.68,Reeded,1917,1938,COIN,https://en.numista.com/catalogue/pieces321.html,,,Third Republic design with Marianne
-France,2 Francs,Third Republic,Cu-Al,1,8,27,2.14,Reeded,1920,1927,COIN,https://en.numista.com/catalogue/pieces699.html,,,
-France,2 Francs,Third Republic,Cu-Al,1,8,27,2.14,Plain,1931,1941,COIN,https://en.numista.com/catalogue/pieces709.html,,,
-France,1 Franc,Third Republic,Cu-Al,1,4,23,1.48,Reeded,1920,1927,COIN,https://en.numista.com/catalogue/pieces705.html,,,
-France,25 Centimes,Third Republic,Cu-Ni,1,5,24,1.64,Reeded,1917,1937,COIN,https://en.numista.com/catalogue/pieces710.html,,,
-France,10 Francs,Third Republic,Ag,0.68,10,28,2.01,Reeded,1929,1939,COIN,https://en.numista.com/catalogue/pieces687.html,,,
+Canada,25 Cents,George VI,Ag,0.9,5.83,23.62,1.61,Reeded,1937,1947,COIN,https://en.numista.com/catalogue/pieces371.html,https://www.ngccoin.com/price-guide/world/canada-25-cents-km-35-1937-1947-cuid-77-duid-557,,
+France,1 Franc,Vichy State,Aluminum,1,1.28,23.02,1.45,Plain,1942,1944,COIN,https://en.numista.com/catalogue/pieces298.html,https://www.ngccoin.com/price-guide/world/france-franc-km-902.1-1942-1944-cuid-1127873-duid-1263760,,Light type Francisque design - Vichy French State
+France,2 Francs,Vichy State,Aluminum,1,2.2,27,1.7,Plain,1943,1944,COIN,https://en.numista.com/catalogue/pieces299.html,https://www.ngccoin.com/price-guide/world/france-2-francs-km-9041-1943-1944-cuid-35707-duid-103283,,
+France,10 Centimes,Third Republic,Copper-nickel,1,4,21,1.68,Reeded,1917,1938,COIN,https://en.numista.com/catalogue/pieces321.html,https://www.ngccoin.com/price-guide/world/france-10-centimes-km-866a-1917-1938-cuid-1201881-duid-1264178,,Third Republic design with Marianne
+France,2 Francs,Third Republic,Cu-Al,1,8,27,2.14,Reeded,1920,1927,COIN,https://en.numista.com/catalogue/pieces699.html,https://www.ngccoin.com/price-guide/world/france-2-francs-km-877-1920-1927-cuid-1127724-duid-1265298,,
+France,2 Francs,Third Republic,Cu-Al,1,8,27,2.14,Plain,1931,1941,COIN,https://en.numista.com/catalogue/pieces709.html,https://www.ngccoin.com/price-guide/world/france-2-francs-km-886-1931-1941-cuid-1128692-duid-1264564,,
+France,1 Franc,Third Republic,Cu-Al,1,4,23,1.48,Reeded,1920,1927,COIN,https://en.numista.com/catalogue/pieces705.html,https://www.ngccoin.com/price-guide/world/france-franc-km-876-1920-1927-cuid-1128376-duid-1263675,,
+France,25 Centimes,Third Republic,Cu-Ni,1,5,24,1.64,Reeded,1917,1937,COIN,https://en.numista.com/catalogue/pieces710.html,https://www.ngccoin.com/price-guide/world/france-25-centimes-km-867a-1917-1937-cuid-1127794-duid-1263630,,
+France,10 Francs,Third Republic,Ag,0.68,10,28,2.01,Reeded,1929,1939,COIN,https://en.numista.com/catalogue/pieces687.html,https://www.ngccoin.com/price-guide/world/france-10-francs-km-878-1929-1939-cuid-1127887-duid-1265318,,
 Germany,3 Mark,Weimar Republic,Aluminum,1,2,30,,Plain,1922,1923,COIN,https://en.numista.com/catalogue/pieces3415.html,,,Commemorating Weimar Constitution
 Germany,50 Reichspfennig,Third Reich,Al,1,1.3,22.7,1.55,Reeded,1939,1944,COIN,https://en.numista.com/catalogue/pieces1928.html,,,
 Germany,10 Reichspfennig,Third Reich,Cu-Al (Al-Bronze),1,4,21,1.75,Reeded,1936,1939,COIN,https://en.numista.com/catalogue/pieces2341.html,,,
