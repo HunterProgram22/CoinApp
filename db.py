@@ -14,6 +14,7 @@ except ImportError:
 # Database configuration
 DEFAULT_DB_PATH = "data/coinapp.sqlite"
 
+
 def get_secret(name: str, default=None):
     """Get configuration value from environment or Streamlit secrets."""
     # Try environment first
@@ -30,8 +31,10 @@ def get_secret(name: str, default=None):
     
     return default
 
+
 # Global configuration
 DB_PATH = Path(get_secret("COINAPP_DB_PATH", DEFAULT_DB_PATH))
+
 
 def get_conn():
     """Get a SQLite database connection."""
@@ -41,10 +44,30 @@ def get_conn():
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
+
 def init_db():
     """Initialize database schema."""
     with get_conn() as conn:
         conn.executescript(SCHEMA_SQL)
 
+
+def create_backup_data():
+    """Create backup data as BytesIO for download."""
+    import io
+    bio = io.BytesIO()
+    try:
+        with open(DB_PATH, "rb") as f:
+            bio.write(f.read())
+        bio.seek(0)
+        return bio
+    except Exception as e:
+        raise Exception(f"Backup creation failed: {e}")
+
+
+def get_backup_filename():
+    """Generate standardized backup filename."""
+    from datetime import datetime
+    return f"coinapp-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.sqlite"
+
 # Legacy compatibility exports
-IS_CLOUD = False  # Always SQLite now
+# IS_CLOUD = False  # Always SQLite now

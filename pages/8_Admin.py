@@ -6,7 +6,7 @@ from datetime import datetime, UTC
 import pandas as pd
 import streamlit as st
 
-from db import init_db, DB_PATH
+from db import init_db, create_backup_data, get_backup_filename, DB_PATH
 from db_operations import execute_query_all, execute_query_single, execute_insert, execute_update, execute_delete
 from queries import create_or_update_coin_master, create_or_update_coin_type
 from constants import ASSET_CATEGORIES
@@ -498,24 +498,22 @@ with tab_reset:
     st.caption(f"DB path: {DB_PATH}")
 
     c1, c2 = st.columns(2)
+
     with c1:
         if st.button("Create Backup (.sqlite download)", key="reset_backup_btn"):
             try:
-                bio = io.BytesIO()
-                with open(DB_PATH, "rb") as f:
-                    bio.write(f.read())
-                bio.seek(0)
+                backup_data = create_backup_data()
                 st.download_button(
                     label="Download backup",
-                    data=bio,
-                    file_name=f"coinapp-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.sqlite",
+                    data=backup_data,
+                    file_name=get_backup_filename(),
                     mime="application/octet-stream",
                     use_container_width=True,
                     key="reset_download_btn"
                 )
             except Exception as e:
-                st.error(f"Backup failed: {e}")
-    
+                st.error(str(e))
+
     with c2:
         st.warning("Reset will delete the database file and rebuild with the current schema. This cannot be undone.")
         if st.button("💥 Reset DB (drop & recreate)", type="primary", key="reset_drop_btn"):
