@@ -1,4 +1,4 @@
-# pages/1_Dashboard.py
+# pages/05_Dashboard.py
 import pandas as pd
 import streamlit as st
 from queries import get_portfolio_summary, get_latest_metal_prices, get_dashboard_series_rollup

@@ -1,5 +1,5 @@
 
-# pages/2_Inventory.py
+# pages/10_Inventory.py
 import streamlit as st
 import pandas as pd
 from db import get_conn

@@ -1,6 +1,6 @@
 
 # ---- CATALOG: COIN MASTER EDITOR (Admin section) ----
-# Paste this into pages/8_Admin.py (after imports) and call render_catalog_coin_master_editor()
+# Paste this into pages/45_Admin.py (after imports) and call render_catalog_coin_master_editor()
 import sqlite3
 import pandas as pd
 import streamlit as st

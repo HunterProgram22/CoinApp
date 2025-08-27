@@ -1,5 +1,5 @@
 
-# pages/6_World_Coins.py
+# pages/15_World_Coins.py
 import streamlit as st
 import pandas as pd
 from db import get_conn

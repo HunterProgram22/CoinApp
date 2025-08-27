@@ -1,4 +1,4 @@
-# pages/7_Coin_Type_Editor.py
+# pages/55_Coin_Type_Editor.py
 import streamlit as st
 import pandas as pd
 from db import get_conn

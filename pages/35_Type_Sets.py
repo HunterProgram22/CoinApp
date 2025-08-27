@@ -1,4 +1,4 @@
-# pages/3_Type_Sets.py
+# pages/35_Type_Sets.py
 import pandas as pd
 import streamlit as st
 from db import get_conn

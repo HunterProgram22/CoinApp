@@ -1,5 +1,5 @@
 
-# pages/11_Coin_Catalog.py
+# pages/25_Coin_Catalog.py
 import streamlit as st
 import pandas as pd
 from db import get_conn

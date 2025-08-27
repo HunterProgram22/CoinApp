@@ -7,18 +7,19 @@ Centralizes all enum-like values to avoid duplication across modules.
 # Navigation configuration
 NAVIGATION_ITEMS = [
     ("Home.py", "Home", "🏠"),
-    ("pages/1_Dashboard.py", "Dashboard", "📊"),
-    ("pages/2_Inventory.py", "Inventory", "📦"),
-    ("pages/3_Type_Sets.py", "Type Sets", "📚"),
-    ("pages/4_Specimens.py", "Specimens", "🏷️"),
-    ("pages/5_Transactions.py", "Transactions", "➕"),
-    ("pages/6_World_Coins.py", "World Coins", "🌍️"),
-    ("pages/7_Coin_Type_Editor.py", "Coin Type Editor", "🧩"),
-    ("pages/8_Admin.py", "Admin", "🛠️"),
-    ("pages/9_Data_Import.py", "Data Import", "📥"),
-    ("pages/10_Bullion.py", "Bullion", "💰"),
-    ("pages/11_Coin_Catalog.py", "Coin Catalog", "📚"),
+    ("pages/05_Dashboard.py", "Dashboard", "📊"),
+    ("pages/10_Inventory.py", "Inventory", "📦"),
+    ("pages/15_World_Coins.py", "World Coins", "🌍️"),
+    ("pages/20_Bullion.py", "Bullion", "💰"),
+    ("pages/25_Coin_Catalog.py", "Coin Catalog", "📚"),
+    ("pages/30_Transactions.py", "Transactions", "➕"),
+    ("pages/35_Type_Sets.py", "Type Sets", "📚"),
+    ("pages/40_Specimens.py", "Specimens", "🏷️"),
+    ("pages/45_Admin.py", "Admin", "🛠️"),
+    ("pages/50_Data_Import.py", "Data Import", "📥"),
+    ("pages/55_Coin_Type_Editor.py", "Coin Type Editor", "🧩")
 ]
+
 
 # App configuration
 APP_TITLE = "Coin Tracker"
