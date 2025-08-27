@@ -47,15 +47,19 @@ def calculate_series_unrealized_gl(df):
     """Add unrealized gain/loss calculations to series dataframe."""
     df = df.copy()
     
-    # Calculate unrealized G/L in dollars
-    df['unreal_gl_usd'] = (
-        df.get('chosen_total_usd', 0).fillna(0) - 
-        df.get('cost_total_usd', 0).fillna(0)
-    ).round(2)
+    # More robust null handling
+    chosen_total = pd.to_numeric(df.get('chosen_total_usd', 0), errors='coerce').fillna(0)
+    cost_total = pd.to_numeric(df.get('cost_total_usd', 0), errors='coerce').fillna(0)
     
-    # Calculate unrealized G/L percentage
-    cost = df.get('cost_total_usd', 0).replace({0: np.nan})
-    df['unreal_gl_pct'] = (df['unreal_gl_usd'] / cost * 100).round(2)
+    # Calculate unrealized G/L in dollars
+    df['unreal_gl_usd'] = (chosen_total - cost_total).round(2)
+    
+    # Calculate unrealized G/L percentage - avoid division by zero
+    df['unreal_gl_pct'] = np.where(
+        cost_total > 0,
+        (df['unreal_gl_usd'] / cost_total * 100).round(2),
+        0.0
+    )
     
     return df
 
@@ -100,7 +104,7 @@ def prepare_series_export_data(df):
     available_columns = [col for col in export_columns if col in df.columns]
     df_export = df[available_columns].copy()
     
-    # Round monetary columns to 2 decimals
+    # Round monetary columns to 2 decimals more efficiently
     monetary_columns = [
         'melt_total_usd', 'numi_total_usd', 'cost_total_usd', 
         'chosen_total_usd', 'unreal_gl_usd', 'unreal_gl_pct'
@@ -116,13 +120,14 @@ def prepare_series_export_data(df):
 def apply_gain_loss_styling(df):
     """Apply color styling to gain/loss columns."""
     def color_gl(val):
+        """Color positive values green, negative red, zero/nan gray."""
         try:
-            v = float(val)
+            v = pd.to_numeric(val, errors='coerce')
+            if pd.isna(v) or v == 0:
+                return 'color: gray;'
+            return 'color: green;' if v > 0 else 'color: red;'
         except Exception:
-            return ''
-        if np.isnan(v) or v == 0:
             return 'color: gray;'
-        return 'color: green;' if v > 0 else 'color: red;'
     
     # Round monetary columns for display
     df_styled = df.copy()
@@ -130,7 +135,7 @@ def apply_gain_loss_styling(df):
                   'Est. Value (USD)', 'Unrealized G/L (USD)']
     pct_cols = ['Unrealized G/L (%)']
     
-    # Round numeric columns
+    # Round numeric columns more efficiently
     for col in money_cols + pct_cols:
         if col in df_styled.columns:
             df_styled[col] = pd.to_numeric(df_styled[col], errors='coerce').round(2)
