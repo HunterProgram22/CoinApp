@@ -39,6 +39,19 @@ class WhereClauseBuilder:
             self.add_condition(f"{field_expr} LIKE ?", f"%{value}%")
         return self
     
+    def add_numeric_range(self, field: str, min_val: Optional[float], max_val: Optional[float]):
+        """Add numeric range conditions."""
+        if min_val is not None:
+            self.add_condition(f"{field} >= ?", min_val)
+        if max_val is not None:
+            self.add_condition(f"{field} <= ?", max_val)
+        return self
+    
+    def add_not_null(self, field: str):
+        """Add NOT NULL condition."""
+        self.add_condition(f"{field} IS NOT NULL")
+        return self
+    
     def build(self) -> Tuple[str, List[Any]]:
         """Build the WHERE clause and return (where_sql, params)."""
         if not self.conditions:
@@ -74,37 +87,84 @@ class InventoryQueryBuilder:
     
     @staticmethod
     def melt_calculation_fields() -> str:
-        """Standard melt calculation fields."""
+        """Standard melt calculation fields with better precision."""
         return """
             ROUND(
-                (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
-                * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal),
-            2) AS melt_unit_usd,
+                (cm.weight_grams * COALESCE(cm.fineness, 0.0)) / 31.1034768
+                * COALESCE((SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 0.0),
+            4) AS melt_unit_usd,
             ROUND(
-                l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
-                * (SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal),
+                l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness, 0.0)) / 31.1034768
+                * COALESCE((SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 0.0),
             2) AS melt_total_usd
+        """
+    
+    @staticmethod
+    def numismatic_calculation_fields() -> str:
+        """Standard numismatic value calculation fields."""
+        return """
+            COALESCE(
+                CASE l.valuation_method
+                    WHEN 'MANUAL' THEN l.manual_est_unit_value
+                    WHEN 'GUIDE_ONLY' THEN ct.guide_retail_low
+                    WHEN 'MELT_ONLY' THEN (
+                        (cm.weight_grams * COALESCE(cm.fineness, 0.0)) / 31.1034768
+                        * COALESCE((SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 0.0)
+                    )
+                    ELSE GREATEST(
+                        COALESCE(ct.guide_retail_low, 0.0),
+                        COALESCE(l.manual_est_unit_value, 0.0),
+                        (cm.weight_grams * COALESCE(cm.fineness, 0.0)) / 31.1034768
+                        * COALESCE((SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 0.0)
+                    )
+                END,
+                0.0
+            ) AS numi_unit_usd
         """
     
     @staticmethod
     def standard_lot_fields() -> str:
         """Standard fields for lot detail queries."""
         return """
+            l.id AS lot_id,
             l.acquired_date,
             cm.series,
             ct.year,
             ct.mint_mark,
-            COALESCE(ct.variety,'') AS variety,
+            COALESCE(ct.variety, '') AS variety,
             l.qty_remaining,
-            COALESCE(p.name,'') AS party,
+            COALESCE(p.name, '') AS party,
             ROUND(l.unit_cost, 2) AS unit_cost_usd,
-            COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade
+            COALESCE(l.estimated_grade_text, l.purchase_grade_text, '') AS grade,
+            l.valuation_method,
+            l.status
         """
     
     @staticmethod
     def standard_order_by() -> str:
         """Standard ordering for inventory queries."""
         return "ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, l.acquired_date"
+    
+    @staticmethod
+    def build_series_rollup_query(where_clause: str = "") -> str:
+        """Build series rollup query for dashboard."""
+        return f"""
+            {InventoryQueryBuilder.melt_value_cte()}
+            SELECT 
+                cm.series,
+                SUM(l.qty_remaining) AS coins,
+                ROUND(SUM(
+                    l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness, 0.0)) / 31.1034768
+                    * COALESCE((SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 0.0)
+                ), 2) AS melt_total_usd,
+                ROUND(SUM(l.qty_remaining * l.unit_cost), 2) AS cost_total_usd
+            {InventoryQueryBuilder.base_lot_query()}
+            {where_clause}
+            AND l.qty_remaining > 0
+            GROUP BY cm.series
+            HAVING SUM(l.qty_remaining) > 0
+            ORDER BY cm.series
+        """
 
 
 class SpecimenQueryHelper:
@@ -135,7 +195,9 @@ class SpecimenQueryHelper:
         
         return """
             LEFT JOIN (
-                SELECT lot_id, GROUP_CONCAT(specimen_code, ', ') AS flip_ids, COUNT(*) AS flip_count
+                SELECT lot_id, 
+                       GROUP_CONCAT(specimen_code, ', ') AS flip_ids, 
+                       COUNT(*) AS flip_count
                 FROM specimen
                 WHERE sold_line_id IS NULL
                 GROUP BY lot_id
@@ -145,18 +207,62 @@ class SpecimenQueryHelper:
     @staticmethod
     def specimen_select_field(has_specimen: bool, has_specimen_code: bool) -> str:
         """Get specimen field for SELECT clause."""
-        return ", sp.flip_ids" if (has_specimen and has_specimen_code) else ""
+        return ", COALESCE(sp.flip_ids, '') AS flip_ids" if (has_specimen and has_specimen_code) else ", '' AS flip_ids"
+
+
+class TransactionQueryBuilder:
+    """Builder for transaction-related queries."""
+    
+    @staticmethod
+    def build_transaction_summary(tx_id: int) -> str:
+        """Build transaction summary query."""
+        return """
+            SELECT 
+                t.tx_date, t.tx_type, t.currency,
+                COALESCE(p.name, '') AS party,
+                COALESCE(t.shipping, 0.0) AS shipping,
+                COALESCE(t.tax, 0.0) AS tax,
+                COALESCE(t.fees, 0.0) AS fees,
+                t.notes,
+                COUNT(tl.id) AS line_count,
+                SUM(ABS(tl.quantity) * COALESCE(tl.unit_price, 0.0)) AS subtotal
+            FROM tx t
+            LEFT JOIN party p ON p.id = t.party_id
+            LEFT JOIN tx_line tl ON tl.tx_id = t.id
+            WHERE t.id = ?
+            GROUP BY t.id
+        """
+    
+    @staticmethod
+    def build_fifo_availability_check(coin_type_id: int) -> str:
+        """Build query to check FIFO lot availability."""
+        return """
+            SELECT 
+                l.id AS lot_id,
+                l.qty_remaining,
+                l.unit_cost,
+                l.acquired_date
+            FROM lot l
+            WHERE l.coin_type_id = ? 
+              AND l.qty_remaining > 0 
+              AND l.status = 'OPEN'
+            ORDER BY l.acquired_date ASC, l.id ASC
+        """
 
 
 # SQL Templates
 class SQLTemplates:
-    """Common SQL query templates."""
+    """Common SQL query templates optimized for SQLite."""
     
     TRANSACTION_SEARCH = """
         SELECT
             t.id, t.tx_date, t.tx_type,
-            p.name AS party,
-            t.currency, t.shipping, t.tax, t.fees, t.notes
+            COALESCE(p.name, '') AS party,
+            t.currency, 
+            COALESCE(t.shipping, 0.0) AS shipping, 
+            COALESCE(t.tax, 0.0) AS tax, 
+            COALESCE(t.fees, 0.0) AS fees, 
+            COALESCE(t.notes, '') AS notes
         FROM tx t
         LEFT JOIN party p ON p.id = t.party_id
         {where_clause}
@@ -167,9 +273,16 @@ class SQLTemplates:
     TX_LINES = """
         SELECT
             tl.id AS line_id,
-            cm.series, ct.year, ct.mint_mark, COALESCE(ct.variety,'') AS variety,
-            ABS(tl.quantity) AS quantity, tl.unit_price,
-            tl.grade_company, tl.grade_text, tl.numeric_grade, tl.slab_cert
+            cm.series, 
+            COALESCE(ct.year, 0) AS year, 
+            COALESCE(ct.mint_mark, '') AS mint_mark, 
+            COALESCE(ct.variety, '') AS variety,
+            ABS(tl.quantity) AS quantity, 
+            COALESCE(tl.unit_price, 0.0) AS unit_price,
+            COALESCE(tl.grade_company, '') AS grade_company, 
+            COALESCE(tl.grade_text, '') AS grade_text, 
+            COALESCE(tl.numeric_grade, 0) AS numeric_grade, 
+            COALESCE(tl.slab_cert, '') AS slab_cert
         FROM tx_line tl
         LEFT JOIN coin_type ct ON ct.id = tl.coin_type_id
         LEFT JOIN coin_master cm ON cm.id = ct.master_id
@@ -179,23 +292,48 @@ class SQLTemplates:
     
     SPENDING_LOG = """
         WITH buys AS (
-            SELECT t.id, t.tx_date, COALESCE(p.name,'') AS party,
-                   COALESCE(t.shipping,0) AS shipping, COALESCE(t.tax,0) AS tax, COALESCE(t.fees,0) AS fees
+            SELECT t.id, t.tx_date, 
+                   COALESCE(p.name, '') AS party,
+                   COALESCE(t.shipping, 0.0) AS shipping, 
+                   COALESCE(t.tax, 0.0) AS tax, 
+                   COALESCE(t.fees, 0.0) AS fees
             FROM tx t
             LEFT JOIN party p ON p.id = t.party_id
+            WHERE t.tx_type = 'BUY'
             {where_clause}
         ),
         line_sub AS (
-            SELECT tl.tx_id, SUM(ABS(tl.quantity) * COALESCE(tl.unit_price,0)) AS line_subtotal
+            SELECT tl.tx_id, 
+                   SUM(ABS(tl.quantity) * COALESCE(tl.unit_price, 0.0)) AS line_subtotal
             FROM tx_line tl
-            JOIN tx t2 ON t2.id = tl.tx_id AND t2.tx_type = 'BUY'
+            JOIN buys b ON b.id = tl.tx_id
             GROUP BY tl.tx_id
         )
         SELECT b.tx_date, b.party,
-               ROUND(SUM(COALESCE(ls.line_subtotal,0) + b.shipping + b.tax + b.fees), 2) AS spent_usd
+               ROUND(COALESCE(ls.line_subtotal, 0.0) + b.shipping + b.tax + b.fees, 2) AS spent_usd
         FROM buys b
         LEFT JOIN line_sub ls ON ls.tx_id = b.id
-        GROUP BY b.tx_date, b.party
         ORDER BY b.tx_date DESC, b.party
         LIMIT ? OFFSET ?
+    """
+    
+    INVENTORY_SUMMARY = """
+        WITH melt AS (
+            SELECT metal, price_per_oz_usd FROM v_latest_spot
+        )
+        SELECT 
+            cm.metal,
+            COUNT(DISTINCT l.id) AS lot_count,
+            SUM(l.qty_remaining) AS total_coins,
+            ROUND(SUM(l.qty_remaining * l.unit_cost), 2) AS total_cost_usd,
+            ROUND(SUM(
+                l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness, 0.0)) / 31.1034768
+                * COALESCE((SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 0.0)
+            ), 2) AS total_melt_usd
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        WHERE l.qty_remaining > 0 AND l.status = 'OPEN'
+        GROUP BY cm.metal
+        ORDER BY cm.metal
     """
