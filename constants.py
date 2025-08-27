@@ -18,8 +18,6 @@ NAVIGATION_ITEMS = [
     ("pages/9_Data_Import.py", "Data Import", "📥"),
     ("pages/10_Bullion.py", "Bullion", "💰"),
     ("pages/11_Coin_Catalog.py", "Coin Catalog", "📚"),
-    ("pages/12_DB_Patches.py", "DB Patches", "🧩"),
-    ("pages/13_Diagnostics.py", "Diagnostics", "🧪")
 ]
 
 # App configuration
