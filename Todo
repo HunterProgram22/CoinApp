@@ -56,6 +56,23 @@ Completed Items:
  Add robust NULL/empty value handling in Data Import
  Add diameter_mm and thickness_mm fields to Admin Coin Master editor
 
+### Morning of 8/27/25 ###
+Updated To-Do List
+Current Session:
+
+✅ dashboard_helpers.py - Improved pandas code
+✅ business_logic.py - Fixed critical inventory bug
+Continue reviewing remaining files (query_builders.py, constants.py, individual pages)
+
+For Later:
+
+Transactions page UI bug: Number inputs limited to 9.99 and under - needs fixing to allow larger values
+Remove compatibility shims after all pages updated
+Remove test buttons/debug code from pages
+Continue systematic page refactoring to eliminate remaining direct SQL calls
+Add utils/ directory structure
+Remove coin type editing from Coin Type Editor page (keep only price guide)
+
 #### APP SUMMARY ON 8/26/25 ####
 
 Coin Tracker App - Current State Summary
