@@ -1,7 +1,8 @@
 # pages/05_Dashboard.py
 import pandas as pd
 import streamlit as st
-from queries import get_portfolio_summary, get_latest_metal_prices, get_dashboard_series_rollup
+from db_operations import execute_query_all, execute_query_single
+from query_builders import InventoryQueryBuilder
 from dashboard_helpers import (
     format_metal_prices_dataframe,
     calculate_silver_melt_values,
@@ -12,10 +13,65 @@ from dashboard_helpers import (
     apply_gain_loss_styling
 )
 
-
 st.header("Dashboard")
 
 tab_overview, tab_series = st.tabs(["📊 Overview", "📚 Series Summary"])
+
+
+def get_portfolio_summary():
+    """Get portfolio summary statistics using schema views."""
+    query = "SELECT total_estimated_value_usd, total_coins FROM v_portfolio_value_summary"
+    
+    result = execute_query_single(query)
+    if not result:
+        return {
+            'total_lots': 0,
+            'total_coins': 0,
+            'total_cost_usd': 0.0,
+            'total_estimated_value_usd': 0.0
+        }
+    
+    # Get additional stats not in the view
+    cost_query = """
+        SELECT 
+            COUNT(DISTINCT l.id) AS total_lots,
+            ROUND(SUM(l.qty_remaining * l.unit_cost), 2) AS total_cost_usd
+        FROM lot l
+        WHERE l.qty_remaining > 0 AND l.status = 'OPEN'
+    """
+    
+    cost_result = execute_query_single(cost_query)
+    
+    return {
+        'total_lots': cost_result['total_lots'] if cost_result else 0,
+        'total_coins': result['total_coins'] or 0,
+        'total_cost_usd': cost_result['total_cost_usd'] if cost_result else 0.0,
+        'total_estimated_value_usd': result['total_estimated_value_usd'] or 0.0
+    }
+
+
+def get_latest_metal_prices():
+    """Get latest metal spot prices."""
+    query = "SELECT metal, price_per_oz_usd FROM v_latest_spot ORDER BY metal"
+    return execute_query_all(query)
+
+
+def get_dashboard_series_rollup():
+    """Get series rollup data for dashboard using existing views."""
+    query = """
+        SELECT 
+            lvd.series,
+            SUM(lvd.qty_remaining) AS coins,
+            ROUND(SUM(lvd.qty_remaining * lvd.melt_unit_value), 2) AS melt_total_usd,
+            ROUND(SUM(lvd.qty_remaining * lvd.chosen_unit_value), 2) AS chosen_total_usd,
+            ROUND(SUM(lvd.qty_remaining * l.unit_cost), 2) AS cost_total_usd
+        FROM v_lot_value_details lvd
+        JOIN lot l ON l.id = lvd.lot_id
+        GROUP BY lvd.series
+        HAVING SUM(lvd.qty_remaining) > 0
+        ORDER BY lvd.series
+    """
+    return execute_query_all(query)
 
 
 def render_portfolio_overview():

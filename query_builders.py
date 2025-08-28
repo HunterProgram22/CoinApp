@@ -78,7 +78,7 @@ class InventoryQueryBuilder:
     
     @staticmethod
     def melt_value_cte() -> str:
-        """Common table expression for melt values."""
+        """Common table expression for melt values using schema view."""
         return """
             WITH melt AS (
                 SELECT metal, price_per_oz_usd FROM v_latest_spot
@@ -101,21 +101,29 @@ class InventoryQueryBuilder:
     
     @staticmethod
     def numismatic_calculation_fields() -> str:
-        """Standard numismatic value calculation fields."""
+        """Standard numismatic value calculation fields using schema views."""
         return """
             COALESCE(
                 CASE l.valuation_method
                     WHEN 'MANUAL' THEN l.manual_est_unit_value
-                    WHEN 'GUIDE_ONLY' THEN ct.guide_retail_low
+                    WHEN 'GUIDE_ONLY' THEN (
+                        SELECT g.price_usd FROM v_latest_guide g 
+                        WHERE g.coin_type_id = l.coin_type_id 
+                        AND g.grade_text = COALESCE(l.estimated_grade_text, l.purchase_grade_text)
+                    )
                     WHEN 'MELT_ONLY' THEN (
                         (cm.weight_grams * COALESCE(cm.fineness, 0.0)) / 31.1034768
-                        * COALESCE((SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 0.0)
+                        * COALESCE((SELECT price_per_oz_usd FROM v_latest_spot WHERE metal = cm.metal), 0.0)
                     )
-                    ELSE GREATEST(
-                        COALESCE(ct.guide_retail_low, 0.0),
-                        COALESCE(l.manual_est_unit_value, 0.0),
+                    ELSE COALESCE(
+                        (SELECT g.price_usd FROM v_latest_guide g 
+                         WHERE g.coin_type_id = l.coin_type_id 
+                         AND g.grade_text = COALESCE(l.estimated_grade_text, l.purchase_grade_text)),
                         (cm.weight_grams * COALESCE(cm.fineness, 0.0)) / 31.1034768
-                        * COALESCE((SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 0.0)
+                        * COALESCE((SELECT price_per_oz_usd FROM v_latest_spot WHERE metal = cm.metal), 0.0),
+                        NULLIF(l.manual_est_unit_value, 0),
+                        NULLIF(l.unit_cost, 0),
+                        0.0
                     )
                 END,
                 0.0
@@ -147,23 +155,20 @@ class InventoryQueryBuilder:
     
     @staticmethod
     def build_series_rollup_query(where_clause: str = "") -> str:
-        """Build series rollup query for dashboard."""
+        """Build series rollup query for dashboard using schema views."""
         return f"""
-            {InventoryQueryBuilder.melt_value_cte()}
             SELECT 
-                cm.series,
-                SUM(l.qty_remaining) AS coins,
-                ROUND(SUM(
-                    l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness, 0.0)) / 31.1034768
-                    * COALESCE((SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 0.0)
-                ), 2) AS melt_total_usd,
-                ROUND(SUM(l.qty_remaining * l.unit_cost), 2) AS cost_total_usd
-            {InventoryQueryBuilder.base_lot_query()}
+                lvd.series,
+                SUM(lvd.qty_remaining) AS coins,
+                ROUND(SUM(lvd.qty_remaining * lvd.melt_unit_value), 2) AS melt_total_usd,
+                ROUND(SUM(lvd.qty_remaining * lvd.chosen_unit_value), 2) AS chosen_total_usd,
+                ROUND(SUM(lvd.qty_remaining * l.unit_cost), 2) AS cost_total_usd
+            FROM v_lot_value_details lvd
+            JOIN lot l ON l.id = lvd.lot_id
             {where_clause}
-            AND l.qty_remaining > 0
-            GROUP BY cm.series
-            HAVING SUM(l.qty_remaining) > 0
-            ORDER BY cm.series
+            GROUP BY lvd.series
+            HAVING SUM(lvd.qty_remaining) > 0
+            ORDER BY lvd.series
         """
 
 
@@ -318,9 +323,6 @@ class SQLTemplates:
     """
     
     INVENTORY_SUMMARY = """
-        WITH melt AS (
-            SELECT metal, price_per_oz_usd FROM v_latest_spot
-        )
         SELECT 
             cm.metal,
             COUNT(DISTINCT l.id) AS lot_count,
@@ -328,7 +330,7 @@ class SQLTemplates:
             ROUND(SUM(l.qty_remaining * l.unit_cost), 2) AS total_cost_usd,
             ROUND(SUM(
                 l.qty_remaining * (cm.weight_grams * COALESCE(cm.fineness, 0.0)) / 31.1034768
-                * COALESCE((SELECT price_per_oz_usd FROM melt WHERE metal = cm.metal), 0.0)
+                * COALESCE((SELECT price_per_oz_usd FROM v_latest_spot WHERE metal = cm.metal), 0.0)
             ), 2) AS total_melt_usd
         FROM lot l
         JOIN coin_type ct ON ct.id = l.coin_type_id
