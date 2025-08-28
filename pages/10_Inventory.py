@@ -257,7 +257,7 @@ with tab_type:
         
         # Format for display
         display_df = format_year_columns_for_display(df)
-        st.dataframe(display_df, width=None, hide_index=True)
+        st.dataframe(display_df, width='stretch', hide_index=True)
         create_download_button("Download CSV (By Type)", df, "inventory_by_type.csv")
 
 # ===== By Series (summary) =====
@@ -275,7 +275,7 @@ with tab_series:
         })
         
         display_df, csv_df = format_money_columns(df, ["Est. Value (USD)"])
-        st.dataframe(display_df, width=None, hide_index=True)
+        st.dataframe(display_df, width='stretch', hide_index=True)
         create_download_button("Download CSV (Series Summary)", csv_df, "inventory_by_series_summary.csv")
 
 # ===== Filter by Series (detail) =====
@@ -294,7 +294,7 @@ with tab_series_detail:
             st.info("No on-hand lots for this series.")
         else:
             display_df = format_year_columns_for_display(df)
-            st.dataframe(display_df, width=None, hide_index=True)
+            st.dataframe(display_df, width='stretch', hide_index=True)
             filename = f"{selected_series}_detail.csv".replace(" ", "_")
             create_download_button("Download CSV (Series Detail)", df, filename)
 
@@ -313,5 +313,5 @@ with tab_flags:
         display_df = format_year_columns_for_display(df)
         money_columns = ["Unit Cost (USD)", "Chosen Unit Value", "Lot Est. Value"]
         display_df, csv_df = format_money_columns(display_df, money_columns)
-        st.dataframe(display_df, width=None, hide_index=True)
+        st.dataframe(display_df, width='stretch', hide_index=True)
         create_download_button("Download CSV (Flags)", df, "inventory_filter_flags.csv")
