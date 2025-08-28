@@ -400,4 +400,58 @@ JOIN coin_type ct ON ct.id = l.coin_type_id
 JOIN coin_master cm ON cm.id = ct.master_id
 WHERE l.qty_remaining > 0 AND COALESCE(cm.asset_category,'COIN') IN ('ROUND','BAR','BULLION COIN')
 GROUP BY COALESCE(cm.asset_category,'COIN'), cm.metal, cm.series;
+
+/* Comprehensive inventory summary view */
+CREATE VIEW IF NOT EXISTS v_inventory_summary AS
+SELECT 
+    cm.country,
+    cm.series, 
+    cm.metal,
+    cm.asset_category,
+    ct.is_proof,
+    COUNT(DISTINCT l.id) AS lot_count,
+    SUM(l.qty_remaining) AS total_coins,
+    ROUND(SUM(l.qty_remaining * l.unit_cost), 2) AS total_cost_usd,
+    ROUND(SUM(l.qty_remaining * lvd.melt_unit_value), 2) AS total_melt_usd,
+    ROUND(SUM(l.qty_remaining * lvd.chosen_unit_value), 2) AS total_est_usd
+FROM lot l
+JOIN coin_type ct ON ct.id = l.coin_type_id  
+JOIN coin_master cm ON cm.id = ct.master_id
+JOIN v_lot_value_details lvd ON lvd.lot_id = l.id
+WHERE l.qty_remaining > 0
+GROUP BY cm.country, cm.series, cm.metal, cm.asset_category, ct.is_proof;
+
+/* Transaction summary view */
+CREATE VIEW IF NOT EXISTS v_transaction_summary AS
+SELECT 
+    t.id,
+    t.tx_date,
+    t.tx_type,
+    COALESCE(p.name, '') AS party_name,
+    t.currency,
+    COALESCE(t.shipping, 0) + COALESCE(t.tax, 0) + COALESCE(t.fees, 0) AS total_fees,
+    COUNT(tl.id) AS line_count,
+    SUM(ABS(tl.quantity)) AS total_quantity,
+    ROUND(SUM(ABS(tl.quantity) * COALESCE(tl.unit_price, 0)), 2) AS subtotal,
+    ROUND(SUM(ABS(tl.quantity) * COALESCE(tl.unit_price, 0)) + 
+          COALESCE(t.shipping, 0) + COALESCE(t.tax, 0) + COALESCE(t.fees, 0), 2) AS total
+FROM tx t
+LEFT JOIN party p ON p.id = t.party_id
+LEFT JOIN tx_line tl ON tl.tx_id = t.id
+GROUP BY t.id, t.tx_date, t.tx_type, p.name, t.currency, t.shipping, t.tax, t.fees;
+
+/* Country inventory view (for World Coins) */
+CREATE VIEW IF NOT EXISTS v_country_inventory AS  
+SELECT 
+    cm.country,
+    cm.series,
+    SUM(l.qty_remaining) AS coins_on_hand,
+    ROUND(SUM(l.qty_remaining * lvd.melt_unit_value), 2) AS melt_value_usd,
+    ROUND(SUM(l.qty_remaining * lvd.chosen_unit_value), 2) AS est_value_usd
+FROM lot l
+JOIN coin_type ct ON ct.id = l.coin_type_id
+JOIN coin_master cm ON cm.id = ct.master_id  
+JOIN v_lot_value_details lvd ON lvd.lot_id = l.id
+WHERE l.qty_remaining > 0 AND COALESCE(cm.country, '') <> ''
+GROUP BY cm.country, cm.series;
 """
