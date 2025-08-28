@@ -311,8 +311,7 @@ SELECT
 
     WHEN 'MANUAL'     THEN l.manual_est_unit_value
 
-    ELSE -- AUTO mode: choose the HIGHEST value among available options
-      (SELECT MAX(value) FROM (
+    ELSE (SELECT MAX(value) FROM (
         VALUES 
           (COALESCE((SELECT g.price_usd
                      FROM v_latest_guide g
