@@ -143,3 +143,30 @@ Clean separation of concerns between data access, business logic, and UI
 Consistent database operations across all pages
 Single SQLite database eliminates cloud/local compatibility issues
 Modular design makes maintenance and testing much easier
+
+### APP Summary 8/27/25 ###
+Here's what we've refactored since the SQLite unification decision:
+Files Completed:
+
+db.py - Reviewed and confirmed solid for SQLite-everywhere approach
+db_operations.py - Working well, no changes needed
+dashboard_helpers.py - Improved pandas code and null handling
+business_logic.py - CRITICAL BUG FIX: Added missing inventory quantity updates in sell transactions, plus better transaction safety with BEGIN/COMMIT/ROLLBACK
+constants.py - Enhanced with error messages dictionary, export configuration, and better organization
+query_builders.py - Major improvements: added numismatic value calculations, new query builders, better SQLite optimization
+
+Structural Changes:
+
+Removed unnecessary pages (DB_Patches, Diagnostics)
+Reorganized page numbering with 5-number gaps for easy reordering
+Updated navigation order to: Dashboard, Inventory, World Coins, Bullion, Coin Catalog, Transactions, Type Sets, Specimens, Admin, Data Import, Coin Type Editor
+
+Still To Do:
+
+Individual page refactoring - Look for remaining direct SQL calls that should use the new architecture
+Remove compatibility shims after all pages updated
+Remove test buttons/debug code from pages
+Fix Transactions page UI bug (number input limit issue you noted)
+Add utils/ directory structure
+
+The most critical fix was the inventory bug in business_logic.py - sell transactions weren't actually reducing lot quantities, which would have caused major inventory tracking problems.
