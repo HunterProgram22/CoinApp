@@ -311,21 +311,19 @@ SELECT
 
     WHEN 'MANUAL'     THEN l.manual_est_unit_value
 
-    ELSE COALESCE(
-      (SELECT g.price_usd
-         FROM v_latest_guide g
-        WHERE g.coin_type_id = l.coin_type_id
-          AND g.grade_text   = COALESCE(l.estimated_grade_text, l.purchase_grade_text)),
-
-      (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
-      * (SELECT price_per_oz_usd FROM v_latest_spot s WHERE s.metal = cm.metal),
-
-      NULLIF(l.manual_est_unit_value, 0)
-
-      , NULLIF(l.unit_cost, 0)
-
-      , 0
-    )
+    ELSE -- AUTO mode: choose the HIGHEST value among available options
+      GREATEST(
+        COALESCE((SELECT g.price_usd
+                   FROM v_latest_guide g
+                  WHERE g.coin_type_id = l.coin_type_id
+                    AND g.grade_text   = COALESCE(l.estimated_grade_text, l.purchase_grade_text)), 0),
+        
+        COALESCE((cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+                 * (SELECT price_per_oz_usd FROM v_latest_spot s WHERE s.metal = cm.metal), 0),
+        
+        COALESCE(l.manual_est_unit_value, 0),
+        COALESCE(l.unit_cost, 0)
+      )
   END AS chosen_unit_value
 
 FROM lot l
