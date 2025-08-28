@@ -96,7 +96,7 @@ def render_spot_prices():
     if df is not None:
         st.dataframe(
             df,
-            use_container_width=True,
+            width=None,
             hide_index=True,
             column_config={
                 "Metal": st.column_config.TextColumn(),
@@ -120,7 +120,7 @@ def render_silver_melt_reference(spot_prices):
         return
     
     df_melt = calculate_silver_melt_values(silver_price)
-    st.dataframe(df_melt, use_container_width=True)
+    st.dataframe(df_melt, width=None)
 
 
 def render_series_summary():
@@ -138,7 +138,7 @@ def render_series_summary():
     # Display interactive dataframe
     st.dataframe(
         df_display,
-        use_container_width=True,
+        width=None,
         hide_index=True,
         column_config=get_series_column_config(),
     )
