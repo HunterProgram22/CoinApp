@@ -1,0 +1,18 @@
+tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,series,year,mint_mark,variety,quantity,unit_price,purchase_grade_company,purchase_grade_text,purchase_numeric_grade,estimated_grade_text,estimated_numeric_grade,valuation_method,manual_est_unit_value,storage_location
+2022-03-01,BUY,APMEX,USD,9.95,0,0,,USA,1 oz,APMEX Bar - 1 oz Silver,-,,,1,29.97,,,,,,,,Bullion Box
+2024-05-04,BUY,Joe Whitehead,USD,0,0,0,,USA,1 Dollar,US Dollar - American Eagle (1986 - Present),2024,,,1,0,,,,,,,,Bullion Box
+2025-06-25,BUY,APMEX,USD,9.95,0,0,,USA,1 Dollar,US Dollar - American Eagle (1986 - Present),2025,,,2,45.76,,,,,,,,Bullion Box
+2025-06-28,BUY,Buckeye Gold - Westerville,USD,0,0,1.17,,USA,1 Dollar,US Dollar - American Eagle (1986 - Present),2015,,,1,39,,,,,,,,Bullion Box
+2025-06-28,BUY,Buckeye Gold - Westerville,USD,0,0,1.17,,USA,1 Dollar,US Dollar - American Eagle (1986 - Present),2016,,,1,39,,,,,,,,Bullion Box
+2025-07-01,BUY,Buckeye Gold - Dublin,USD,0,0,2.28,,USA,5 Dollars,CAD Five Dollar - Maple (2004-2013),2011,,,2,38,,,,,,,,Bullion Box
+2025-07-10,BUY,Walmart (RJ Bullion),USD,5.6,0,0,,USA,1 Dollar,AUS Dollar - Kangaroo (2016-2019),2016,,,2,39.99,,,,,,,,Bullion Box
+2025-07-12,BUY,Allen's Coin Shop,USD,0,0,0,,USA,2 Pounds,UK Two Pounds - Elizabeth (2021-2023),2023,,,1,41.44,,,,,,,,Bullion Box
+2025-07-12,BUY,Allen's Coin Shop,USD,0,0,0,,USA,2 Pounds,UK Two Pounds - Charles (2023-2025),2023,,,1,41.44,,,,,,,,Bullion Box
+2025-07-12,BUY,Money Metals Exchange,USD,0.8,0,0,,USA,1 Dollar,US Dollar - American Eagle (1986 - Present),2023,,,1,41.85,,,,,,,,Bullion Box
+2025-07-12,BUY,Money Metals Exchange,USD,0.8,0,0,,USA,5 Dollars,CAD Five Dollar - Maple (2004-2013),2025,,,1,40.45,,,,,,,,Bullion Box
+2025-07-12,BUY,Money Metals Exchange,USD,0.8,0,0,,USA,1 oz,MME - Walking Liberty - 1 oz Round,,,,1,39.15,,,,,,,,Bullion Box
+2025-07-12,BUY,Money Metals Exchange,USD,0.8,0,0,,USA,0.5 oz,MME - Walking Liberty - 0.5 oz Round,,,,1,20.4,,,,,,,,Bullion Box
+7/12/2025,BUY,Money Metals Exchange,USD,4,0,0,,USA,0.1 oz,MME - Walking Liberty - 0.1 oz Round,,,,5,23.3,,,,,,,,Bullion Box
+2025-07-20,BUY,Columbus Coin Show,USD,0,0,0,,USA,1 Rand,SA Rand - Krugerrand (2018-2025),2022,,,2,78,,,,,,,,Bullion Box
+2025-07-26,BUY,Allen's Coin Shop,USD,0,0,0,,USA,1.5 Euro,AUT One and One Half Euro - Philharmonic (2008-2025),2008,,,2,41.2,,,,,,,,Bullion Box
+2025-08-17,BUY,Columbus Coin Show,USD,0,0,0,,USA,500 Dram,AM Five Hundred Dram - Ark (2011-2025),2023,,,2,40,,,,,,,,Bullion Box
