@@ -28,13 +28,41 @@ def create_or_update_coin_master(country: str, denomination: str, series: str, *
     # Normalize optional fields
     normalized_fields = {field: normalize_for_upsert(value) for field, value in kwargs.items()}
 
-    # Set default asset category
-    if normalized_fields.get('asset_category') is None:
-        normalized_fields['asset_category'] = 'COIN'
-
     search_fields = {'country': country, 'denomination': denomination, 'series': series}
-    return upsert_record('coin_master', search_fields, normalized_fields)
 
+    # Check if record exists
+    existing = execute_query_single(
+        "SELECT id FROM coin_master WHERE country=? AND denomination=? AND series=?",
+        (country, denomination, series)
+    )
+
+    if existing:
+        # For existing records, only update fields that were explicitly passed
+        # Don't set defaults for existing records
+        if normalized_fields:
+            # Only update non-None fields
+            update_fields = {k: v for k, v in normalized_fields.items() if v is not None}
+            if update_fields:
+                return upsert_record('coin_master', search_fields, update_fields)
+        return existing['id']
+    else:
+        # For new records, set default asset_category if not provided
+        if normalized_fields.get('asset_category') is None:
+            normalized_fields['asset_category'] = 'COIN'
+        return upsert_record('coin_master', search_fields, normalized_fields)
+
+# def create_or_update_coin_master(country: str, denomination: str, series: str, **kwargs) -> int:
+#     """Create or update a coin master record."""
+#     # Normalize optional fields
+#     normalized_fields = {field: normalize_for_upsert(value) for field, value in kwargs.items()}
+#
+#     # Set default asset category
+#     if normalized_fields.get('asset_category') is None:
+#         normalized_fields['asset_category'] = 'COIN'
+#
+#     search_fields = {'country': country, 'denomination': denomination, 'series': series}
+#     return upsert_record('coin_master', search_fields, normalized_fields)
+#
 
 def create_or_update_coin_type(master_id: int, year: int, mint_mark: str = None, variety: str = None, **kwargs) -> int:
     """Create or update a coin type record."""

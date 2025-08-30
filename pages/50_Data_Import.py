@@ -60,29 +60,38 @@ def _fint(v):
 # -------------------------------
 # Core import routine for transactions (used by tabs 0 & 1)
 # -------------------------------
+# Updated version of _import_transactions function for pages/50_Data_Import.py
+# Replace the existing _import_transactions function with this:
+
 def _import_transactions(df: pd.DataFrame, dry_run: bool):
     problems = []
     created_tx = 0
     created_lines = 0
 
+    # Track master matching for dry run
+    masters_to_create = []
+    masters_matched = []
+    master_mismatches = []
+
     # Group-level numeric cleanups
     for col in ['shipping', 'tax', 'fees']:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)  # Add fillna(0.0)
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
         else:
             df[col] = 0.0
 
-    grp_cols = ['tx_date','tx_type','party']
+    grp_cols = ['tx_date', 'tx_type', 'party']
     for (tx_date, tx_type, party), part in df.groupby(grp_cols, dropna=False):
         # Normalize header fields
         try:
-            tx_date_iso = tx_date.isoformat() if hasattr(tx_date, 'isoformat') else str(pd.to_datetime(tx_date).date())
+            tx_date_iso = tx_date.isoformat() if hasattr(tx_date, 'isoformat') else str(
+                pd.to_datetime(tx_date).date())
         except Exception:
             problems.append(f"Invalid tx_date: {tx_date}")
             continue
 
         tx_type_u = str(tx_type).strip().upper()
-        if tx_type_u not in ("BUY","SELL"):
+        if tx_type_u not in ("BUY", "SELL"):
             problems.append(f"Invalid tx_type: {tx_type}")
             continue
 
@@ -93,19 +102,60 @@ def _import_transactions(df: pd.DataFrame, dry_run: bool):
             currency = "USD"
 
         ship = float(part['shipping'].sum())
-        tax  = float(part['tax'].sum())
+        tax = float(part['tax'].sum())
         fees = float(part['fees'].sum())
-        notes = None  # row-level notes go to lot
+        notes = None
 
         items = []
         for _, row in part.iterrows():
-            # Master + optional category
-            master_id = upsert_coin_master(str(row['country']), str(row['denomination']), str(row['series']))
-            cat = _norm_asset_category(row.get('asset_category')) if 'asset_category' in row else None
-            if cat:
+            country = str(row['country'])
+            denomination = str(row['denomination'])
+            series = str(row['series'])
+
+            # Check if master exists
+            with get_conn() as cx:
+                existing = cx.execute(
+                    "SELECT id, asset_category FROM coin_master WHERE country=? AND denomination=? AND series=?",
+                    (country, denomination, series)
+                ).fetchone()
+
+            if dry_run:
+                if existing:
+                    masters_matched.append({
+                        'series': series,
+                        'country': country,
+                        'denomination': denomination,
+                        'existing_category': existing['asset_category'],
+                        'requested_category': row.get('asset_category', 'COIN')
+                    })
+
+                    # Check for category mismatch
+                    requested_cat = _norm_asset_category(
+                        row.get('asset_category')) if 'asset_category' in row else 'COIN'
+                    if requested_cat and requested_cat != existing['asset_category']:
+                        master_mismatches.append({
+                            'series': series,
+                            'current': existing['asset_category'],
+                            'requested': requested_cat
+                        })
+                else:
+                    masters_to_create.append({
+                        'country': country,
+                        'denomination': denomination,
+                        'series': series,
+                        'category': row.get('asset_category', 'COIN')
+                    })
+
+            # Continue with normal processing
+            master_id = upsert_coin_master(country, denomination, series) if not dry_run else 1
+
+            cat = _norm_asset_category(
+                row.get('asset_category')) if 'asset_category' in row else None
+            if cat and not dry_run:
                 try:
                     with get_conn() as cx:
-                        cx.execute("UPDATE coin_master SET asset_category=? WHERE id=?", (cat, master_id))
+                        cx.execute("UPDATE coin_master SET asset_category=? WHERE id=?",
+                                   (cat, master_id))
                 except Exception as e:
                     problems.append(f"Could not set asset_category for {row.get('series')}: {e}")
 
@@ -115,21 +165,26 @@ def _import_transactions(df: pd.DataFrame, dry_run: bool):
             except Exception:
                 problems.append(f"Invalid year: {row.get('year')}")
                 continue
+
             mint_mark = (_norm_text(row.get('mint_mark')) or "")
-            variety   = (_norm_text(row.get('variety')) or "")
-            coin_type_id = upsert_coin_type(master_id, year, mint_mark, variety)
+            variety = (_norm_text(row.get('variety')) or "")
+
+            if not dry_run:
+                coin_type_id = upsert_coin_type(master_id, year, mint_mark, variety)
+            else:
+                coin_type_id = 1  # Dummy for dry run
 
             # Valuation + storage
             valuation = str(row.get('valuation_method') or 'AUTO').upper()
-            if valuation not in ('AUTO','MELT_ONLY','GUIDE_ONLY','MANUAL'):
+            if valuation not in ('AUTO', 'MELT_ONLY', 'GUIDE_ONLY', 'MANUAL'):
                 valuation = 'AUTO'
             storage_name = _norm_text(row.get('storage_location'))
-            storage_id = upsert_storage(storage_name) if storage_name else None
+            storage_id = upsert_storage(storage_name) if (storage_name and not dry_run) else None
 
             items.append({
                 'coin_type_id': coin_type_id,
-                'quantity': _fint(row.get('quantity')),  # Use _fint instead of int()
-                'unit_price': _fnum(row.get('unit_price')),  # Use _fnum instead of float()
+                'quantity': _fint(row.get('quantity')),
+                'unit_price': _fnum(row.get('unit_price')),
                 'purchase_grade_company': _norm_text(row.get('purchase_grade_company')),
                 'purchase_grade_text': _norm_text(row.get('purchase_grade_text')),
                 'purchase_numeric_grade': _fnum(row.get('purchase_numeric_grade')),
@@ -151,27 +206,185 @@ def _import_transactions(df: pd.DataFrame, dry_run: bool):
             if tx_type_u == "BUY":
                 create_buy_transaction(tx_date_iso, party, currency, ship, tax, fees, notes, items)
             else:
-                sell_items = [{"coin_type_id": it["coin_type_id"], "quantity": it["quantity"], "unit_price": it["unit_price"]} for it in items]
-                create_sell_transaction(tx_date_iso, party, currency, ship, tax, fees, notes, sell_items, method='FIFO')
+                sell_items = [{"coin_type_id": it["coin_type_id"], "quantity": it["quantity"],
+                               "unit_price": it["unit_price"]} for it in items]
+                create_sell_transaction(tx_date_iso, party, currency, ship, tax, fees, notes,
+                                        sell_items, method='FIFO')
             created_tx += 1
             created_lines += len(items)
         except Exception as e:
             problems.append(str(e))
 
     if dry_run:
-        st.success(f"Dry run OK. Would create ~{created_tx} transactions and {created_lines} line items.")
+        st.success(
+            f"Dry run OK. Would create ~{created_tx} transactions and {created_lines} line items.")
+
+        # Show master matching report
+        if masters_matched:
+            st.info(f"✓ Found {len(masters_matched)} existing masters")
+            with st.expander(f"View matched masters ({len(masters_matched)})"):
+                for m in masters_matched:
+                    st.write(
+                        f"• **{m['series']}** ({m['country']}/{m['denomination']}) - Category: {m['existing_category']}")
+
+        if masters_to_create:
+            st.warning(f"⚠️ Would create {len(masters_to_create)} NEW masters")
+            with st.expander(f"View new masters to be created ({len(masters_to_create)})",
+                             expanded=True):
+                st.write(
+                    "These series were NOT found and will be created with the specified category:")
+                for m in masters_to_create:
+                    cat_display = m['category'] if m['category'] else 'COIN (default)'
+                    st.write(
+                        f"• **{m['series']}** ({m['country']}/{m['denomination']}) → {cat_display}")
+                st.caption(
+                    "💡 If these should match existing masters, check for exact spelling/spacing in your import file")
+
+        if master_mismatches:
+            st.warning(f"⚠️ Found {len(master_mismatches)} category mismatches")
+            with st.expander(f"View category mismatches ({len(master_mismatches)})"):
+                st.write("These masters exist but have different categories:")
+                for m in master_mismatches:
+                    st.write(
+                        f"• **{m['series']}** - Current: {m['current']}, Requested: {m['requested']}")
+                st.caption("The import will update these to the requested category")
+
+        # Show existing masters for reference
+        with st.expander("📚 Show all existing masters (for reference)"):
+            with get_conn() as cx:
+                existing_masters = cx.execute(
+                    """SELECT country, denomination, series, asset_category 
+                       FROM coin_master 
+                       ORDER BY series"""
+                ).fetchall()
+            if existing_masters:
+                for em in existing_masters:
+                    st.write(
+                        f"• {em['series']} ({em['country']}/{em['denomination']}) - {em['asset_category']}")
+            else:
+                st.write("No masters in database yet")
+
     else:
         if problems:
             st.warning("Import finished with some issues:")
             for p in problems[:75]:
                 st.write("• ", p)
             if len(problems) > 75:
-                st.caption(f"...and {len(problems)-75} more")
+                st.caption(f"...and {len(problems) - 75} more")
         st.success(f"Imported {created_tx} transactions and {created_lines} line items.")
+# def _import_transactions(df: pd.DataFrame, dry_run: bool):
+#     problems = []
+#     created_tx = 0
+#     created_lines = 0
+#
+#     # Group-level numeric cleanups
+#     for col in ['shipping', 'tax', 'fees']:
+#         if col in df.columns:
+#             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)  # Add fillna(0.0)
+#         else:
+#             df[col] = 0.0
+#
+#     grp_cols = ['tx_date','tx_type','party']
+#     for (tx_date, tx_type, party), part in df.groupby(grp_cols, dropna=False):
+#         # Normalize header fields
+#         try:
+#             tx_date_iso = tx_date.isoformat() if hasattr(tx_date, 'isoformat') else str(pd.to_datetime(tx_date).date())
+#         except Exception:
+#             problems.append(f"Invalid tx_date: {tx_date}")
+#             continue
+#
+#         tx_type_u = str(tx_type).strip().upper()
+#         if tx_type_u not in ("BUY","SELL"):
+#             problems.append(f"Invalid tx_type: {tx_type}")
+#             continue
+#
+#         # Pull first non-null currency or default USD
+#         if 'currency' in part.columns and not part['currency'].dropna().empty:
+#             currency = str(part['currency'].dropna().astype(str).str.strip().iloc[0] or "USD")
+#         else:
+#             currency = "USD"
+#
+#         ship = float(part['shipping'].sum())
+#         tax  = float(part['tax'].sum())
+#         fees = float(part['fees'].sum())
+#         notes = None  # row-level notes go to lot
+#
+#         items = []
+#         for _, row in part.iterrows():
+#             # Master + optional category
+#             master_id = upsert_coin_master(str(row['country']), str(row['denomination']), str(row['series']))
+#             cat = _norm_asset_category(row.get('asset_category')) if 'asset_category' in row else None
+#             if cat:
+#                 try:
+#                     with get_conn() as cx:
+#                         cx.execute("UPDATE coin_master SET asset_category=? WHERE id=?", (cat, master_id))
+#                 except Exception as e:
+#                     problems.append(f"Could not set asset_category for {row.get('series')}: {e}")
+#
+#             # Type
+#             try:
+#                 year = int(row['year'])
+#             except Exception:
+#                 problems.append(f"Invalid year: {row.get('year')}")
+#                 continue
+#             mint_mark = (_norm_text(row.get('mint_mark')) or "")
+#             variety   = (_norm_text(row.get('variety')) or "")
+#             coin_type_id = upsert_coin_type(master_id, year, mint_mark, variety)
+#
+#             # Valuation + storage
+#             valuation = str(row.get('valuation_method') or 'AUTO').upper()
+#             if valuation not in ('AUTO','MELT_ONLY','GUIDE_ONLY','MANUAL'):
+#                 valuation = 'AUTO'
+#             storage_name = _norm_text(row.get('storage_location'))
+#             storage_id = upsert_storage(storage_name) if storage_name else None
+#
+#             items.append({
+#                 'coin_type_id': coin_type_id,
+#                 'quantity': _fint(row.get('quantity')),  # Use _fint instead of int()
+#                 'unit_price': _fnum(row.get('unit_price')),  # Use _fnum instead of float()
+#                 'purchase_grade_company': _norm_text(row.get('purchase_grade_company')),
+#                 'purchase_grade_text': _norm_text(row.get('purchase_grade_text')),
+#                 'purchase_numeric_grade': _fnum(row.get('purchase_numeric_grade')),
+#                 'slab_cert': _norm_text(row.get('slab_cert')),
+#                 'estimated_grade_text': _norm_text(row.get('estimated_grade_text')),
+#                 'estimated_numeric_grade': _fnum(row.get('estimated_numeric_grade')),
+#                 'valuation_method': valuation,
+#                 'manual_est_unit_value': _fnum(row.get('manual_est_unit_value')),
+#                 'storage_location_id': storage_id,
+#                 'lot_notes': _norm_text(row.get('notes'))
+#             })
+#
+#         if dry_run:
+#             created_tx += 1
+#             created_lines += len(items)
+#             continue
+#
+#         try:
+#             if tx_type_u == "BUY":
+#                 create_buy_transaction(tx_date_iso, party, currency, ship, tax, fees, notes, items)
+#             else:
+#                 sell_items = [{"coin_type_id": it["coin_type_id"], "quantity": it["quantity"], "unit_price": it["unit_price"]} for it in items]
+#                 create_sell_transaction(tx_date_iso, party, currency, ship, tax, fees, notes, sell_items, method='FIFO')
+#             created_tx += 1
+#             created_lines += len(items)
+#         except Exception as e:
+#             problems.append(str(e))
+#
+#     if dry_run:
+#         st.success(f"Dry run OK. Would create ~{created_tx} transactions and {created_lines} line items.")
+#     else:
+#         if problems:
+#             st.warning("Import finished with some issues:")
+#             for p in problems[:75]:
+#                 st.write("• ", p)
+#             if len(problems) > 75:
+#                 st.caption(f"...and {len(problems)-75} more")
+#         st.success(f"Imported {created_tx} transactions and {created_lines} line items.")
 
 # -------------------------------
 # Tab 1 — Quick Templates (transactions)
 # -------------------------------
+
 with tabs[0]:
     st.subheader("⚡ Quick Templates (Transactions)")
     st.caption("Upload the exact **coin_lines_template.csv** or **.xlsx** (headers must match). Also supports optional **asset_category** for the coin master.")
