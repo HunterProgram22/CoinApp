@@ -104,7 +104,7 @@ if spots:
         "metal": "Metal",
         "price_per_oz_usd": "Price per oz (USD)"
     })
-    st.dataframe(spot_df, hide_index=True, use_container_width=True)
+    st.dataframe(spot_df, hide_index=True, width='stretch')
 else:
     st.info("No spot prices found. Update them in Admin → Metal Prices.")
 
@@ -154,7 +154,7 @@ with tab_category:
         }
 
         styled_df = safe_format_dataframe(df.copy(), format_spec)
-        st.dataframe(styled_df, hide_index=True, use_container_width=True)
+        st.dataframe(styled_df, hide_index=True, width='stretch')
 
         create_download_button(
             "Download CSV (By Category)",
@@ -202,7 +202,7 @@ with tab_series:
         }
 
         styled_df = safe_format_dataframe(df.copy(), format_spec)
-        st.dataframe(styled_df, hide_index=True, use_container_width=True)
+        st.dataframe(styled_df, hide_index=True, width='stretch')
 
         create_download_button(
             "Download CSV (By Series)",
