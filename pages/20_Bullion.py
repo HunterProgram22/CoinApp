@@ -65,15 +65,20 @@ def get_bullion_totals():
 # ---------------------------------
 # Helper Functions
 # ---------------------------------
-def format_bullion_dataframe(df, format_spec):
-    """Apply formatting to bullion dataframe for display."""
+def safe_format_dataframe(df, format_spec):
+    """Apply formatting to dataframe, handling None/NULL values."""
     if df.empty:
         return df
 
+    # Replace None values with 0 for numeric columns before formatting
+    for col in format_spec.keys():
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
     try:
         return df.style.format(format_spec)
-    except Exception:
-        # Fallback if styling fails
+    except Exception as e:
+        st.warning(f"Could not apply formatting: {e}")
         return df
 
 
@@ -99,7 +104,7 @@ if spots:
         "metal": "Metal",
         "price_per_oz_usd": "Price per oz (USD)"
     })
-    st.dataframe(spot_df, hide_index=True, width='stretch')
+    st.dataframe(spot_df, hide_index=True, use_container_width=True)
 else:
     st.info("No spot prices found. Update them in Admin → Metal Prices.")
 
@@ -124,6 +129,13 @@ with tab_category:
             "No bullion (ROUND/BAR/BULLION COIN) detected yet. Set 'asset_category' on your Coin Master records.")
     else:
         df = pd.DataFrame(rows)
+
+        # Handle NULL values before renaming
+        numeric_cols = ['units_on_hand', 'gross_oz', 'fine_oz', 'melt_value_usd']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
         df = df.rename(columns={
             "category": "Category",
             "metal": "Metal",
@@ -141,8 +153,8 @@ with tab_category:
             "Melt Value (USD)": "${:,.2f}"
         }
 
-        styled_df = format_bullion_dataframe(df, format_spec)
-        st.dataframe(styled_df, hide_index=True, width='stretch')
+        styled_df = safe_format_dataframe(df.copy(), format_spec)
+        st.dataframe(styled_df, hide_index=True, use_container_width=True)
 
         create_download_button(
             "Download CSV (By Category)",
@@ -159,6 +171,14 @@ with tab_series:
             "No bullion (ROUND/BAR/BULLION COIN) detected yet. Set 'asset_category' on your Coin Master records.")
     else:
         df = pd.DataFrame(rows)
+
+        # Handle NULL values before renaming
+        numeric_cols = ['unit_troy_oz', 'unit_fine_oz', 'units_on_hand', 'gross_oz', 'fine_oz',
+                        'melt_value_usd']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
         df = df.rename(columns={
             "category": "Category",
             "metal": "Metal",
@@ -181,8 +201,8 @@ with tab_series:
             "Melt Value (USD)": "${:,.2f}"
         }
 
-        styled_df = format_bullion_dataframe(df, format_spec)
-        st.dataframe(styled_df, hide_index=True, width='stretch')
+        styled_df = safe_format_dataframe(df.copy(), format_spec)
+        st.dataframe(styled_df, hide_index=True, use_container_width=True)
 
         create_download_button(
             "Download CSV (By Series)",
@@ -207,4 +227,16 @@ with st.expander("ℹ️ What counts as bullion?"):
     - **BULLION COIN** - Government-issued bullion coins (ASE, Maple Leaf, etc.)
 
     Regular **COIN** category items are not shown here - they appear in the main Inventory pages.
+    """)
+
+# Add diagnostic info
+with st.expander("⚠️ Seeing $0 values?"):
+    st.markdown("""
+    If you're seeing $0 melt values, check that your coin_master records have:
+    1. **metal** set (Ag, Au, Pt, Pd)
+    2. **weight_grams** set (e.g., 31.103 for 1 troy oz)
+    3. **fineness** set (e.g., 0.999 for .999 fine silver)
+    4. **Metal prices** updated in Admin → Metal Prices
+
+    You can update these in Admin → Coin Master Editor.
     """)
