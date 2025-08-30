@@ -319,7 +319,7 @@ class TransactionBuilder:
                         )
                         
                         # Update lot remaining quantity
-                        InventoryManager.update_lot_remaining_quantity(lot["id"], take)
+                        # InventoryManager.update_lot_remaining_quantity(lot["id"], take)
                         
                         remaining -= take
                 

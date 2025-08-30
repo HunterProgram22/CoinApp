@@ -161,11 +161,13 @@ def get_spending_total(
     return float(result['total']) if result and result['total'] else 0.0
 
 
-def check_inventory_availability(coin_type_id: int, quantity: int) -> Tuple[bool, str]:
-    """Check if enough inventory is available for sale."""
+def check_inventory_availability(coin_type_id: int, quantity: int) -> Tuple[bool, str, List[Dict]]:
+    """Check if enough inventory is available for sale and return lot details."""
     query = """
         SELECT 
-            COALESCE(SUM(qty_remaining), 0) as available,
+            l.id as lot_id,
+            l.qty_remaining,
+            l.acquired_date,
             cm.series,
             ct.year,
             ct.mint_mark,
@@ -174,25 +176,26 @@ def check_inventory_availability(coin_type_id: int, quantity: int) -> Tuple[bool
         JOIN coin_type ct ON ct.id = l.coin_type_id
         JOIN coin_master cm ON cm.id = ct.master_id
         WHERE l.coin_type_id = ? AND l.qty_remaining > 0
-        GROUP BY cm.series, ct.year, ct.mint_mark, ct.variety
+        ORDER BY l.acquired_date ASC, l.id ASC
     """
 
-    result = execute_query_single(query, (coin_type_id,))
+    results = execute_query_all(query, (coin_type_id,))
 
-    if not result or result['available'] < quantity:
-        available = result['available'] if result else 0
-        if result:
-            coin_desc = f"{result['series']} {result['year']}"
-            if result['mint_mark']:
-                coin_desc += f" {result['mint_mark']}"
-            if result['variety']:
-                coin_desc += f" • {result['variety']}"
+    total_available = sum(r['qty_remaining'] for r in results)
+
+    if total_available < quantity:
+        if results:
+            coin_desc = f"{results[0]['series']} {results[0]['year']}"
+            if results[0]['mint_mark']:
+                coin_desc += f" {results[0]['mint_mark']}"
+            if results[0]['variety']:
+                coin_desc += f" • {results[0]['variety']}"
         else:
             coin_desc = f"coin_type_id {coin_type_id}"
 
-        return False, f"Insufficient inventory: Only {available} available for {coin_desc}, but trying to sell {quantity}"
+        return False, f"Insufficient inventory: Only {total_available} available for {coin_desc}, but trying to sell {quantity}", results
 
-    return True, ""
+    return True, "", results
 
 
 # ---------------------------------
@@ -450,6 +453,43 @@ def render_buy_form():
                 st.rerun()
 
 
+def check_inventory_availability(coin_type_id: int, quantity: int) -> Tuple[bool, str, List[Dict]]:
+    """Check if enough inventory is available for sale and return lot details."""
+    query = """
+        SELECT 
+            l.id as lot_id,
+            l.qty_remaining,
+            l.acquired_date,
+            cm.series,
+            ct.year,
+            ct.mint_mark,
+            ct.variety
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        WHERE l.coin_type_id = ? AND l.qty_remaining > 0
+        ORDER BY l.acquired_date ASC, l.id ASC
+    """
+
+    results = execute_query_all(query, (coin_type_id,))
+
+    total_available = sum(r['qty_remaining'] for r in results)
+
+    if total_available < quantity:
+        if results:
+            coin_desc = f"{results[0]['series']} {results[0]['year']}"
+            if results[0]['mint_mark']:
+                coin_desc += f" {results[0]['mint_mark']}"
+            if results[0]['variety']:
+                coin_desc += f" • {results[0]['variety']}"
+        else:
+            coin_desc = f"coin_type_id {coin_type_id}"
+
+        return False, f"Insufficient inventory: Only {total_available} available for {coin_desc}, but trying to sell {quantity}", results
+
+    return True, "", results
+
+
 def render_sell_form():
     """Render the sell transaction form."""
     coin_types = get_all_coin_types()
@@ -476,16 +516,20 @@ def render_sell_form():
             )
             coin_type_id = selection["id"] if selection else None
 
-            # Show available inventory for selected coin
+            # Show available inventory for selected coin with lot breakdown
             if coin_type_id:
-                query = """
-                    SELECT COALESCE(SUM(qty_remaining), 0) as available
-                    FROM lot
-                    WHERE coin_type_id = ? AND qty_remaining > 0
-                """
-                result = execute_query_single(query, (coin_type_id,))
-                available = result['available'] if result else 0
-                st.info(f"Available to sell: {available}")
+                has_inv, msg, lots = check_inventory_availability(coin_type_id, 0)
+                if lots:
+                    total = sum(lot['qty_remaining'] for lot in lots)
+                    st.info(f"**Available to sell: {total}**")
+
+                    # Show lot breakdown in expander
+                    with st.expander("View lot details"):
+                        for lot in lots:
+                            st.write(
+                                f"• Lot #{lot['lot_id']}: {lot['qty_remaining']} units (acquired {lot['acquired_date']})")
+                else:
+                    st.warning("No inventory available for this coin type")
         else:
             st.warning("Add at least one Coin Type in Admin → Coin Types.")
             coin_type_id = None
@@ -510,11 +554,15 @@ def render_sell_form():
                 st.error("Please add/select a Coin Type first.")
                 return
 
-            # Check inventory before attempting sale
-            has_inventory, error_msg = check_inventory_availability(coin_type_id, quantity)
+            # Check inventory before attempting sale with detailed lot info
+            has_inventory, error_msg, lots = check_inventory_availability(coin_type_id, quantity)
             if not has_inventory:
                 st.error(error_msg)
-                return  # Stop here, don't try to create the transaction
+                if lots:
+                    st.write("**Available lots:**")
+                    for lot in lots:
+                        st.write(f"• Lot #{lot['lot_id']}: {lot['qty_remaining']} units")
+                return
 
             try:
                 create_sell_transaction(
@@ -538,6 +586,13 @@ def render_sell_form():
                 st.error(str(e))
             except Exception as e:
                 st.error(f"Transaction failed: {str(e)}")
+                # Show debug info
+                st.write("Debug: Attempted to sell", quantity, "units")
+                if lots:
+                    st.write("Available lots were:")
+                    for lot in lots:
+                        st.write(f"• Lot #{lot['lot_id']}: {lot['qty_remaining']} units")
+
 
 # ---------------------------------
 # Main UI Tabs
