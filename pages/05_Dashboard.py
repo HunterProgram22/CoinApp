@@ -122,6 +122,12 @@ def render_silver_melt_reference(spot_prices):
     df_melt = calculate_silver_melt_values(silver_price)
     st.dataframe(df_melt, width='stretch')
 
+    # Add link to NGC melt values page
+    st.markdown(
+        "For additional coin melt values not listed above, see "
+        "[NGC's Complete Melt Value Guide](https://www.ngccoin.com/price-guide/coin-melt-values.aspx)"
+    )
+
 
 def render_series_summary():
     """Render the series summary tab."""
