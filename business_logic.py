@@ -200,7 +200,23 @@ class TransactionBuilder:
                     )
                     
                     unit_cost = float(item.get("unit_price", 0.0)) + allocation
-                    
+
+                    # Check asset category to determine valuation method
+                    asset_cat_query = """
+                                           SELECT cm.asset_category 
+                                           FROM coin_master cm 
+                                           JOIN coin_type ct ON ct.master_id = cm.id 
+                                           WHERE ct.id = ?
+                                       """
+                    result = execute_query_single(asset_cat_query, (item["coin_type_id"],))
+                    asset_category = result['asset_category'] if result else 'COIN'
+
+                    # Override valuation method for bullion
+                    if asset_category in ('BULLION COIN', 'ROUND', 'BAR'):
+                        valuation_method = 'MELT_ONLY'
+                    else:
+                        valuation_method = item.get("valuation_method", 'AUTO')
+
                     execute_insert(
                         """
                         INSERT INTO lot(
@@ -225,8 +241,8 @@ class TransactionBuilder:
                             item.get("slab_cert"),
                             item.get("estimated_grade_text"), 
                             item.get("estimated_numeric_grade"),
-                            item.get("valuation_method", 'AUTO'), 
-                            item.get("manual_est_unit_value"), 
+                            valuation_method,
+                            item.get("manual_est_unit_value"),
                             'OPEN', 
                             item.get("lot_notes")
                         )
