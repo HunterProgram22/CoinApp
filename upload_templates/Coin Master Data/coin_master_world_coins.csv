@@ -1,4 +1,4 @@
-country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,ncg_url,pcgs_url,notes
+country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,ngc_url,pcgs_url,notes
 Tunisia,2 Francs,Chambers of Commerce - 2 Francs,Al (Bronze),1,8,27,2.13,Reeded,1921,1945,COIN,https://en.numista.com/catalogue/pieces1209.html,https://www.ngccoin.com/price-guide/world/tunisia-2-francs-km-248-1340-1921-1364-1945-cuid-1090552-duid-1571127,,
 Iceland,5 aurar,Christian X - 5 aurar,Cu-Zn-Sn (Bronze),1,6,24,2,Plain,1926,1942,COIN,https://en.numista.com/catalogue/pieces6883.html,https://www.ngccoin.com/price-guide/world/iceland-5-aurar-km-7.2-1940-1942-cuid-1201063-duid-1469841,,
 Spain,5 Pesetas,Francisco Franco 1957 - 5 Pesetas,Cu-Ni,1,5.75,23,1.9,Reeded,1958,1975,COIN,https://en.numista.com/catalogue/pieces781.html,https://www.ngccoin.com/price-guide/world/spain-5-pesetas-km-786-1957-1957-75-cuid-1082343-duid-1555601,,All coins say 1957 - mint year on star.
