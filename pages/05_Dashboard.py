@@ -94,13 +94,13 @@ def render_spot_prices():
     df = format_metal_prices_dataframe(spots_data)
     
     if df is not None:
+        df["Price Per Oz. (USD)"] = df["Price Per Oz. (USD)"].apply(lambda x: f"${x:,.2f}")
         st.dataframe(
             df,
             width='stretch',
             hide_index=True,
             column_config={
                 "Metal": st.column_config.TextColumn(),
-                "Price Per Oz. (USD)": st.column_config.NumberColumn(format="$%.2f"),
             },
         )
     else:

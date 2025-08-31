@@ -147,7 +147,10 @@ if spots:
         "metal": "Metal",
         "price_per_oz_usd": "Price per oz (USD)"
     })
-    st.dataframe(spot_df, hide_index=True, width='stretch')
+    st.dataframe(spot_df, hide_index=True, width='stretch', column_config={
+        "Metal": st.column_config.TextColumn(),
+        "Price per oz (USD)": st.column_config.NumberColumn(format="$%.2f"),
+    })
 else:
     st.info("No spot prices found. Update them in Admin → Metal Prices.")
 
