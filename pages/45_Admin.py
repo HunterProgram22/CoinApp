@@ -35,6 +35,9 @@ tabs = st.tabs([
 # =====================================================
 # Tab 1: Coin Master Editor
 # =====================================================
+# =====================================================
+# Tab 1: Coin Master Editor
+# =====================================================
 with tabs[0]:
     st.subheader("Coin Master Editor")
 
@@ -42,131 +45,47 @@ with tabs[0]:
     render_weight_helper()
 
     masters = get_coin_masters()
-    left, right = st.columns([2, 1])
 
-    with left:
-        if not masters:
-            st.info("No masters yet. Use **Add New** on the right.")
-        else:
-            # Master selection
-            labels = [format_master_label(m) for m in masters]
-            selected = st.selectbox("Select a coin master", labels, key="cm_select")
-            master = masters[labels.index(selected)]
-            mid = master["id"]
-
-            # Edit form
-            st.markdown("### Edit Master")
-
-            # Basic info
-            col1, col2, col3 = st.columns(3)
-            country = col1.text_input("Country", master.get("country") or "",
-                                      key=f"cm_country_{mid}")
-            denomination = col2.text_input("Denomination", master.get("denomination") or "",
-                                           key=f"cm_denom_{mid}")
-            series = col3.text_input("Series", master.get("series") or "", key=f"cm_series_{mid}")
-
-            # Metal specifications
-            col1, col2, col3 = st.columns(3)
-            metal = col1.text_input("Metal (Ag/Au/Pt/Pd)", master.get("metal") or "",
-                                    key=f"cm_metal_{mid}")
-            fineness = col2.number_input("Fineness (0-1)", 0.0, 1.0,
-                                         float(master.get("fineness") or 0.0),
-                                         step=0.001, format="%.4f", key=f"cm_fineness_{mid}")
-            weight_grams = col3.number_input("Weight (grams)", 0.0, step=0.000001,
-                                             value=float(master.get("weight_grams") or 0.0),
-                                             format="%.6f", key=f"cm_weight_{mid}")
-
-            # Physical dimensions
-            col1, col2, col3 = st.columns(3)
-            diameter_mm = col1.number_input("Diameter (mm)", 0.0, step=0.1,
-                                            value=float(master.get("diameter_mm") or 0.0),
-                                            key=f"cm_diameter_{mid}")
-            thickness_mm = col2.number_input("Thickness (mm)", 0.0, step=0.01,
-                                             value=float(master.get("thickness_mm") or 0.0),
-                                             key=f"cm_thickness_{mid}")
-            edge = col3.text_input("Edge", master.get("edge") or "", key=f"cm_edge_{mid}")
-
-            # Years and category
-            col1, col2, col3 = st.columns(3)
-            years_start = col1.number_input("Years start", 0, step=1,
-                                            value=int(master.get("years_start") or 0),
-                                            key=f"cm_ystart_{mid}")
-            years_end = col2.number_input("Years end", 0, step=1,
-                                          value=int(master.get("years_end") or 0),
-                                          key=f"cm_yend_{mid}")
-            asset_category = col3.selectbox("Asset Category", ASSET_CATEGORIES,
-                                            index=ASSET_CATEGORIES.index(
-                                                master.get("asset_category") or "COIN"),
-                                            key=f"cm_assetcat_{mid}")
-
-            # Reference URLs
-            st.markdown("### Reference URLs")
-            numista_url = st.text_input("Numista URL", master.get("numista_url") or "",
-                                        key=f"cm_numista_{mid}")
-            ngc_url = st.text_input("NGC URL", master.get("ngc_url") or "", key=f"cm_ngc_{mid}")
-            pcgs_url = st.text_input("PCGS URL", master.get("pcgs_url") or "", key=f"cm_pcgs_{mid}")
-
-            # Link buttons
-            col1, col2, col3 = st.columns(3)
-            if numista_url:
-                col1.link_button("Open Numista", numista_url)
-            if ngc_url:
-                col2.link_button("Open NGC", ngc_url)
-            if pcgs_url:
-                col3.link_button("Open PCGS", pcgs_url)
-
-            # Notes
-            notes = st.text_area("Notes", master.get("notes") or "", height=80,
-                                 key=f"cm_notes_{mid}")
-
-            # Save button
-            if st.button("Save Changes", type="primary", key=f"cm_save_{mid}"):
-                try:
-                    rows = update_coin_master(
-                        mid,
-                        country=country,
-                        denomination=denomination,
-                        series=series,
-                        metal=metal or None,
-                        fineness=fineness,
-                        weight_grams=weight_grams,
-                        diameter_mm=diameter_mm,
-                        thickness_mm=thickness_mm,
-                        edge=edge or None,
-                        years_start=years_start or None,
-                        years_end=years_end or None,
-                        asset_category=asset_category,
-                        numista_url=numista_url or None,
-                        ngc_url=ngc_url or None,
-                        pcgs_url=pcgs_url or None,
-                        notes=notes or None
-                    )
-                    st.success(f"Updated successfully! Rows affected: {rows}")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Update failed: {e}")
-
-    with right:
-        st.markdown("### Add New Master")
+    # Add new master - expandable section at the top
+    with st.expander("➕ Add a Coin Master", expanded=False):
         with st.form("add_master_form"):
             # Basic required fields
-            new_country = st.text_input("Country*")
-            new_denomination = st.text_input("Denomination*")
-            new_series = st.text_input("Series*")
+            col1, col2, col3 = st.columns(3)
+            new_country = col1.text_input("Country*")
+            new_denomination = col2.text_input("Denomination*")
+            new_series = col3.text_input("Series*")
 
-            # Optional fields in columns
-            col1, col2 = st.columns(2)
-            new_metal = col1.text_input("Metal")
+            # Metal specs
+            col1, col2, col3 = st.columns(3)
+            new_metal = col1.text_input("Metal (Ag/Au/Pt/Pd)")
             new_fineness = col2.number_input("Fineness", 0.0, 1.0, 0.999, step=0.001, format="%.4f")
+            new_weight = col3.number_input("Weight (grams)", 0.0, step=0.000001, format="%.6f")
 
-            # Weight with preset helper
-            new_weight = st.number_input("Weight (grams)", 0.0, step=0.000001, format="%.6f")
-            weight_preset = st.selectbox("Or select preset",
+            # Weight preset helper
+            weight_preset = st.selectbox("Or select weight preset",
                                          ["Custom"] + list(WEIGHT_PRESETS.keys()))
             if weight_preset != "Custom":
                 st.info(f"Will use: {WEIGHT_PRESETS[weight_preset]} grams")
 
-            new_asset_category = st.selectbox("Asset Category", ASSET_CATEGORIES)
+            # Physical dimensions
+            col1, col2, col3 = st.columns(3)
+            new_diameter = col1.number_input("Diameter (mm)", 0.0, step=0.1)
+            new_thickness = col2.number_input("Thickness (mm)", 0.0, step=0.01)
+            new_edge = col3.text_input("Edge")
+
+            # Years and category
+            col1, col2, col3 = st.columns(3)
+            new_years_start = col1.number_input("Years start", 0, step=1)
+            new_years_end = col2.number_input("Years end", 0, step=1)
+            new_asset_category = col3.selectbox("Asset Category", ASSET_CATEGORIES)
+
+            # Reference URLs
+            new_numista = st.text_input("Numista URL (optional)")
+            new_ngc = st.text_input("NGC URL (optional)")
+            new_pcgs = st.text_input("PCGS URL (optional)")
+
+            # Notes
+            new_notes = st.text_area("Notes", height=80)
 
             if st.form_submit_button("Create Master", type="primary"):
                 if not all([new_country, new_denomination, new_series]):
@@ -182,12 +101,119 @@ with tabs[0]:
                             metal=new_metal or None,
                             fineness=new_fineness if new_fineness else None,
                             weight_grams=final_weight if final_weight else None,
-                            asset_category=new_asset_category
+                            diameter_mm=new_diameter if new_diameter else None,
+                            thickness_mm=new_thickness if new_thickness else None,
+                            edge=new_edge or None,
+                            years_start=new_years_start or None,
+                            years_end=new_years_end or None,
+                            asset_category=new_asset_category,
+                            numista_url=new_numista or None,
+                            ngc_url=new_ngc or None,
+                            pcgs_url=new_pcgs or None,
+                            notes=new_notes or None
                         )
                         st.success(f"Created master with ID: {result_id}")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Creation failed: {e}")
+
+    # Edit existing master
+    st.markdown("### Edit Existing Master")
+
+    if not masters:
+        st.info("No masters yet. Add one above.")
+    else:
+        # Master selection
+        labels = [format_master_label(m) for m in masters]
+        selected = st.selectbox("Select a coin master", labels, key="cm_select")
+        master = masters[labels.index(selected)]
+        mid = master["id"]
+
+        # Basic info
+        col1, col2, col3 = st.columns(3)
+        country = col1.text_input("Country", master.get("country") or "", key=f"cm_country_{mid}")
+        denomination = col2.text_input("Denomination", master.get("denomination") or "",
+                                       key=f"cm_denom_{mid}")
+        series = col3.text_input("Series", master.get("series") or "", key=f"cm_series_{mid}")
+
+        # Metal specifications
+        col1, col2, col3 = st.columns(3)
+        metal = col1.text_input("Metal (Ag/Au/Pt/Pd)", master.get("metal") or "",
+                                key=f"cm_metal_{mid}")
+        fineness = col2.number_input("Fineness (0-1)", 0.0, 1.0,
+                                     float(master.get("fineness") or 0.0),
+                                     step=0.001, format="%.4f", key=f"cm_fineness_{mid}")
+        weight_grams = col3.number_input("Weight (grams)", 0.0, step=0.000001,
+                                         value=float(master.get("weight_grams") or 0.0),
+                                         format="%.6f", key=f"cm_weight_{mid}")
+
+        # Physical dimensions
+        col1, col2, col3 = st.columns(3)
+        diameter_mm = col1.number_input("Diameter (mm)", 0.0, step=0.1,
+                                        value=float(master.get("diameter_mm") or 0.0),
+                                        key=f"cm_diameter_{mid}")
+        thickness_mm = col2.number_input("Thickness (mm)", 0.0, step=0.01,
+                                         value=float(master.get("thickness_mm") or 0.0),
+                                         key=f"cm_thickness_{mid}")
+        edge = col3.text_input("Edge", master.get("edge") or "", key=f"cm_edge_{mid}")
+
+        # Years and category
+        col1, col2, col3 = st.columns(3)
+        years_start = col1.number_input("Years start", 0, step=1,
+                                        value=int(master.get("years_start") or 0),
+                                        key=f"cm_ystart_{mid}")
+        years_end = col2.number_input("Years end", 0, step=1,
+                                      value=int(master.get("years_end") or 0), key=f"cm_yend_{mid}")
+        asset_category = col3.selectbox("Asset Category", ASSET_CATEGORIES,
+                                        index=ASSET_CATEGORIES.index(
+                                            master.get("asset_category") or "COIN"),
+                                        key=f"cm_assetcat_{mid}")
+
+        # Reference URLs
+        st.markdown("#### Reference URLs")
+        numista_url = st.text_input("Numista URL", master.get("numista_url") or "",
+                                    key=f"cm_numista_{mid}")
+        ngc_url = st.text_input("NGC URL", master.get("ngc_url") or "", key=f"cm_ngc_{mid}")
+        pcgs_url = st.text_input("PCGS URL", master.get("pcgs_url") or "", key=f"cm_pcgs_{mid}")
+
+        # Link buttons
+        col1, col2, col3 = st.columns(3)
+        if numista_url:
+            col1.link_button("Open Numista", numista_url)
+        if ngc_url:
+            col2.link_button("Open NGC", ngc_url)
+        if pcgs_url:
+            col3.link_button("Open PCGS", pcgs_url)
+
+        # Notes
+        notes = st.text_area("Notes", master.get("notes") or "", height=80, key=f"cm_notes_{mid}")
+
+        # Save button
+        if st.button("Save Changes", type="primary", key=f"cm_save_{mid}"):
+            try:
+                rows = update_coin_master(
+                    mid,
+                    country=country,
+                    denomination=denomination,
+                    series=series,
+                    metal=metal or None,
+                    fineness=fineness,
+                    weight_grams=weight_grams,
+                    diameter_mm=diameter_mm,
+                    thickness_mm=thickness_mm,
+                    edge=edge or None,
+                    years_start=years_start or None,
+                    years_end=years_end or None,
+                    asset_category=asset_category,
+                    numista_url=numista_url or None,
+                    ngc_url=ngc_url or None,
+                    pcgs_url=pcgs_url or None,
+                    notes=notes or None
+                )
+                st.success(f"Updated successfully! Rows affected: {rows}")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Update failed: {e}")
 
 # =====================================================
 # Tab 2: Coin Type Editor
@@ -200,7 +226,7 @@ with tabs[1]:
         st.info("Add a Coin Master first.")
     else:
         # Add new type
-        with st.expander("➕ Add a Coin Type", expanded=True):
+        with st.expander("➕ Add a Coin Type", expanded=False):
             with st.form("add_type_form"):
                 labels = [format_master_label(m) for m in masters]
                 master_index = st.selectbox("Master", range(len(labels)),
