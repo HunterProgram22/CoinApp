@@ -491,5 +491,6 @@ JOIN v_lot_value_details v ON v.lot_id = l.id
 WHERE l.valuation_method = 'MELT_ONLY'
     AND l.qty_remaining > 0
     AND cm.metal = 'Ag'
+    AND cm.asset_category = 'COIN'
 ORDER BY cm.series, ct.year, ct.mint_mark;
 """
