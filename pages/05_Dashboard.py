@@ -41,12 +41,16 @@ def get_portfolio_summary():
     """
     
     cost_result = execute_query_single(cost_query)
-    
+    proceeds_query = "SELECT estimated_sale_proceeds FROM v_portfolio_sale_proceeds"
+    proceeds_result = execute_query_single(proceeds_query)
+
     return {
         'total_lots': cost_result['total_lots'] if cost_result else 0,
         'total_coins': result['total_coins'] or 0,
         'total_cost_usd': cost_result['total_cost_usd'] if cost_result else 0.0,
-        'total_estimated_value_usd': result['total_estimated_value_usd'] or 0.0
+        'total_estimated_value_usd': result['total_estimated_value_usd'] or 0.0,
+        'estimated_sale_proceeds': proceeds_result[
+            'estimated_sale_proceeds'] if proceeds_result else 0.0
     }
 
 
@@ -77,13 +81,17 @@ def get_dashboard_series_rollup():
 def render_portfolio_overview():
     """Render the portfolio overview section."""
     summary = get_portfolio_summary()
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.metric("Estimated Portfolio Value (USD)", f"${summary['total_estimated_value_usd']:,}")
     
     with col2:
         st.metric("Coins on Hand", f"{summary['total_coins']:,}")
+
+    with col3:
+        st.metric("Est. Sale Proceeds", f"${summary['estimated_sale_proceeds']:,}")
+        st.caption("90% bullion/junk, 75% numismatic")
 
 
 def render_spot_prices():

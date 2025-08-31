@@ -267,6 +267,33 @@ CREATE TABLE IF NOT EXISTS type_set_assignment (
 );
 
 /* ---------- Views ---------- */
+/* Estimated Sale Proceeds View */
+CREATE VIEW IF NOT EXISTS v_portfolio_sale_proceeds AS
+WITH values AS (
+    SELECT 
+        l.id,
+        l.qty_remaining,
+        v.chosen_unit_value,
+        cm.asset_category,
+        l.valuation_method,
+        CASE 
+            -- Bullion and junk silver: 90% of value
+            WHEN cm.asset_category IN ('ROUND', 'BAR', 'BULLION COIN') THEN v.chosen_unit_value * 0.90
+            WHEN l.valuation_method = 'MELT_ONLY' THEN v.chosen_unit_value * 0.90
+            -- All other coins: 75% of value
+            ELSE v.chosen_unit_value * 0.75
+        END as sale_proceed_per_unit
+    FROM lot l
+    JOIN v_lot_value_details v ON v.lot_id = l.id
+    JOIN coin_type ct ON ct.id = l.coin_type_id
+    JOIN coin_master cm ON cm.id = ct.master_id
+    WHERE l.qty_remaining > 0
+)
+SELECT 
+    ROUND(SUM(qty_remaining * sale_proceed_per_unit), 2) as estimated_sale_proceeds
+FROM values;
+
+
 /* Type Set Progress View - tracks which coins you have for each set */
 CREATE VIEW IF NOT EXISTS v_type_set_progress AS
 SELECT 
