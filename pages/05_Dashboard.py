@@ -28,7 +28,8 @@ def get_portfolio_summary():
             'total_lots': 0,
             'total_coins': 0,
             'total_cost_usd': 0.0,
-            'total_estimated_value_usd': 0.0
+            'total_estimated_value_usd': 0.0,
+            'estimated_sale_proceeds': 0.0
         }
     
     # Get additional stats not in the view
@@ -49,8 +50,8 @@ def get_portfolio_summary():
         'total_coins': result['total_coins'] or 0,
         'total_cost_usd': cost_result['total_cost_usd'] if cost_result else 0.0,
         'total_estimated_value_usd': result['total_estimated_value_usd'] or 0.0,
-        'estimated_sale_proceeds': proceeds_result[
-            'estimated_sale_proceeds'] if proceeds_result else 0.0
+        'estimated_sale_proceeds': proceeds_result['estimated_sale_proceeds']
+            if proceeds_result and proceeds_result['estimated_sale_proceeds'] else 0.0
     }
 
 
