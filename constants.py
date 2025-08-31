@@ -17,7 +17,6 @@ NAVIGATION_ITEMS = [
     ("pages/40_Specimens.py", "Specimens", "🏷️"),
     ("pages/45_Admin.py", "Admin", "🛠️"),
     ("pages/50_Data_Import.py", "Data Import", "📥"),
-    ("pages/55_Coin_Type_Editor.py", "Coin Type Editor", "🧩")
 ]
 
 
