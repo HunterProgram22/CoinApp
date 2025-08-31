@@ -269,7 +269,7 @@ CREATE TABLE IF NOT EXISTS type_set_assignment (
 /* ---------- Views ---------- */
 /* Estimated Sale Proceeds View */
 CREATE VIEW IF NOT EXISTS v_portfolio_sale_proceeds AS
-WITH values AS (
+WITH sale_values AS (
     SELECT 
         l.id,
         l.qty_remaining,
@@ -291,7 +291,7 @@ WITH values AS (
 )
 SELECT 
     ROUND(SUM(qty_remaining * sale_proceed_per_unit), 2) as estimated_sale_proceeds
-FROM values;
+FROM sale_values;
 
 
 /* Type Set Progress View - tracks which coins you have for each set */
