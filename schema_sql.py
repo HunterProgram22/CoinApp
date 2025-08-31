@@ -454,4 +454,41 @@ JOIN coin_master cm ON cm.id = ct.master_id
 JOIN v_lot_value_details lvd ON lvd.lot_id = l.id
 WHERE l.qty_remaining > 0 AND COALESCE(cm.country, '') <> ''
 GROUP BY cm.country, cm.series;
+
+/* Junk/Constitutional Silver View */
+CREATE VIEW IF NOT EXISTS v_junk_silver AS
+SELECT 
+    cm.series,
+    SUM(l.qty_remaining) as quantity,
+    ROUND(SUM(l.qty_remaining * v.melt_unit_value), 2) as total_melt_value,
+    ROUND(SUM(l.qty_remaining * (cm.weight_grams * cm.fineness) / 31.1034768), 4) as total_fine_oz
+FROM lot l
+JOIN coin_type ct ON ct.id = l.coin_type_id
+JOIN coin_master cm ON cm.id = ct.master_id
+JOIN v_lot_value_details v ON v.lot_id = l.id
+WHERE l.valuation_method = 'MELT_ONLY'
+    AND l.qty_remaining > 0
+    AND cm.metal = 'Ag'
+GROUP BY cm.series
+ORDER BY total_fine_oz DESC;
+
+/* Junk Silver Detail View */
+CREATE VIEW IF NOT EXISTS v_junk_silver_detail AS
+SELECT 
+    cm.series,
+    ct.year,
+    ct.mint_mark,
+    ct.variety,
+    l.qty_remaining as quantity,
+    ROUND(v.melt_unit_value, 4) as melt_per_coin,
+    ROUND(l.qty_remaining * v.melt_unit_value, 2) as total_melt_value,
+    ROUND(l.qty_remaining * (cm.weight_grams * cm.fineness) / 31.1034768, 4) as total_fine_oz
+FROM lot l
+JOIN coin_type ct ON ct.id = l.coin_type_id
+JOIN coin_master cm ON cm.id = ct.master_id
+JOIN v_lot_value_details v ON v.lot_id = l.id
+WHERE l.valuation_method = 'MELT_ONLY'
+    AND l.qty_remaining > 0
+    AND cm.metal = 'Ag'
+ORDER BY cm.series, ct.year, ct.mint_mark;
 """
