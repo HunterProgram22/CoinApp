@@ -206,6 +206,27 @@ CREATE TABLE IF NOT EXISTS image (
   caption         TEXT
 );
 
+/* ---------- Specimen Tracking ---------- */
+CREATE TABLE IF NOT EXISTS series_code (
+    id INTEGER PRIMARY KEY,
+    series TEXT NOT NULL UNIQUE,
+    prefix TEXT NOT NULL,
+    next_seq INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS specimen (
+    id INTEGER PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    coin_type_id INTEGER NOT NULL REFERENCES coin_type(id),
+    lot_id INTEGER REFERENCES lot(id),
+    sold_line_id INTEGER REFERENCES tx_line(id),
+    notes TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_specimen_code ON specimen(code);
+CREATE INDEX IF NOT EXISTS idx_specimen_lot_id ON specimen(lot_id);
+CREATE INDEX IF NOT EXISTS idx_specimen_sold_line_id ON specimen(sold_line_id);
+
 /* Indexes for foreign keys */
 CREATE INDEX IF NOT EXISTS idx_image_coin_type_id ON image(coin_type_id);
 CREATE INDEX IF NOT EXISTS idx_image_lot_id ON image(lot_id);
