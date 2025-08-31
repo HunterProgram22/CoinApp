@@ -107,7 +107,8 @@ with tabs[0]:
             st.warning("Progress views not found. Create v_type_set_progress view for tracking.")
 
         # Specimen assignment section (if available)
-        if all([schema['type_set_assignment'], schema['specimen']]):
+        assignment_schema = check_type_set_schema()
+        if all([assignment_schema['type_set_assignment'], assignment_schema['specimen']]):
             st.subheader("Specimen Assignments")
 
             # Get current assignments
