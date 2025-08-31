@@ -246,7 +246,43 @@ CREATE INDEX IF NOT EXISTS idx_guide_price_coin_type_id ON guide_price(coin_type
 CREATE INDEX IF NOT EXISTS idx_guide_price_grade ON guide_price(coin_type_id, grade_text);
 CREATE INDEX IF NOT EXISTS idx_guide_price_date ON guide_price(as_of DESC);
 
+/* ---------- Type Sets ---------- */
+CREATE TABLE IF NOT EXISTS type_set (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS type_set_member (
+    set_id INTEGER REFERENCES type_set(id) ON DELETE CASCADE,
+    coin_type_id INTEGER REFERENCES coin_type(id) ON DELETE CASCADE,
+    PRIMARY KEY (set_id, coin_type_id)
+);
+
+CREATE TABLE IF NOT EXISTS type_set_assignment (
+    set_id INTEGER REFERENCES type_set(id) ON DELETE CASCADE,
+    coin_type_id INTEGER REFERENCES coin_type(id),
+    specimen_id INTEGER REFERENCES specimen(id),
+    PRIMARY KEY (set_id, specimen_id)
+);
+
 /* ---------- Views ---------- */
+/* Type Set Progress View - tracks which coins you have for each set */
+CREATE VIEW IF NOT EXISTS v_type_set_progress AS
+SELECT 
+    tsm.set_id,
+    tsm.coin_type_id,
+    cm.series,
+    ct.year,
+    ct.mint_mark,
+    ct.variety,
+    COALESCE(SUM(l.qty_remaining), 0) as on_hand
+FROM type_set_member tsm
+JOIN coin_type ct ON ct.id = tsm.coin_type_id
+JOIN coin_master cm ON cm.id = ct.master_id
+LEFT JOIN lot l ON l.coin_type_id = tsm.coin_type_id AND l.qty_remaining > 0
+GROUP BY tsm.set_id, tsm.coin_type_id, cm.series, ct.year, ct.mint_mark, ct.variety;
+
 /* Latest spot per metal */
 CREATE VIEW IF NOT EXISTS v_latest_spot AS
 SELECT metal, price_per_oz_usd
