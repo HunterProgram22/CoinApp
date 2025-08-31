@@ -276,6 +276,8 @@ with tab_summary:
         filename = f"world_summary_{country}.csv".replace(" ", "_")
         create_download_button(f"Download CSV (Summary — {country})", csv_df, filename)
 
+
+
 # ===== Detail Tab =====
 with tab_detail:
     rows = get_world_coins_detail(country, want_proofs, want_slabbed, asset_category)
@@ -301,3 +303,8 @@ with tab_detail:
         
         filename = f"world_detail_{country}.csv".replace(" ", "_")
         create_download_button(f"Download CSV (Detail — {country})", csv_df, filename)
+
+st.markdown(
+    "For additional information on world coins including pictures and lists with KM numbers, see: "
+    "[World Coins Gallery](https://worldcoingallery.com)"
+)
