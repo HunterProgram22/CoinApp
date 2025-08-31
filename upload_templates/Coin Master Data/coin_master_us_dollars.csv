@@ -1,6 +1,7 @@
-country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,notes
-USA,Dollar,Morgan (1878-1921),Ag,0.9,26.73,38.1,2.4,Reeded,1878,1921,Coin,https://en.numista.com/catalogue/pieces1492.html,
-USA,Dollar,Peace (1921-1935),Ag,0.9,26.73,38.1,2.4,Reeded,1921,1964,Coin,https://en.numista.com/catalogue/pieces5580.html,
-USA,Dollar,Eisenhower Silver (1971-1976),Ag,0.4,24.59,38.1,2.54,Reeded,1971,1976,Coin,https://en.numista.com/catalogue/pieces15202.html,
-USA,Dollar,Eisenhower (1971-1978),Cu-Ni,1,22.68,38.1,2.58,Reeded,1971,1978,Coin,https://en.numista.com/catalogue/pieces1346.html,
-USA,Dollar,"Susan B. Anthony (1979-1981, 1999)",Cu-Ni,1,8.1,26.5,2,Reeded,1979,1999,Coin,https://en.numista.com/catalogue/pieces3548.html,
+country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,ngc_url,pcgs_url,notes
+USA,Dollar,Morgan (1878-1921),Ag,0.9,26.73,38.1,2.4,Reeded,1878,1921,Coin,https://en.numista.com/catalogue/pieces1492.html,https://www.ngccoin.com/coin-explorer/united-states/dollars/morgan-dollars-1878-1921/,https://www.pcgs.com/prices/detail/morgan-dollar/744/all/sp,
+USA,Dollar,Peace (1921-1935),Ag,0.9,26.73,38.1,2.4,Reeded,1921,1964,Coin,https://en.numista.com/catalogue/pieces5580.html,https://www.ngccoin.com/coin-explorer/united-states/dollars/peace-dollars-1921-1935/,https://www.pcgs.com/prices/detail/peace-dollar/26/most-active/ms,
+USA,Dollar,Eisenhower Silver (1971-1976),Ag,0.4,24.59,38.1,2.54,Reeded,1971,1976,Coin,https://en.numista.com/catalogue/pieces15202.html,https://www.ngccoin.com/coin-explorer/united-states/dollars/eisenhower-dollars-1971-1978/,https://www.pcgs.com/prices/detail/ike-dollar/31/most-active,
+USA,Dollar,Eisenhower (1971-1978),Cu-Ni,1,22.68,38.1,2.58,Reeded,1971,1978,Coin,https://en.numista.com/catalogue/pieces1346.html,https://www.ngccoin.com/coin-explorer/united-states/dollars/eisenhower-dollars-1971-1978/,https://www.pcgs.com/prices/detail/ike-dollar/31/most-active,
+USA,Dollar,"Susan B. Anthony (1979-1981, 1999)",Cu-Ni,1,8.1,26.5,2,Reeded,1979,1999,Coin,https://en.numista.com/catalogue/pieces3548.html,https://www.ngccoin.com/coin-explorer/united-states/dollars/anthony-dollars-1979-1999/,https://www.pcgs.com/prices/detail/susan-b-anthony-dollar/747/most-active/ms,
+USA,Dollar,Sacagawea Dollar (2000-2008),Cu-Zn-Mn-Ni,1,8.1,26.5,2,Reeded,2000,2008,Coin,https://en.numista.com/catalogue/pieces923.html,https://www.ngccoin.com/coin-explorer/united-states/dollars/sacagawea-dollars-2000-date/,https://www.pcgs.com/prices/pricechanges/native-american/6281/ms,
