@@ -236,6 +236,7 @@ with tabs[1]:
             )
 
             if matches:
+                st.session_state['preview_matches'] = matches
                 st.write(f"Found {len(matches)} matches:")
 
                 matches_df = pd.DataFrame(matches)
@@ -244,15 +245,18 @@ with tabs[1]:
                     axis=1
                 )
                 st.dataframe(matches_df[['label']], width='stretch', hide_index=True)
-
-                # Add all to set
-                if st.button(f"Add all {len(matches)} to set", type="primary"):
-                    coin_type_ids = [m['id'] for m in matches]
-                    added = add_type_set_members(work_set_id, coin_type_ids)
-                    st.success(f"Added {added} coins to set!")
-                    st.rerun()
             else:
                 st.info("No matches found with those filters.")
+
+        # Show add button if we have preview matches
+        if 'preview_matches' in st.session_state and st.session_state['preview_matches']:
+            matches = st.session_state['preview_matches']
+            if st.button(f"Add all {len(matches)} to set", type="primary"):
+                coin_type_ids = [m['id'] for m in matches]
+                added = add_type_set_members(work_set_id, coin_type_ids)
+                st.success(f"Added {added} coins to set!")
+                del st.session_state['preview_matches']  # Clear after adding
+                st.rerun()
 
         # Manual add/remove
         st.markdown("### Manual Add/Remove")
