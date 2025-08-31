@@ -68,6 +68,3 @@ def get_backup_filename():
     """Generate standardized backup filename."""
     from datetime import datetime
     return f"coinapp-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.sqlite"
-
-# Legacy compatibility exports
-# IS_CLOUD = False  # Always SQLite now
