@@ -399,14 +399,20 @@ with tab_prices:
     st.markdown("**Add/Update a Price**")
     c1, c2, c3 = st.columns(3)
     metal = c1.selectbox("Metal", ["Ag","Au","Pt","Pd"], index=0, key="mp_metal")
-    price = c2.number_input("Price per oz (USD)", min_value=0.0, step=0.01, value=0.0, key="mp_price")
+    price = c2.text_input("Price per oz (USD)", value="0.00", key="mp_price")
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
     if st.button("Save Price", key="mp_save"):
         try:
-            create_metal_price(metal, float(price), now)
-            st.success(f"Saved {metal} = ${price:,.2f} @ {now} UTC")
-            st.rerun()
+            price_val = float(price) if price else 0.0
+            if price_val <= 0:
+                st.error("Please enter a valid price greater than 0")
+            else:
+                create_metal_price(metal, price_val, now)
+                st.success(f"Saved {metal} = ${price_val:,.2f} @ {now} UTC")
+                st.rerun()
+        except ValueError:
+            st.error("Please enter a valid number for price")
         except Exception as e:
             st.error(f"Failed to save price: {e}")
 
@@ -428,7 +434,7 @@ with tab_prices:
                 for m, sym in sym_map.items():
                     try:
                         t = yf.Ticker(sym)
-                        data = t.history(period="1d")
+                        data = t.history(period="3d")
                         last = float(data["Close"].iloc[-1])
                         create_metal_price(m, last, timestamp)
                         updated.append((m, last))
