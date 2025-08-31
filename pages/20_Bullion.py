@@ -62,6 +62,49 @@ def get_bullion_totals():
     return execute_query_single(query)
 
 
+def get_constitutional_silver_by_category():
+    """Get constitutional silver summary."""
+    query = """
+        SELECT 
+            'Constitutional (Junk Silver)' as category,
+            'Ag' as metal,
+            SUM(quantity) as units_on_hand,
+            SUM(total_fine_oz / 0.9) as gross_oz,  -- Approximate gross from fine for 90% silver
+            SUM(total_fine_oz) as fine_oz,
+            SUM(total_melt_value) as melt_value_usd
+        FROM v_junk_silver
+    """
+    result = execute_query_single(query)
+    return [result] if result and result['units_on_hand'] else []
+
+
+def get_constitutional_silver_by_series():
+    """Get constitutional silver by series."""
+    query = """
+        SELECT 
+            'Constitutional (Junk Silver)' as category,
+            'Ag' as metal,
+            cm.series,
+            ROUND((cm.weight_grams / 31.1034768), 4) as unit_troy_oz,
+            ROUND((cm.weight_grams * cm.fineness) / 31.1034768, 4) as unit_fine_oz,
+            SUM(l.qty_remaining) as units_on_hand,
+            ROUND(SUM(l.qty_remaining * cm.weight_grams / 31.1034768), 4) as gross_oz,
+            ROUND(SUM(l.qty_remaining * (cm.weight_grams * cm.fineness) / 31.1034768), 4) as fine_oz,
+            ROUND(SUM(l.qty_remaining * v.melt_unit_value), 2) as melt_value_usd
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        JOIN v_lot_value_details v ON v.lot_id = l.id
+        WHERE l.valuation_method = 'MELT_ONLY'
+            AND l.qty_remaining > 0
+            AND cm.metal = 'Ag'
+            AND cm.asset_category = 'COIN'
+        GROUP BY cm.series, cm.weight_grams, cm.fineness
+        ORDER BY cm.series
+    """
+    return execute_query_all(query)
+
+
 # ---------------------------------
 # Helper Functions
 # ---------------------------------
@@ -122,11 +165,15 @@ tab_category, tab_series = st.tabs(["By Category", "By Series"])
 
 # ===== By Category Tab =====
 with tab_category:
-    rows = get_bullion_by_category()
+    bullion_rows = get_bullion_by_category()
+    constitutional_rows = get_constitutional_silver_by_category()
+
+    rows = bullion_rows + constitutional_rows
 
     if not rows:
         st.info(
-            "No bullion (ROUND/BAR/BULLION COIN) detected yet. Set 'asset_category' on your Coin Master records.")
+            "No bullion (ROUND/BAR/BULLION COIN) or Junk Silver (MELT_ONLY COINS) detected yet. "
+            "Set 'asset_category' on your Coin Master records.")
     else:
         df = pd.DataFrame(rows)
 
@@ -164,11 +211,15 @@ with tab_category:
 
 # ===== By Series Tab =====
 with tab_series:
-    rows = get_bullion_by_series()
+    bullion_rows = get_bullion_by_series()
+    constitutional_rows = get_constitutional_silver_by_series()
+
+    rows = bullion_rows + constitutional_rows
 
     if not rows:
         st.info(
-            "No bullion (ROUND/BAR/BULLION COIN) detected yet. Set 'asset_category' on your Coin Master records.")
+            "No bullion (ROUND/BAR/BULLION COIN) or Junk Silver (MELT ONLY COINS) detected yet. "
+            "Set 'asset_category' on your Coin Master records.")
     else:
         df = pd.DataFrame(rows)
 

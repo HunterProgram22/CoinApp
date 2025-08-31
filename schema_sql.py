@@ -469,6 +469,7 @@ JOIN v_lot_value_details v ON v.lot_id = l.id
 WHERE l.valuation_method = 'MELT_ONLY'
     AND l.qty_remaining > 0
     AND cm.metal = 'Ag'
+    AND cm.asset_category = 'COIN'
 GROUP BY cm.series
 ORDER BY total_fine_oz DESC;
 
