@@ -1,5 +1,5 @@
-country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,notes
-USA,Dime,Barber (1892-1916),Ag,0.9,2.5,17.9,1.2,Reeded,1892,1916,COIN,https://en.numista.com/catalogue/pieces5830.html,
-USA,Dime,Mercury (1916-1945),Ag,0.9,2.5,17.9,1,Reeded,1916,1945,COIN,https://en.numista.com/catalogue/pieces51.html,
-USA,Dime,Roosevelt 90% Silver (1946-1964),Ag,0.9,2.5,17.9,1.1,Reeded,1946,1964,COIN,https://en.numista.com/catalogue/pieces52.html,
-USA,Dime,Roosevelt (1965-Present),Cu-Ni,1,2.268,17.91,1.35,Reeded,1965,,COIN,https://en.numista.com/catalogue/pieces53.html,
+country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,ngc_url,pcgs_url,notes
+USA,Dime,Barber (1892-1916),Ag,0.9,2.5,17.9,1.2,Reeded,1892,1916,COIN,https://en.numista.com/catalogue/pieces5830.html,https://www.ngccoin.com/coin-explorer/united-states/dimes/barber-dimes-1892-1916/,,
+USA,Dime,Mercury (1916-1945),Ag,0.9,2.5,17.9,1,Reeded,1916,1945,COIN,https://en.numista.com/catalogue/pieces51.html,https://www.ngccoin.com/coin-explorer/united-states/dimes/mercury-dimes-1916-1945/,,
+USA,Dime,Roosevelt 90% Silver (1946-1964),Ag,0.9,2.5,17.9,1.1,Reeded,1946,1964,COIN,https://en.numista.com/catalogue/pieces52.html,,,
+USA,Dime,Roosevelt (1965-Present),Cu-Ni,1,2.268,17.91,1.35,Reeded,1965,,COIN,https://en.numista.com/catalogue/pieces53.html,,,

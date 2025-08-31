@@ -580,6 +580,50 @@ def get_specimens_on_hand(filter_series: str = None) -> List[Dict[str, Any]]:
     """, params)
 
 
+def create_metal_price(metal: str, price: float, quoted_at: str) -> int:
+    """Create a metal price record."""
+    return execute_insert(
+        "INSERT INTO metal_price (metal, price_per_oz_usd, quoted_at_utc) VALUES (?,?,?)",
+        (metal, price, quoted_at)
+    )
+
+
+def get_latest_metal_prices() -> List[Dict[str, Any]]:
+    """Get latest metal spot prices."""
+    return execute_query_all("""
+        SELECT metal, price_per_oz_usd, quoted_at_utc
+        FROM metal_price
+        WHERE (metal, quoted_at_utc) IN (
+            SELECT metal, MAX(quoted_at_utc) FROM metal_price GROUP BY metal
+        )
+        ORDER BY metal
+    """)
+
+
+def get_recent_transactions(limit: int = 50) -> List[Dict[str, Any]]:
+    """Get recent transactions."""
+    return execute_query_all("""
+        SELECT t.id, t.tx_date, t.tx_type, p.name AS party, t.shipping, t.tax, t.fees, t.currency
+        FROM tx t
+        LEFT JOIN party p ON p.id = t.party_id
+        ORDER BY t.tx_date DESC, t.id DESC
+        LIMIT ?
+    """, (limit,))
+
+
+def get_open_lots() -> List[Dict[str, Any]]:
+    """Get open lots."""
+    return execute_query_all("""
+        SELECT l.id, l.acquired_date, l.qty_acquired, l.qty_remaining, l.unit_cost,
+               cm.country, cm.denomination, cm.series, ct.year, ct.mint_mark, 
+               COALESCE(ct.variety,'') AS variety
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        ORDER BY l.acquired_date DESC, l.id DESC
+    """)
+
+
 # ------------------------------------------------------------------
 # Backward compatibility aliases
 # ------------------------------------------------------------------
