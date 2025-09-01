@@ -448,3 +448,175 @@ def get_grade_numeric_value(grade_text: str) -> float:
         return float(number)
 
     return 0.0
+
+
+# Add these functions to type_sets_helpers.py
+
+def search_coin_types_catalog(
+        series: Optional[List[str]] = None,
+        year_range: Optional[Tuple[int, int]] = None,
+        proof_filter: str = "Any",
+        include_varieties: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Search the coin catalog (all coin_types, not just what's on hand).
+    This is used to define what SHOULD be in a type set.
+
+    Args:
+        series: List of series to include
+        year_range: Tuple of (start_year, end_year)
+        proof_filter: "Any", "Proofs only", "Business strikes only"
+        include_varieties: Whether to include varieties or just base types
+
+    Returns:
+        List of all coin types that match the criteria
+    """
+    conditions = []
+    params = []
+
+    # Series filter
+    if series:
+        placeholders = ",".join("?" for _ in series)
+        conditions.append(f"cm.series IN ({placeholders})")
+        params.extend(series)
+
+    # Year range filter
+    if year_range:
+        start, end = year_range
+        conditions.append("ct.year BETWEEN ? AND ?")
+        params.extend([start, end])
+
+    # Proof filter
+    if proof_filter == "Proofs only":
+        conditions.append("ct.is_proof = 1")
+    elif proof_filter == "Business strikes only":
+        conditions.append("(ct.is_proof IS NULL OR ct.is_proof = 0)")
+
+    # Variety filter
+    if not include_varieties:
+        conditions.append("(ct.variety IS NULL OR ct.variety = '')")
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    query = f"""
+        SELECT 
+            ct.id,
+            cm.series,
+            ct.year,
+            ct.mint_mark,
+            COALESCE(ct.variety, '') AS variety,
+            ct.is_proof,
+            cm.country,
+            cm.denomination
+        FROM coin_type ct
+        JOIN coin_master cm ON cm.id = ct.master_id
+        {where_clause}
+        ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
+    """
+
+    return execute_query_all(query, tuple(params))
+
+
+def get_type_set_metadata(set_id: int) -> Dict[str, Any]:
+    """
+    Get metadata/criteria for a type set.
+    This would ideally be stored in a separate table, but for now
+    we can derive it from the members.
+
+    Args:
+        set_id: Type set ID
+
+    Returns:
+        Dictionary of metadata about the set
+    """
+    # For now, derive from members
+    # In a future enhancement, you could add a type_set_metadata table
+    members = get_type_set_members(set_id)
+
+    if not members:
+        return {}
+
+    # Extract unique series
+    series_list = list(set([m['series'] for m in members]))
+
+    # Get year range
+    years = [m['year'] for m in members if m.get('year')]
+    year_range = (min(years), max(years)) if years else None
+
+    # Check if all are proofs
+    proof_count = sum(1 for m in members if m.get('is_proof'))
+    if proof_count == len(members):
+        proof_filter = "Proofs only"
+    elif proof_count == 0:
+        proof_filter = "Business strikes only"
+    else:
+        proof_filter = "Mixed"
+
+    return {
+        'series': series_list,
+        'year_range': year_range,
+        'proof_filter': proof_filter,
+        'total_coins': len(members)
+    }
+
+
+def update_type_set_metadata(set_id: int, metadata: Dict[str, Any]) -> bool:
+    """
+    Update metadata for a type set.
+    In a future enhancement, this would store to a metadata table.
+
+    Args:
+        set_id: Type set ID
+        metadata: Dictionary of metadata to store
+
+    Returns:
+        Success boolean
+    """
+    # For now, this is a placeholder
+    # In production, you'd want to create a type_set_metadata table
+    # and store this information there
+    return True
+
+
+def get_type_set_completion_stats(set_id: int) -> Dict[str, Any]:
+    """
+    Get completion statistics for a type set.
+
+    Args:
+        set_id: Type set ID
+
+    Returns:
+        Dictionary with completion stats
+    """
+    members = get_type_set_members(set_id)
+
+    if not members:
+        return {
+            'total_coins': 0,
+            'coins_owned': 0,
+            'coins_needed': 0,
+            'percent_complete': 0.0
+        }
+
+    # Check what we have
+    coins_owned = 0
+    for member in members:
+        query = """
+            SELECT COUNT(*) as count
+            FROM lot l
+            WHERE l.coin_type_id = ? AND l.qty_remaining > 0
+        """
+        result = execute_query_single(query, (member['coin_type_id'],))
+        if result and result['count'] > 0:
+            coins_owned += 1
+
+    total_coins = len(members)
+    coins_needed = total_coins - coins_owned
+    percent_complete = (coins_owned / total_coins * 100) if total_coins > 0 else 0
+
+    return {
+        'total_coins': total_coins,
+        'coins_owned': coins_owned,
+        'coins_needed': coins_needed,
+        'percent_complete': percent_complete
+    }

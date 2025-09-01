@@ -15,23 +15,25 @@ from type_sets_helpers import (
     search_coin_types,
     get_all_series,
     format_coin_type_label,
-    search_coin_types_with_grades
+    search_coin_types_catalog,
+    get_type_set_metadata,
+    update_type_set_metadata
 )
 from constants import GRADE_COMPANIES, GRADE_TEXT_VALUES
 
 st.header("Type Sets")
 
 # Create tabs
-tabs = st.tabs(["My Sets", "Define & Build"])
+tabs = st.tabs(["📊 My Sets", "➕ Define Set", "✏️ Modify Set"])
 
 # =====================================================
-# Tab 1: My Sets
+# Tab 1: My Sets - View Progress
 # =====================================================
 with tabs[0]:
     type_sets = get_all_type_sets()
 
     if not type_sets:
-        st.info("No Type Sets yet. Use 'Define & Build' to create one.")
+        st.info("No Type Sets yet. Use 'Define Set' tab to create one.")
     else:
         # Select type set
         set_options = {f"{s['name']} (#{s['id']})": s for s in type_sets}
@@ -39,248 +41,391 @@ with tabs[0]:
         selected_set = set_options[selected_label]
         set_id = selected_set['id']
 
-        # Edit set details
-        with st.expander("Edit set details"):
-            new_name = st.text_input("Set name", value=selected_set['name'])
-            new_desc = st.text_area("Description", value=selected_set.get('description', ''))
-
-            col1, col2 = st.columns(2)
-            if col1.button("Save Changes", type="primary"):
-                update_type_set(set_id, new_name, new_desc)
-                st.success("Updated!")
-                st.rerun()
-
-            if col2.button("Delete Set", type="secondary"):
-                if st.checkbox("Confirm deletion"):
-                    delete_type_set(set_id)
-                    st.success("Deleted!")
-                    st.rerun()
+        # Show set details and metadata
+        st.subheader(f"📚 {selected_set['name']}")
+        if selected_set.get('description'):
+            st.caption(selected_set['description'])
+        
+        # Get and display set metadata/criteria if it exists
+        metadata = get_type_set_metadata(set_id) if 'get_type_set_metadata' in dir() else {}
+        if metadata:
+            with st.expander("Set Criteria", expanded=False):
+                criteria_text = []
+                if metadata.get('series'):
+                    criteria_text.append(f"**Series:** {', '.join(metadata['series'])}")
+                if metadata.get('year_range'):
+                    criteria_text.append(f"**Years:** {metadata['year_range'][0]}-{metadata['year_range'][1]}")
+                if metadata.get('grade_company'):
+                    criteria_text.append(f"**Grading Company:** {metadata['grade_company']}")
+                if metadata.get('min_grade'):
+                    criteria_text.append(f"**Minimum Grade:** {metadata['min_grade']}")
+                if metadata.get('require_slab'):
+                    criteria_text.append("**Must be slabbed**")
+                
+                if criteria_text:
+                    for line in criteria_text:
+                        st.markdown(line)
 
         # Progress section
         st.subheader("Collection Progress")
-        view_name, progress_df = get_type_set_progress(set_id)
-
-        if view_name:
-            st.caption(f"Using view: {view_name}")
-
-            if not progress_df.empty:
-                # Display progress
-                st.dataframe(progress_df, width='stretch', hide_index=True)
-
-                # Download button
-                csv = progress_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "Download Progress CSV",
-                    data=csv,
-                    file_name=f"type_set_{set_id}_progress.csv",
+        
+        # Get members of the set (what coins should be in it)
+        set_members = get_type_set_members(set_id)
+        
+        if not set_members:
+            st.warning("This set has no coins defined yet. Use 'Modify Set' tab to add coins.")
+        else:
+            # Check what we have vs what we need
+            progress_data = []
+            for member in set_members:
+                # Check if we have this coin on hand
+                have_query = """
+                    SELECT COUNT(*) as count, 
+                           MAX(l.purchase_grade_company) as grade_company,
+                           MAX(COALESCE(l.estimated_grade_text, l.purchase_grade_text)) as grade
+                    FROM lot l
+                    WHERE l.coin_type_id = ? AND l.qty_remaining > 0
+                """
+                from db_operations import execute_query_single
+                have_result = execute_query_single(have_query, (member['coin_type_id'],))
+                
+                have_count = have_result['count'] if have_result else 0
+                grade_info = f"{have_result['grade_company']}/{have_result['grade']}" if have_result and have_result['grade_company'] else ""
+                
+                progress_data.append({
+                    'series': member['series'],
+                    'year': member['year'],
+                    'mint_mark': member.get('mint_mark', ''),
+                    'variety': member.get('variety', ''),
+                    'is_proof': '✓' if member.get('is_proof') else '',
+                    'have': '✅' if have_count > 0 else '❌',
+                    'qty_on_hand': have_count,
+                    'grade_info': grade_info,
+                    'coin_type_id': member['coin_type_id']
+                })
+            
+            progress_df = pd.DataFrame(progress_data)
+            
+            # Calculate statistics
+            total_needed = len(progress_df)
+            total_have = len(progress_df[progress_df['qty_on_hand'] > 0])
+            percent_complete = (total_have / total_needed * 100) if total_needed > 0 else 0
+            
+            # Display metrics
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total Coins in Set", total_needed)
+            col2.metric("Coins Owned", total_have)
+            col3.metric("Still Need", total_needed - total_have)
+            col4.metric("Complete", f"{percent_complete:.1f}%")
+            
+            # Progress bar
+            st.progress(percent_complete / 100)
+            
+            # Display the full list
+            st.subheader("Detailed Progress")
+            
+            # Filter options
+            col1, col2 = st.columns(2)
+            show_filter = col1.selectbox("Show", ["All", "Have", "Need"], index=0)
+            
+            if show_filter == "Have":
+                display_df = progress_df[progress_df['qty_on_hand'] > 0]
+            elif show_filter == "Need":
+                display_df = progress_df[progress_df['qty_on_hand'] == 0]
+            else:
+                display_df = progress_df
+            
+            st.dataframe(display_df.drop(columns=['coin_type_id']), width='stretch', hide_index=True)
+            
+            # Download buttons
+            col1, col2 = st.columns(2)
+            
+            # Full progress CSV
+            csv = progress_df.to_csv(index=False).encode('utf-8')
+            col1.download_button(
+                "📥 Download Full Progress",
+                data=csv,
+                file_name=f"type_set_{set_id}_progress.csv",
+                mime="text/csv"
+            )
+            
+            # Missing coins CSV
+            missing_df = progress_df[progress_df['qty_on_hand'] == 0]
+            if not missing_df.empty:
+                missing_csv = missing_df.to_csv(index=False).encode('utf-8')
+                col2.download_button(
+                    "📥 Download Need List",
+                    data=missing_csv,
+                    file_name=f"type_set_{set_id}_need.csv",
                     mime="text/csv"
                 )
 
-                # Missing coins analysis
-                missing_df = analyze_missing_coins(progress_df)
-
-                if not missing_df.empty:
-                    st.subheader("Missing Coins")
-
-                    # Select columns to display
-                    id_cols = ['series', 'year', 'mint_mark', 'variety', 'coin_type_id']
-                    display_cols = [c for c in id_cols if c in missing_df.columns]
-
-                    if display_cols:
-                        st.dataframe(missing_df[display_cols], width='stretch', hide_index=True)
-
-                        # Download missing list
-                        missing_csv = missing_df[display_cols].to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            "Download Missing List CSV",
-                            data=missing_csv,
-                            file_name=f"type_set_{set_id}_missing.csv",
-                            mime="text/csv"
-                        )
-                else:
-                    st.success("✅ Collection complete! No missing coins.")
-            else:
-                st.info("No coins in this set yet.")
-        else:
-            st.warning("Progress views not found. Create v_type_set_progress view for tracking.")
-
 # =====================================================
-# Tab 2: Define & Build
+# Tab 2: Define Set - Create new sets with criteria
 # =====================================================
 with tabs[1]:
-    st.subheader("Create or Modify Type Sets")
-
-    # Create new set
-    with st.expander("➕ Create New Type Set", expanded=False):
-        with st.form("create_set_form"):
-            new_name = st.text_input("Set name*")
-            new_desc = st.text_area("Description")
-
-            if st.form_submit_button("Create Set", type="primary"):
-                if not new_name:
-                    st.error("Set name is required")
+    st.subheader("Define a New Type Set")
+    
+    # Basic set information
+    st.markdown("### Basic Information")
+    new_name = st.text_input("Set Name*", placeholder="e.g., Susan B Anthony NGC PF70 Set")
+    new_desc = st.text_area("Description", placeholder="Optional description of your set goals")
+    
+    # Set criteria
+    st.markdown("### Set Criteria")
+    st.caption("Define which coins should be included in this set")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Series selection
+        all_series = get_all_series()
+        selected_series = st.multiselect("Series", all_series, help="Which series to include")
+        
+        # Year range
+        st.markdown("**Year Range**")
+        c1, c2 = st.columns(2)
+        start_year = c1.number_input("From", min_value=0, value=0, step=1, help="0 = no limit")
+        end_year = c2.number_input("To", min_value=0, value=0, step=1, help="0 = no limit")
+    
+    with col2:
+        # Proof filter
+        proof_filter = st.selectbox("Type", ["Any", "Proofs only", "Business strikes only"])
+        
+        # Grade requirements
+        st.markdown("**Grade Requirements (Optional)**")
+        grade_company_filter = st.selectbox("Grading Company", ["Any"] + GRADE_COMPANIES)
+        
+        c1, c2 = st.columns(2)
+        min_grade_filter = c1.selectbox("Min Grade", ["Any"] + GRADE_TEXT_VALUES)
+        max_grade_filter = c2.selectbox("Max Grade", ["Any"] + GRADE_TEXT_VALUES)
+    
+    # Additional requirements
+    st.markdown("### Additional Requirements")
+    col1, col2 = st.columns(2)
+    require_slab = col1.checkbox("Must be slabbed (have cert #)")
+    specific_varieties = col2.checkbox("Include specific varieties")
+    
+    # Preview section
+    st.markdown("### Preview Set Contents")
+    
+    if st.button("Preview Coins That Will Be In This Set", type="secondary"):
+        if not new_name:
+            st.error("Please enter a set name first")
+        elif not selected_series:
+            st.error("Please select at least one series")
+        else:
+            # Build year range
+            year_range = None
+            if start_year > 0 and end_year > 0 and end_year >= start_year:
+                year_range = (start_year, end_year)
+            elif start_year > 0:
+                year_range = (start_year, 9999)
+            elif end_year > 0:
+                year_range = (0, end_year)
+            
+            # Search catalog for coins that match criteria
+            # This searches ALL coins in the catalog, not just what you have
+            catalog_matches = search_coin_types_catalog(
+                series=selected_series,
+                year_range=year_range,
+                proof_filter=proof_filter,
+                include_varieties=specific_varieties
+            )
+            
+            if catalog_matches:
+                st.success(f"This set will contain {len(catalog_matches)} coins")
+                
+                # Show preview
+                preview_df = pd.DataFrame(catalog_matches)
+                preview_df['coin'] = preview_df.apply(
+                    lambda r: f"{r['series']} {r['year']} {r.get('mint_mark', '')} {r.get('variety', '')}".strip(),
+                    axis=1
+                )
+                
+                # Show first 20 and total count
+                if len(preview_df) > 20:
+                    st.dataframe(preview_df[['coin']].head(20), width='stretch', hide_index=True)
+                    st.caption(f"Showing first 20 of {len(catalog_matches)} coins")
                 else:
-                    set_id = create_type_set(new_name, new_desc)
-                    st.success(f"Created set #{set_id}")
-                    st.rerun()
+                    st.dataframe(preview_df[['coin']], width='stretch', hide_index=True)
+                
+                # Store in session state for creation
+                st.session_state['new_set_coins'] = catalog_matches
+                st.session_state['new_set_metadata'] = {
+                    'series': selected_series,
+                    'year_range': year_range,
+                    'proof_filter': proof_filter,
+                    'grade_company': grade_company_filter if grade_company_filter != "Any" else None,
+                    'min_grade': min_grade_filter if min_grade_filter != "Any" else None,
+                    'max_grade': max_grade_filter if max_grade_filter != "Any" else None,
+                    'require_slab': require_slab
+                }
+            else:
+                st.warning("No coins found matching these criteria in the catalog")
+    
+    # Create button
+    if 'new_set_coins' in st.session_state and st.session_state['new_set_coins']:
+        st.markdown("---")
+        if st.button(f"✅ Create Set with {len(st.session_state['new_set_coins'])} coins", type="primary"):
+            if not new_name:
+                st.error("Please enter a set name")
+            else:
+                # Create the set
+                set_id = create_type_set(new_name, new_desc)
+                
+                # Add all the coins to the set
+                coin_type_ids = [c['id'] for c in st.session_state['new_set_coins']]
+                added = add_type_set_members(set_id, coin_type_ids)
+                
+                # Store metadata if function exists
+                if 'update_type_set_metadata' in dir() and st.session_state.get('new_set_metadata'):
+                    update_type_set_metadata(set_id, st.session_state['new_set_metadata'])
+                
+                st.success(f"Created '{new_name}' with {added} coins!")
+                
+                # Clear session state
+                del st.session_state['new_set_coins']
+                if 'new_set_metadata' in st.session_state:
+                    del st.session_state['new_set_metadata']
+                
+                st.rerun()
 
-    # Modify existing set
+# =====================================================
+# Tab 3: Modify Set - Add/remove coins from existing sets
+# =====================================================
+with tabs[2]:
     type_sets = get_all_type_sets()
-
-    if type_sets:
-        st.markdown("### Modify Existing Set")
-
-        set_options = {f"{s['name']} (#{s['id']})": s['id'] for s in type_sets}
-        selected_set = st.selectbox("Select set to modify", list(set_options.keys()))
-        work_set_id = set_options[selected_set]
-
+    
+    if not type_sets:
+        st.info("No sets to modify. Create one in the 'Define Set' tab first.")
+    else:
+        st.subheader("Modify Existing Set")
+        
+        # Select set to modify
+        set_options = {f"{s['name']} (#{s['id']})": s for s in type_sets}
+        selected_set_label = st.selectbox("Select set to modify", list(set_options.keys()))
+        selected_set = set_options[selected_set_label]
+        work_set_id = selected_set['id']
+        
+        # Edit basic details
+        with st.expander("Edit Set Details"):
+            edit_name = st.text_input("Set name", value=selected_set['name'])
+            edit_desc = st.text_area("Description", value=selected_set.get('description', ''))
+            
+            col1, col2 = st.columns(2)
+            if col1.button("Save Changes", type="primary"):
+                update_type_set(work_set_id, edit_name, edit_desc)
+                st.success("Updated!")
+                st.rerun()
+            
+            if col2.button("Delete Set", type="secondary"):
+                confirm = st.checkbox("I understand this will permanently delete this set")
+                if confirm and st.button("Confirm Delete"):
+                    delete_type_set(work_set_id)
+                    st.success("Set deleted!")
+                    st.rerun()
+        
         # Current members
         current_members = get_type_set_members(work_set_id)
-
+        
+        st.markdown(f"### Current Contents: {len(current_members)} coins")
+        
         if current_members:
-            st.write(f"Current members: {len(current_members)} coins")
-            with st.expander("View current members"):
+            with st.expander("View current members", expanded=False):
                 members_df = pd.DataFrame(current_members)
-                members_df['label'] = members_df.apply(
+                members_df['coin'] = members_df.apply(
                     lambda r: format_coin_type_label(r.to_dict()),
                     axis=1
                 )
-                st.dataframe(members_df[['label']], width='stretch', hide_index=True)
-
-        # Build from catalog
-        st.markdown("### Build from Catalog")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            all_series = get_all_series()
-            selected_series = st.multiselect("Filter by series", all_series)
-
-        with col2:
-            c1, c2 = st.columns(2)
-            start_year = c1.number_input("Start year", 0, step=1, help="0 = no filter")
-            end_year = c2.number_input("End year", 0, step=1, help="0 = no filter")
-
-            proof_filter = st.selectbox("Proof filter", ["Any", "Proofs only", "Non-proof only"])
-
-        # New: Grade and Slab Company filters
-        st.markdown("#### Grade & Certification Filters")
-        col1, col2, col3 = st.columns(3)
+                st.dataframe(members_df[['coin']], width='stretch', hide_index=True)
         
-        with col1:
-            # Grade company filter
-            grade_companies = ["Any"] + GRADE_COMPANIES
-            selected_grade_company = st.selectbox(
-                "Grade Company", 
-                grade_companies,
-                help="Filter to coins graded by specific company"
-            )
+        # Add coins section
+        st.markdown("### Add Coins")
         
-        with col2:
-            # Minimum grade filter
-            grade_options = ["Any"] + GRADE_TEXT_VALUES
-            min_grade = st.selectbox(
-                "Minimum Grade",
-                grade_options,
-                help="Only include coins with this grade or higher"
-            )
+        add_method = st.radio("Add method", ["By Filter", "Individual Selection"])
         
-        with col3:
-            # Maximum grade filter
-            max_grade = st.selectbox(
-                "Maximum Grade",
-                grade_options,
-                help="Only include coins with this grade or lower"
-            )
-
-        # Additional filter options
-        col1, col2 = st.columns(2)
-        with col1:
-            require_slab_cert = st.checkbox("Must have slab cert #", value=False)
-        with col2:
-            only_on_hand = st.checkbox("Only coins I have on hand", value=False)
-
-        # Build year range
-        year_range = None
-        if start_year > 0 and end_year > 0 and end_year >= start_year:
-            year_range = (start_year, end_year)
-        elif start_year > 0:
-            year_range = (start_year, 9999)
-        elif end_year > 0:
-            year_range = (0, end_year)
-
-        # Preview matches
-        if st.button("Preview Matches", type="secondary"):
-            # Build filters dictionary
-            filters = {
-                'series': selected_series if selected_series else None,
-                'year_range': year_range,
-                'proof_filter': proof_filter,
-                'grade_company': selected_grade_company if selected_grade_company != "Any" else None,
-                'min_grade': min_grade if min_grade != "Any" else None,
-                'max_grade': max_grade if max_grade != "Any" else None,
-                'require_slab_cert': require_slab_cert,
-                'only_on_hand': only_on_hand
-            }
+        if add_method == "By Filter":
+            col1, col2 = st.columns(2)
             
-            matches = search_coin_types_with_grades(**filters)
-
-            if matches:
-                st.session_state['preview_matches'] = matches
-                st.write(f"Found {len(matches)} matches:")
-
-                matches_df = pd.DataFrame(matches)
+            with col1:
+                all_series = get_all_series()
+                add_series = st.multiselect("Filter by series", all_series, key="add_series")
+            
+            with col2:
+                c1, c2 = st.columns(2)
+                add_start_year = c1.number_input("Start year", 0, step=1, key="add_start")
+                add_end_year = c2.number_input("End year", 0, step=1, key="add_end")
                 
-                # Add grade info to display if available
-                if 'grade_company' in matches_df.columns or 'grade_text' in matches_df.columns:
-                    matches_df['label'] = matches_df.apply(
-                        lambda r: format_coin_type_label(r.to_dict()) + 
-                        (f" [{r.get('grade_company', '')}/{r.get('grade_text', '')}]" 
-                         if r.get('grade_company') or r.get('grade_text') else ""),
-                        axis=1
-                    )
-                else:
-                    matches_df['label'] = matches_df.apply(
+                add_proof_filter = st.selectbox("Type filter", 
+                                               ["Any", "Proofs only", "Non-proof only"],
+                                               key="add_proof")
+            
+            # Build year range
+            add_year_range = None
+            if add_start_year > 0 and add_end_year > 0 and add_end_year >= add_start_year:
+                add_year_range = (add_start_year, add_end_year)
+            elif add_start_year > 0:
+                add_year_range = (add_start_year, 9999)
+            elif add_end_year > 0:
+                add_year_range = (0, add_end_year)
+            
+            # Preview matches
+            if st.button("Preview Coins to Add", key="preview_add"):
+                matches = search_coin_types(
+                    series=add_series if add_series else None,
+                    year_range=add_year_range,
+                    proof_filter=add_proof_filter
+                )
+                
+                # Filter out already added
+                current_ids = {m['coin_type_id'] for m in current_members}
+                new_matches = [m for m in matches if m['id'] not in current_ids]
+                
+                if new_matches:
+                    st.session_state['add_matches'] = new_matches
+                    st.write(f"Found {len(new_matches)} new coins to add:")
+                    
+                    matches_df = pd.DataFrame(new_matches)
+                    matches_df['coin'] = matches_df.apply(
                         lambda r: format_coin_type_label(r.to_dict()),
                         axis=1
                     )
-                    
-                st.dataframe(matches_df[['label']], width='stretch', hide_index=True)
-            else:
-                st.info("No matches found with those filters.")
-
-        # Show add button if we have preview matches
-        if 'preview_matches' in st.session_state and st.session_state['preview_matches']:
-            matches = st.session_state['preview_matches']
-            if st.button(f"Add all {len(matches)} to set", type="primary"):
-                coin_type_ids = [m['id'] for m in matches]
-                added = add_type_set_members(work_set_id, coin_type_ids)
-                st.success(f"Added {added} coins to set!")
-                del st.session_state['preview_matches']  # Clear after adding
-                st.rerun()
-
-        # Manual add/remove
-        st.markdown("### Manual Add/Remove")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.markdown("**Add specific coins:**")
+                    st.dataframe(matches_df[['coin']], width='stretch', hide_index=True)
+                else:
+                    st.info("No new coins found with those filters (or all are already in the set)")
+            
+            # Add button
+            if 'add_matches' in st.session_state and st.session_state['add_matches']:
+                if st.button(f"Add {len(st.session_state['add_matches'])} coins to set", 
+                           type="primary", key="do_add"):
+                    coin_type_ids = [m['id'] for m in st.session_state['add_matches']]
+                    added = add_type_set_members(work_set_id, coin_type_ids)
+                    st.success(f"Added {added} coins!")
+                    del st.session_state['add_matches']
+                    st.rerun()
+        
+        else:  # Individual Selection
             all_types = search_coin_types()  # Get all
-
+            
             if all_types:
                 # Filter out already added
                 current_ids = {m['coin_type_id'] for m in current_members}
                 available = [t for t in all_types if t['id'] not in current_ids]
-
+                
                 if available:
+                    # Limit display for performance
+                    display_limit = min(200, len(available))
+                    if len(available) > display_limit:
+                        st.caption(f"Showing first {display_limit} of {len(available)} available coins")
+                    
                     add_options = {
                         format_coin_type_label(t, include_id=True): t['id']
-                        for t in available[:100]  # Limit to 100 for performance
+                        for t in available[:display_limit]
                     }
-
+                    
                     to_add = st.multiselect("Select coins to add", list(add_options.keys()))
-
+                    
                     if to_add and st.button("Add Selected", type="primary"):
                         ids = [add_options[label] for label in to_add]
                         added = add_type_set_members(work_set_id, ids)
@@ -288,20 +433,20 @@ with tabs[1]:
                         st.rerun()
                 else:
                     st.info("All available coins are already in the set.")
-
-        with col2:
-            st.markdown("**Remove coins:**")
-
-            if current_members:
-                remove_options = {
-                    format_coin_type_label(m, include_id=True): m['coin_type_id']
-                    for m in current_members
-                }
-
-                to_remove = st.multiselect("Select coins to remove", list(remove_options.keys()))
-
-                if to_remove and st.button("Remove Selected", type="secondary"):
-                    ids = [remove_options[label] for label in to_remove]
-                    removed = remove_type_set_members(work_set_id, ids)
-                    st.success(f"Removed {removed} coins!")
-                    st.rerun()
+        
+        # Remove coins section
+        if current_members:
+            st.markdown("### Remove Coins")
+            
+            remove_options = {
+                format_coin_type_label(m, include_id=True): m['coin_type_id']
+                for m in current_members
+            }
+            
+            to_remove = st.multiselect("Select coins to remove", list(remove_options.keys()))
+            
+            if to_remove and st.button("Remove Selected", type="secondary"):
+                ids = [remove_options[label] for label in to_remove]
+                removed = remove_type_set_members(work_set_id, ids)
+                st.success(f"Removed {removed} coins!")
+                st.rerun()
