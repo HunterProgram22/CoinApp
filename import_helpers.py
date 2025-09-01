@@ -35,6 +35,20 @@ def normalize_asset_category(value: Any) -> Optional[str]:
     return s if s in ASSET_CATEGORIES else None
 
 
+def normalize_boolean(value: Any) -> bool:
+    """Normalize boolean value from various formats."""
+    if value is None:
+        return False
+    
+    s = str(value).strip().lower()
+    if s in {"1", "true", "yes", "y", "proof"}:
+        return True
+    elif s in {"0", "false", "no", "n", "business", "regular"}:
+        return False
+    else:
+        return False
+
+
 def safe_float(value: Any, default: float = 0.0) -> float:
     """Convert to float safely."""
     if value is None or value == "" or str(value).strip().lower() in {"nan", "none", "null", "-",
@@ -164,7 +178,8 @@ class TransactionImporter:
         'party', 'currency', 'shipping', 'tax', 'fees', 'notes',
         'purchase_grade_company', 'purchase_grade_text', 'purchase_numeric_grade',
         'estimated_grade_text', 'estimated_numeric_grade', 'valuation_method',
-        'manual_est_unit_value', 'storage_location', 'slab_cert', 'asset_category'
+        'manual_est_unit_value', 'storage_location', 'slab_cert', 'asset_category',
+        'is_proof'  # Added is_proof support
     ]
 
     def __init__(self, df: pd.DataFrame):
@@ -206,6 +221,10 @@ class TransactionImporter:
         # Normalize asset_category
         if 'asset_category' in self.df.columns:
             self.df['asset_category'] = self.df['asset_category'].apply(normalize_asset_category)
+        
+        # Normalize is_proof
+        if 'is_proof' in self.df.columns:
+            self.df['is_proof'] = self.df['is_proof'].apply(normalize_boolean)
 
     def validate_data(self) -> bool:
         """Validate data integrity."""
@@ -290,9 +309,13 @@ class TransactionImporter:
 
         mint_mark = normalize_text(row.get('mint_mark')) or ""
         variety = normalize_text(row.get('variety')) or ""
+        
+        # Handle is_proof
+        is_proof = normalize_boolean(row.get('is_proof', False))
 
         if not dry_run:
-            coin_type_id = upsert_coin_type(master_id, year, mint_mark, variety)
+            # Create/update coin type with is_proof
+            coin_type_id = upsert_coin_type(master_id, year, mint_mark, variety, is_proof=1 if is_proof else 0)
         else:
             coin_type_id = 1  # Dummy for dry run
 

@@ -43,10 +43,15 @@ with tabs[0]:
     with st.expander("Template Columns", expanded=False):
         st.markdown("""
         **Required**: `tx_date`, `tx_type`, `country`, `denomination`, `series`, `year`, `mint_mark`, `variety`, `quantity`, `unit_price`  
+        
         **Optional**: `party`, `currency`, `shipping`, `tax`, `fees`, `notes`, `purchase_grade_company`, `purchase_grade_text`, 
         `purchase_numeric_grade`, `estimated_grade_text`, `estimated_numeric_grade`, `valuation_method`, 
-        `manual_est_unit_value`, `storage_location`, `slab_cert`, `asset_category`  
-        **asset_category** values: **COIN**, **ROUND**, **BAR**, **BULLION COIN**
+        `manual_est_unit_value`, `storage_location`, `slab_cert`, `asset_category`, `is_proof`
+        
+        **Special Values:**
+        - **asset_category**: **COIN**, **ROUND**, **BAR**, **BULLION COIN**
+        - **is_proof**: **true/false**, **1/0**, **yes/no**, **y/n**, or **proof/business**
+        - **valuation_method**: **AUTO**, **MELT_ONLY**, **GUIDE_ONLY**, **MANUAL**
         """)
 
 # ---------------------------------
@@ -71,11 +76,13 @@ with tabs[1]:
         maps = {}
 
         # Required fields
+        st.markdown("#### Required Fields")
         cols = st.columns(2)
         for i, tgt in enumerate(TransactionImporter.REQUIRED_COLUMNS):
             maps[tgt] = cols[i % 2].selectbox(f"Required → {tgt}", src_cols, key=f"map_req_{tgt}")
 
         # Optional fields
+        st.markdown("#### Optional Fields")
         cols2 = st.columns(3)
         for i, tgt in enumerate(TransactionImporter.OPTIONAL_COLUMNS):
             maps[tgt] = cols2[i % 3].selectbox(f"Optional → {tgt}", src_cols, index=0,
@@ -214,16 +221,14 @@ with tabs[2]:
             df["year"] = pd.to_numeric(df["year"], errors='coerce')
             df["mintage"] = pd.to_numeric(df["mintage"], errors='coerce').astype('Int64')
 
-
             # Handle boolean is_proof
             def to_bool(x):
                 s = str(x).strip().lower()
-                if s in {"1", "true", "yes", "y"}:
+                if s in {"1", "true", "yes", "y", "proof"}:
                     return 1
-                if s in {"0", "false", "no", "n"}:
+                if s in {"0", "false", "no", "n", "business", "regular"}:
                     return 0
                 return 0
-
 
             df["is_proof"] = df["is_proof"].apply(to_bool)
 
@@ -264,3 +269,28 @@ with tabs[2]:
                         for p in problems[:50]:
                             st.write("• ", p)
                     st.success(f"Imported/updated {created} coin types.")
+
+# Footer help
+st.markdown("---")
+with st.expander("ℹ️ Import Help & Tips"):
+    st.markdown("""
+    ### Transaction Import Tips
+    
+    **is_proof column formats:**
+    - Use `true/false`, `1/0`, `yes/no`, `y/n`, or `proof/business`
+    - Case insensitive - "True", "TRUE", "proof", "PROOF" all work
+    
+    **Date formats:**
+    - Use YYYY-MM-DD format (2023-12-25)
+    - Excel dates are automatically converted
+    
+    **Required vs Optional:**
+    - Required columns must be present and have values
+    - Optional columns can be missing or empty
+    - Missing optional columns are automatically added as blank
+    
+    **Master vs Types Import:**
+    - Use **Masters** import for basic coin specifications (weight, metal, etc.)
+    - Use **Types** import for specific years/varieties of existing masters
+    - Use **Transactions** import to add coins to your inventory
+    """)

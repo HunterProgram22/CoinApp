@@ -63,9 +63,9 @@ tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,seri
 7/12/2025,BUY,Money Metals Exchange,USD,0.8,0,0,,USA,1 Dollar,American Silver Eagle (1986-Present),2023,-,,1,41.85,,,,,,MELT_ONLY,,Bullion Box
 7/12/2025,BUY,Money Metals Exchange,USD,0.8,0,0,,Canada,5 Dollars,Maple (1988-Present),2025,-,,1,40.45,,,,,,MELT_ONLY,,Bullion Box
 7/12/2025,BUY,Money Metals Exchange,USD,0.8,0,0,,USA,1 Dollar,Morgan (1878-1921),1921,-,,1,39.99,,,,EF45,45,AUTO,44.83,Morgan Box
-7/12/2025,BUY,Money Metals Exchange,USD,0.8,0,0,,USA,1 oz,Money Metal Exchange Walking Liberty 1.0,,-,,1,39.15,,,,,,MELT_ONLY,,
-7/12/2025,BUY,Money Metals Exchange,USD,0.8,0,0,,USA,0.5 oz,Money Metal Exchange Walking Liberty 0.5,,-,,1,20.4,,,,,,MELT_ONLY,,
-7/12/2025,BUY,Money Metals Exchange,USD,4,0,0,,USA,0.1 oz,Money Metal Exchange Walking Liberty 0.1,,-,,5,4.66,,,,,,MELT_ONLY,,
+7/12/2025,BUY,Money Metals Exchange,USD,0.8,0,0,,USA,1 oz,Money Metals Exchange Walking Liberty 1.0,2025,-,,1,39.15,,,,,,MELT_ONLY,,Bullion Box
+7/12/2025,BUY,Money Metals Exchange,USD,0.8,0,0,,USA,0.5 oz,Money Metals Exchange Walking Liberty 0.5,2025,-,,1,20.4,,,,,,MELT_ONLY,,Bullion Box
+7/12/2025,BUY,Money Metals Exchange,USD,4,0,0,,USA,0.1 oz,Money Metals Exchange Walking Liberty 0.1,2025,-,,5,4.66,,,,,,MELT_ONLY,,Bullion Box
 7/16/2025,BUY,wvucoins - eBay,USD,1,1.26,0,,USA,Half Dollar,Columbian (1892-1893),1892,-,,1,16.95,,,,,,AUTO,,Commemorative Box
 7/20/2025,BUY,Columbus Coin Show,USD,0,0,0,,South Africa,1 Rand,Krugerrand (2017-Present),2022,-,,2,39,,,,,,MELT_ONLY,,Bullion Box
 7/20/2025,BUY,Columbus Coin Show,USD,0,0,0,,USA,1 Dollar,Peace (1921-1935),1922,-,,1,30,,,,EF45,45,AUTO,42.17,Peace Box
