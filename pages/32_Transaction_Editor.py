@@ -8,6 +8,7 @@ from constants import ASSET_CATEGORIES, VALUATION_METHODS, GRADE_COMPANIES
 
 st.header("Transaction Editor")
 
+
 # ---------------------------------
 # Data Access Functions
 # ---------------------------------
@@ -43,46 +44,34 @@ def get_transaction_details(tx_id: int) -> Dict[str, Any]:
         WHERE t.id = ?
     """
     header = execute_query_single(header_query, (tx_id,))
-    
+
     if not header:
         return None
-    
-    # Line items
-    lines_query = """
-        SELECT 
-            tl.id AS line_id,
-            tl.coin_type_id,
-            cm.series, ct.year, ct.mint_mark, 
-            COALESCE(ct.variety, '') AS variety,
-            ct.is_proof,
-            tl.quantity,
-            tl.unit_price,
-            tl.grade_company,
-            tl.grade_text,
-            tl.numeric_grade,
-            tl.slab_cert,
-            tl.condition_notes
-        FROM tx_line tl
-        JOIN coin_type ct ON ct.id = tl.coin_type_id
-        JOIN coin_master cm ON cm.id = ct.master_id
-        WHERE tl.tx_id = ?
-        ORDER BY tl.id
-    """
-    lines = execute_query_all(lines_query, (tx_id,))
-    
-    # For BUY transactions, get lot details
-    lots = []
+
+    # For BUY transactions, get combined line + lot info
+    # For SELL transactions, just get line info
     if header['tx_type'] == 'BUY':
-        lots_query = """
+        items_query = """
             SELECT 
+                tl.id AS line_id,
+                tl.coin_type_id,
+                cm.series, 
+                ct.year, 
+                ct.mint_mark, 
+                COALESCE(ct.variety, '') AS variety,
+                ct.is_proof,
+                tl.quantity,
+                tl.unit_price,
+                -- Line grade info (purchase grades)
+                tl.grade_company AS purchase_grade_company,
+                tl.grade_text AS purchase_grade_text,
+                tl.numeric_grade AS purchase_numeric_grade,
+                tl.slab_cert,
+                tl.condition_notes,
+                -- Lot info (if exists)
                 l.id AS lot_id,
-                l.acquisition_line_id,
                 l.qty_remaining,
                 l.unit_cost,
-                l.purchase_grade_company,
-                l.purchase_grade_text,
-                l.purchase_numeric_grade,
-                l.slab_cert,
                 l.estimated_grade_text,
                 l.estimated_numeric_grade,
                 l.valuation_method,
@@ -90,18 +79,54 @@ def get_transaction_details(tx_id: int) -> Dict[str, Any]:
                 l.storage_location_id,
                 COALESCE(sl.name, '') AS storage_name,
                 l.notes AS lot_notes
-            FROM lot l
-            JOIN tx_line tl ON tl.id = l.acquisition_line_id
+            FROM tx_line tl
+            JOIN coin_type ct ON ct.id = tl.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            LEFT JOIN lot l ON l.acquisition_line_id = tl.id
             LEFT JOIN storage_location sl ON sl.id = l.storage_location_id
             WHERE tl.tx_id = ?
-            ORDER BY l.id
+            ORDER BY tl.id
         """
-        lots = execute_query_all(lots_query, (tx_id,))
-    
+    else:
+        # SELL transactions don't have lot details to edit
+        items_query = """
+            SELECT 
+                tl.id AS line_id,
+                tl.coin_type_id,
+                cm.series, 
+                ct.year, 
+                ct.mint_mark, 
+                COALESCE(ct.variety, '') AS variety,
+                ct.is_proof,
+                tl.quantity,
+                tl.unit_price,
+                tl.grade_company AS purchase_grade_company,
+                tl.grade_text AS purchase_grade_text,
+                tl.numeric_grade AS purchase_numeric_grade,
+                tl.slab_cert,
+                tl.condition_notes,
+                NULL AS lot_id,
+                NULL AS qty_remaining,
+                NULL AS unit_cost,
+                NULL AS estimated_grade_text,
+                NULL AS estimated_numeric_grade,
+                NULL AS valuation_method,
+                NULL AS manual_est_unit_value,
+                NULL AS storage_location_id,
+                '' AS storage_name,
+                NULL AS lot_notes
+            FROM tx_line tl
+            JOIN coin_type ct ON ct.id = tl.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            WHERE tl.tx_id = ?
+            ORDER BY tl.id
+        """
+
+    items = execute_query_all(items_query, (tx_id,))
+
     return {
         'header': header,
-        'lines': lines,
-        'lots': lots
+        'items': items
     }
 
 
@@ -111,9 +136,9 @@ def get_storage_locations() -> List[Dict[str, Any]]:
     return execute_query_all(query)
 
 
-def update_transaction_header(tx_id: int, tx_date: str, party_name: str, 
-                            currency: str, shipping: float, tax: float, 
-                            fees: float, notes: str) -> bool:
+def update_transaction_header(tx_id: int, tx_date: str, party_name: str,
+                              currency: str, shipping: float, tax: float,
+                              fees: float, notes: str) -> bool:
     """Update transaction header information."""
     try:
         # Find or create party
@@ -125,14 +150,14 @@ def update_transaction_header(tx_id: int, tx_date: str, party_name: str,
             else:
                 from db_operations import execute_insert
                 party_id = execute_insert("INSERT INTO party(name) VALUES (?)", (party_name,))
-        
+
         # Update transaction
         execute_update("""
             UPDATE tx 
             SET tx_date=?, party_id=?, currency=?, shipping=?, tax=?, fees=?, notes=?
             WHERE id=?
         """, (tx_date, party_id, currency, shipping, tax, fees, notes, tx_id))
-        
+
         return True
     except Exception as e:
         st.error(f"Failed to update transaction: {e}")
@@ -152,56 +177,62 @@ def update_coin_type_proof_status(coin_type_id: int, is_proof: bool) -> bool:
         return False
 
 
-def update_lot_details(lot_id: int, **kwargs) -> bool:
-    """Update lot details."""
+def update_item_details(line_id: int, lot_id: Optional[int], updates: Dict[str, Any]) -> bool:
+    """Update both line and lot details in one go."""
     try:
-        updates = []
-        params = []
-        
-        for field, value in kwargs.items():
-            if value is not None:
-                updates.append(f"{field} = ?")
-                params.append(value)
-        
-        if updates:
-            params.append(lot_id)
-            query = f"UPDATE lot SET {', '.join(updates)} WHERE id = ?"
-            execute_update(query, tuple(params))
-        
+        # Update tx_line fields
+        line_updates = []
+        line_params = []
+
+        line_fields = ['unit_price', 'grade_company', 'grade_text', 'numeric_grade',
+                       'slab_cert', 'condition_notes']
+
+        for field in line_fields:
+            if field in updates and updates[field] is not None:
+                line_updates.append(f"{field} = ?")
+                line_params.append(updates[field])
+
+        if line_updates:
+            line_params.append(line_id)
+            execute_update(
+                f"UPDATE tx_line SET {', '.join(line_updates)} WHERE id = ?",
+                tuple(line_params)
+            )
+
+        # Update lot fields (if lot exists)
+        if lot_id:
+            lot_updates = []
+            lot_params = []
+
+            # Map the fields appropriately
+            lot_field_map = {
+                'grade_company': 'purchase_grade_company',
+                'grade_text': 'purchase_grade_text',
+                'numeric_grade': 'purchase_numeric_grade',
+                'slab_cert': 'slab_cert',
+                'estimated_grade_text': 'estimated_grade_text',
+                'estimated_numeric_grade': 'estimated_numeric_grade',
+                'valuation_method': 'valuation_method',
+                'manual_est_unit_value': 'manual_est_unit_value',
+                'storage_location_id': 'storage_location_id',
+                'lot_notes': 'notes'
+            }
+
+            for ui_field, db_field in lot_field_map.items():
+                if ui_field in updates and updates[ui_field] is not None:
+                    lot_updates.append(f"{db_field} = ?")
+                    lot_params.append(updates[ui_field])
+
+            if lot_updates:
+                lot_params.append(lot_id)
+                execute_update(
+                    f"UPDATE lot SET {', '.join(lot_updates)} WHERE id = ?",
+                    tuple(lot_params)
+                )
+
         return True
     except Exception as e:
-        st.error(f"Failed to update lot: {e}")
-        return False
-
-
-def update_tx_line(line_id: int, unit_price: float, grade_company: str = None,
-                   grade_text: str = None, numeric_grade: float = None,
-                   slab_cert: str = None, condition_notes: str = None) -> bool:
-    """Update transaction line details."""
-    try:
-        # Update tx_line
-        execute_update("""
-            UPDATE tx_line 
-            SET unit_price=?, grade_company=?, grade_text=?, numeric_grade=?, 
-                slab_cert=?, condition_notes=?
-            WHERE id=?
-        """, (unit_price, grade_company, grade_text, numeric_grade,
-              slab_cert, condition_notes, line_id))
-
-        # Also update the corresponding lot if this is from a BUY transaction
-        # The lot.acquisition_line_id points to the tx_line
-        execute_update("""
-            UPDATE lot
-            SET slab_cert=?, 
-                purchase_grade_company=?, 
-                purchase_grade_text=?, 
-                purchase_numeric_grade=?
-            WHERE acquisition_line_id=?
-        """, (slab_cert, grade_company, grade_text, numeric_grade, line_id))
-
-        return True
-    except Exception as e:
-        st.error(f"Failed to update transaction line: {e}")
+        st.error(f"Failed to update item: {e}")
         return False
 
 
@@ -229,196 +260,209 @@ def format_float(value: float, decimals: int = 2) -> str:
 def render_transaction_selector():
     """Render transaction selection interface."""
     st.subheader("Select Transaction to Edit")
-    
+
     transactions = get_recent_transactions(100)
-    
+
     if not transactions:
         st.info("No transactions found.")
         return None
-    
+
     # Create display options
     tx_options = []
     for tx in transactions:
         label = f"#{tx['id']} - {tx['tx_date']} - {tx['tx_type']} - {tx['party'] or 'No Party'} - {tx['total_quantity']} items"
         tx_options.append(label)
-    
-    selected_idx = st.selectbox("Select transaction", range(len(tx_options)), 
-                               format_func=lambda x: tx_options[x], key="tx_select")
-    
+
+    selected_idx = st.selectbox("Select transaction", range(len(tx_options)),
+                                format_func=lambda x: tx_options[x], key="tx_select")
+
     return transactions[selected_idx]['id']
 
 
 def render_transaction_editor(tx_id: int):
     """Render the transaction editing interface."""
     details = get_transaction_details(tx_id)
-    
+
     if not details:
         st.error("Transaction not found.")
         return
-    
+
     header = details['header']
-    lines = details['lines']
-    lots = details['lots']
-    
-    st.subheader(f"Editing Transaction #{tx_id}")
-    
+    items = details['items']
+
+    st.subheader(f"Editing {header['tx_type']} Transaction #{tx_id}")
+
     # Header editing
     with st.expander("Transaction Details", expanded=True):
         col1, col2, col3 = st.columns(3)
-        
-        new_date = col1.date_input("Date", value=pd.to_datetime(header['tx_date']).date(), 
-                                  key=f"edit_date_{tx_id}")
+
+        new_date = col1.date_input("Date", value=pd.to_datetime(header['tx_date']).date(),
+                                   key=f"edit_date_{tx_id}")
         new_party = col2.text_input("Party", value=header['party_name'], key=f"edit_party_{tx_id}")
-        new_currency = col3.text_input("Currency", value=header['currency'], key=f"edit_currency_{tx_id}")
-        
+        new_currency = col3.text_input("Currency", value=header['currency'],
+                                       key=f"edit_currency_{tx_id}")
+
         col1, col2, col3 = st.columns(3)
-        # Use text inputs for money fields
-        new_shipping = col1.text_input("Shipping", 
-                                      value=format_float(header['shipping']), 
-                                      key=f"edit_ship_{tx_id}")
-        new_tax = col2.text_input("Tax", 
-                                 value=format_float(header['tax']), 
-                                 key=f"edit_tax_{tx_id}")
-        new_fees = col3.text_input("Fees", 
-                                  value=format_float(header['fees']), 
-                                  key=f"edit_fees_{tx_id}")
-        
+        new_shipping = col1.text_input("Shipping",
+                                       value=format_float(header['shipping']),
+                                       key=f"edit_ship_{tx_id}")
+        new_tax = col2.text_input("Tax",
+                                  value=format_float(header['tax']),
+                                  key=f"edit_tax_{tx_id}")
+        new_fees = col3.text_input("Fees",
+                                   value=format_float(header['fees']),
+                                   key=f"edit_fees_{tx_id}")
+
         new_notes = st.text_area("Notes", value=header['notes'] or '', key=f"edit_notes_{tx_id}")
-        
+
         if st.button("Update Transaction Details", key=f"update_header_{tx_id}"):
-            # Validate numeric inputs
             shipping_val = safe_float(new_shipping)
             tax_val = safe_float(new_tax)
             fees_val = safe_float(new_fees)
-            
-            if update_transaction_header(tx_id, new_date.isoformat(), new_party, 
-                                       new_currency, shipping_val, tax_val, fees_val, new_notes):
+
+            if update_transaction_header(tx_id, new_date.isoformat(), new_party,
+                                         new_currency, shipping_val, tax_val, fees_val, new_notes):
                 st.success("Transaction details updated!")
                 st.rerun()
-    
-    # Line items editing
-    st.subheader("Line Items")
-    
-    for i, line in enumerate(lines):
-        with st.expander(f"Line {i+1}: {line['series']} {line['year']} {line['mint_mark']} {line['variety']}", 
-                        expanded=False):
-            
-            # Coin type details (read-only)
-            st.write(f"**Coin:** {line['series']} {line['year']} {line['mint_mark']} {line['variety']}")
-            st.write(f"**Quantity:** {abs(line['quantity'])}")
-            
-            # Editable proof status
+
+    # Items (combined line + lot info for BUY transactions)
+    st.subheader("Items")
+
+    # Get storage locations once
+    storage_locations = get_storage_locations() if header['tx_type'] == 'BUY' else []
+    storage_options = {loc['name']: loc['id'] for loc in storage_locations}
+
+    for i, item in enumerate(items):
+        # Create a more descriptive header
+        item_label = f"Item {i + 1}: {item['series']} {item['year']}"
+        if item['mint_mark']:
+            item_label += f" {item['mint_mark']}"
+        if item['variety']:
+            item_label += f" • {item['variety']}"
+        if header['tx_type'] == 'BUY' and item['qty_remaining'] is not None:
+            item_label += f" (Remaining: {item['qty_remaining']}/{abs(item['quantity'])})"
+
+        with st.expander(item_label, expanded=False):
+            # Basic coin info (read-only)
+            st.write(f"**Quantity:** {abs(item['quantity'])}")
+
+            # Proof status (affects coin_type globally)
             col1, col2 = st.columns(2)
-            is_proof = col1.checkbox("Is Proof", value=bool(line['is_proof']), 
-                                    key=f"proof_{line['line_id']}")
-            
-            if col2.button("Update Proof Status", key=f"update_proof_{line['line_id']}"):
-                if update_coin_type_proof_status(line['coin_type_id'], is_proof):
+            is_proof = col1.checkbox("Is Proof", value=bool(item['is_proof']),
+                                     key=f"proof_{item['line_id']}")
+
+            if col2.button("Update Proof Status", key=f"update_proof_{item['line_id']}"):
+                if update_coin_type_proof_status(item['coin_type_id'], is_proof):
                     st.success("Proof status updated!")
                     st.rerun()
-            
-            # Editable line details
-            col1, col2, col3 = st.columns(3)
-            # Use text input for unit price
-            new_price = col1.text_input("Unit Price", 
-                                       value=format_float(line['unit_price']), 
-                                       key=f"price_{line['line_id']}")
-            new_grade_co = col2.selectbox("Grade Company", [""] + GRADE_COMPANIES,
-                                        index=GRADE_COMPANIES.index(line['grade_company']) + 1 
-                                        if line['grade_company'] in GRADE_COMPANIES else 0,
-                                        key=f"grade_co_{line['line_id']}")
-            new_grade_text = col3.text_input("Grade Text", value=line['grade_text'] or '',
-                                           key=f"grade_text_{line['line_id']}")
-            
+
+            st.divider()
+
+            # Purchase Information
+            st.markdown("**Purchase Information**")
             col1, col2 = st.columns(2)
-            # Use text input for numeric grade
-            new_numeric_grade = col1.text_input("Numeric Grade", 
-                                              value=format_float(line['numeric_grade'], 1) if line['numeric_grade'] else "0.0",
-                                              key=f"numeric_grade_{line['line_id']}")
-            new_slab_cert = col2.text_input("Slab Cert", value=line['slab_cert'] or '',
-                                          key=f"slab_cert_{line['line_id']}")
-            
-            new_condition = st.text_area("Condition Notes", value=line['condition_notes'] or '',
-                                       key=f"condition_{line['line_id']}")
-            
-            if st.button("Update Line Item", key=f"update_line_{line['line_id']}"):
-                # Validate numeric inputs
-                price_val = safe_float(new_price)
-                numeric_grade_val = safe_float(new_numeric_grade)
-                
-                if update_tx_line(line['line_id'], price_val, 
-                                 new_grade_co if new_grade_co else None,
-                                 new_grade_text if new_grade_text else None,
-                                 numeric_grade_val if numeric_grade_val else None,
-                                 new_slab_cert if new_slab_cert else None,
-                                 new_condition if new_condition else None):
-                    st.success("Line item updated!")
-                    st.rerun()
-    
-    # Lot details editing (for BUY transactions)
-    if header['tx_type'] == 'BUY' and lots:
-        st.subheader("Lot Details")
-        storage_locations = get_storage_locations()
-        storage_options = {loc['name']: loc['id'] for loc in storage_locations}
-        
-        for i, lot in enumerate(lots):
-            with st.expander(f"Lot {lot['lot_id']} - Remaining: {lot['qty_remaining']}", 
-                            expanded=False):
-                
+            new_price = col1.text_input("Unit Price",
+                                        value=format_float(item['unit_price']),
+                                        key=f"price_{item['line_id']}")
+            new_condition = col2.text_input("Condition Notes",
+                                            value=item['condition_notes'] or '',
+                                            key=f"condition_{item['line_id']}")
+
+            # Grade Information
+            st.markdown("**Grade Information**")
+            col1, col2, col3 = st.columns(3)
+            new_grade_co = col1.selectbox("Grade Company", [""] + GRADE_COMPANIES,
+                                          index=GRADE_COMPANIES.index(
+                                              item['purchase_grade_company']) + 1
+                                          if item[
+                                                 'purchase_grade_company'] in GRADE_COMPANIES else 0,
+                                          key=f"grade_co_{item['line_id']}")
+            new_purchase_grade = col2.text_input("Purchase Grade",
+                                                 value=item['purchase_grade_text'] or '',
+                                                 key=f"purchase_grade_{item['line_id']}")
+            new_purchase_numeric = col3.text_input("Purchase Numeric",
+                                                   value=format_float(
+                                                       item['purchase_numeric_grade'], 1)
+                                                   if item['purchase_numeric_grade'] else "0.0",
+                                                   key=f"purchase_numeric_{item['line_id']}")
+
+            new_slab_cert = st.text_input("Slab Certificate #",
+                                          value=item['slab_cert'] or '',
+                                          key=f"slab_cert_{item['line_id']}")
+
+            # For BUY transactions, show additional lot-specific fields
+            if header['tx_type'] == 'BUY' and item['lot_id']:
+                st.divider()
+                st.markdown("**Current Evaluation**")
+
                 col1, col2 = st.columns(2)
-                
-                # Estimated grades
-                new_est_grade_text = col1.text_input("Estimated Grade", 
-                                                   value=lot['estimated_grade_text'] or '',
-                                                   key=f"est_grade_{lot['lot_id']}")
-                # Use text input for estimated numeric grade
-                new_est_numeric = col2.text_input("Estimated Numeric", 
-                                                value=format_float(lot['estimated_numeric_grade'], 1) if lot['estimated_numeric_grade'] else "0.0",
-                                                key=f"est_numeric_{lot['lot_id']}")
-                
-                # Valuation
+                new_est_grade = col1.text_input("Estimated Grade",
+                                                value=item['estimated_grade_text'] or '',
+                                                key=f"est_grade_{item['line_id']}")
+                new_est_numeric = col2.text_input("Estimated Numeric",
+                                                  value=format_float(
+                                                      item['estimated_numeric_grade'], 1)
+                                                  if item['estimated_numeric_grade'] else "0.0",
+                                                  key=f"est_numeric_{item['line_id']}")
+
+                st.markdown("**Valuation & Storage**")
                 col1, col2 = st.columns(2)
                 new_val_method = col1.selectbox("Valuation Method", VALUATION_METHODS,
-                                              index=VALUATION_METHODS.index(lot['valuation_method'])
-                                              if lot['valuation_method'] in VALUATION_METHODS else 0,
-                                              key=f"val_method_{lot['lot_id']}")
-                # Use text input for manual value
-                new_manual_val = col2.text_input("Manual Value", 
-                                               value=format_float(lot['manual_est_unit_value']) if lot['manual_est_unit_value'] else "0.00",
-                                               key=f"manual_val_{lot['lot_id']}")
-                
-                # Storage
-                current_storage = lot['storage_name']
+                                                index=VALUATION_METHODS.index(
+                                                    item['valuation_method'])
+                                                if item[
+                                                       'valuation_method'] in VALUATION_METHODS else 0,
+                                                key=f"val_method_{item['line_id']}")
+                new_manual_val = col2.text_input("Manual Value (if MANUAL)",
+                                                 value=format_float(item['manual_est_unit_value'])
+                                                 if item['manual_est_unit_value'] else "0.00",
+                                                 key=f"manual_val_{item['line_id']}")
+
+                # Storage location
+                current_storage = item['storage_name']
                 storage_idx = 0
                 if current_storage and current_storage in storage_options:
                     storage_names = list(storage_options.keys())
-                    storage_idx = storage_names.index(current_storage)
-                
-                new_storage = st.selectbox("Storage Location", 
-                                         [""] + list(storage_options.keys()),
-                                         index=storage_idx,
-                                         key=f"storage_{lot['lot_id']}")
-                
-                new_lot_notes = st.text_area("Lot Notes", value=lot['lot_notes'] or '',
-                                            key=f"lot_notes_{lot['lot_id']}")
-                
-                if st.button("Update Lot", key=f"update_lot_{lot['lot_id']}"):
-                    # Validate numeric inputs
-                    est_numeric_val = safe_float(new_est_numeric)
-                    manual_val = safe_float(new_manual_val)
-                    
-                    updates = {
-                        'estimated_grade_text': new_est_grade_text if new_est_grade_text else None,
-                        'estimated_numeric_grade': est_numeric_val if est_numeric_val else None,
+                    storage_idx = storage_names.index(current_storage) + 1  # +1 for empty option
+
+                new_storage = st.selectbox("Storage Location",
+                                           [""] + list(storage_options.keys()),
+                                           index=storage_idx,
+                                           key=f"storage_{item['line_id']}")
+
+                new_lot_notes = st.text_area("Lot Notes",
+                                             value=item['lot_notes'] or '',
+                                             key=f"lot_notes_{item['line_id']}")
+
+            # Single update button for everything
+            if st.button("Update Item", type="primary", key=f"update_item_{item['line_id']}"):
+                updates = {
+                    'unit_price': safe_float(new_price),
+                    'grade_company': new_grade_co if new_grade_co else None,
+                    'grade_text': new_purchase_grade if new_purchase_grade else None,
+                    'numeric_grade': safe_float(
+                        new_purchase_numeric) if new_purchase_numeric else None,
+                    'slab_cert': new_slab_cert if new_slab_cert else None,
+                    'condition_notes': new_condition if new_condition else None,
+                }
+
+                # Add lot-specific fields if this is a BUY transaction
+                if header['tx_type'] == 'BUY' and item['lot_id']:
+                    updates.update({
+                        'estimated_grade_text': new_est_grade if new_est_grade else None,
+                        'estimated_numeric_grade': safe_float(
+                            new_est_numeric) if new_est_numeric else None,
                         'valuation_method': new_val_method,
-                        'manual_est_unit_value': manual_val if manual_val else None,
-                        'storage_location_id': storage_options.get(new_storage) if new_storage else None,
-                        'notes': new_lot_notes if new_lot_notes else None
-                    }
-                    
-                    if update_lot_details(lot['lot_id'], **updates):
-                        st.success("Lot updated!")
-                        st.rerun()
+                        'manual_est_unit_value': safe_float(
+                            new_manual_val) if new_manual_val else None,
+                        'storage_location_id': storage_options.get(
+                            new_storage) if new_storage else None,
+                        'lot_notes': new_lot_notes if new_lot_notes else None,
+                    })
+
+                if update_item_details(item['line_id'], item['lot_id'], updates):
+                    st.success("Item updated!")
+                    st.rerun()
 
 
 # ---------------------------------
@@ -430,5 +474,6 @@ if selected_tx_id:
     st.divider()
     render_transaction_editor(selected_tx_id)
 
-st.info("💡 **Tip:** Changes to proof status affect the coin type permanently. " + 
-        "Changes to grades and valuations only affect this specific lot.")
+st.info(
+    "💡 **Tip:** Changes to proof status affect the coin type globally (all instances of that coin). " +
+    "All other changes only affect this specific transaction/lot.")
