@@ -193,6 +193,24 @@ def update_tx_line(line_id: int, unit_price: float, grade_company: str = None,
 
 
 # ---------------------------------
+# Helper Functions
+# ---------------------------------
+def safe_float(value: str, default: float = 0.0) -> float:
+    """Safely convert string to float."""
+    try:
+        return float(value) if value else default
+    except (ValueError, TypeError):
+        return default
+
+
+def format_float(value: float, decimals: int = 2) -> str:
+    """Format float for display in text input."""
+    if value is None or value == 0:
+        return "0.00" if decimals == 2 else "0.0"
+    return f"{value:.{decimals}f}"
+
+
+# ---------------------------------
 # UI Components
 # ---------------------------------
 def render_transaction_selector():
@@ -241,18 +259,27 @@ def render_transaction_editor(tx_id: int):
         new_currency = col3.text_input("Currency", value=header['currency'], key=f"edit_currency_{tx_id}")
         
         col1, col2, col3 = st.columns(3)
-        new_shipping = col1.number_input("Shipping", value=float(header['shipping'] or 0), 
-                                        step=0.01, format="%.2f", key=f"edit_ship_{tx_id}")
-        new_tax = col2.number_input("Tax", value=float(header['tax'] or 0), 
-                                   step=0.01, format="%.2f", key=f"edit_tax_{tx_id}")
-        new_fees = col3.number_input("Fees", value=float(header['fees'] or 0), 
-                                    step=0.01, format="%.2f", key=f"edit_fees_{tx_id}")
+        # Use text inputs for money fields
+        new_shipping = col1.text_input("Shipping", 
+                                      value=format_float(header['shipping']), 
+                                      key=f"edit_ship_{tx_id}")
+        new_tax = col2.text_input("Tax", 
+                                 value=format_float(header['tax']), 
+                                 key=f"edit_tax_{tx_id}")
+        new_fees = col3.text_input("Fees", 
+                                  value=format_float(header['fees']), 
+                                  key=f"edit_fees_{tx_id}")
         
         new_notes = st.text_area("Notes", value=header['notes'] or '', key=f"edit_notes_{tx_id}")
         
         if st.button("Update Transaction Details", key=f"update_header_{tx_id}"):
+            # Validate numeric inputs
+            shipping_val = safe_float(new_shipping)
+            tax_val = safe_float(new_tax)
+            fees_val = safe_float(new_fees)
+            
             if update_transaction_header(tx_id, new_date.isoformat(), new_party, 
-                                       new_currency, new_shipping, new_tax, new_fees, new_notes):
+                                       new_currency, shipping_val, tax_val, fees_val, new_notes):
                 st.success("Transaction details updated!")
                 st.rerun()
     
@@ -279,8 +306,10 @@ def render_transaction_editor(tx_id: int):
             
             # Editable line details
             col1, col2, col3 = st.columns(3)
-            new_price = col1.number_input("Unit Price", value=float(line['unit_price'] or 0), 
-                                        step=0.01, format="%.2f", key=f"price_{line['line_id']}")
+            # Use text input for unit price
+            new_price = col1.text_input("Unit Price", 
+                                       value=format_float(line['unit_price']), 
+                                       key=f"price_{line['line_id']}")
             new_grade_co = col2.selectbox("Grade Company", [""] + GRADE_COMPANIES,
                                         index=GRADE_COMPANIES.index(line['grade_company']) + 1 
                                         if line['grade_company'] in GRADE_COMPANIES else 0,
@@ -289,8 +318,10 @@ def render_transaction_editor(tx_id: int):
                                            key=f"grade_text_{line['line_id']}")
             
             col1, col2 = st.columns(2)
-            new_numeric_grade = col1.number_input("Numeric Grade", value=float(line['numeric_grade'] or 0),
-                                                step=0.5, key=f"numeric_grade_{line['line_id']}")
+            # Use text input for numeric grade
+            new_numeric_grade = col1.text_input("Numeric Grade", 
+                                              value=format_float(line['numeric_grade'], 1) if line['numeric_grade'] else "0.0",
+                                              key=f"numeric_grade_{line['line_id']}")
             new_slab_cert = col2.text_input("Slab Cert", value=line['slab_cert'] or '',
                                           key=f"slab_cert_{line['line_id']}")
             
@@ -298,10 +329,14 @@ def render_transaction_editor(tx_id: int):
                                        key=f"condition_{line['line_id']}")
             
             if st.button("Update Line Item", key=f"update_line_{line['line_id']}"):
-                if update_tx_line(line['line_id'], new_price, 
+                # Validate numeric inputs
+                price_val = safe_float(new_price)
+                numeric_grade_val = safe_float(new_numeric_grade)
+                
+                if update_tx_line(line['line_id'], price_val, 
                                  new_grade_co if new_grade_co else None,
                                  new_grade_text if new_grade_text else None,
-                                 new_numeric_grade if new_numeric_grade else None,
+                                 numeric_grade_val if numeric_grade_val else None,
                                  new_slab_cert if new_slab_cert else None,
                                  new_condition if new_condition else None):
                     st.success("Line item updated!")
@@ -323,9 +358,10 @@ def render_transaction_editor(tx_id: int):
                 new_est_grade_text = col1.text_input("Estimated Grade", 
                                                    value=lot['estimated_grade_text'] or '',
                                                    key=f"est_grade_{lot['lot_id']}")
-                new_est_numeric = col2.number_input("Estimated Numeric", 
-                                                  value=float(lot['estimated_numeric_grade'] or 0),
-                                                  step=0.5, key=f"est_numeric_{lot['lot_id']}")
+                # Use text input for estimated numeric grade
+                new_est_numeric = col2.text_input("Estimated Numeric", 
+                                                value=format_float(lot['estimated_numeric_grade'], 1) if lot['estimated_numeric_grade'] else "0.0",
+                                                key=f"est_numeric_{lot['lot_id']}")
                 
                 # Valuation
                 col1, col2 = st.columns(2)
@@ -333,10 +369,10 @@ def render_transaction_editor(tx_id: int):
                                               index=VALUATION_METHODS.index(lot['valuation_method'])
                                               if lot['valuation_method'] in VALUATION_METHODS else 0,
                                               key=f"val_method_{lot['lot_id']}")
-                new_manual_val = col2.number_input("Manual Value", 
-                                                 value=float(lot['manual_est_unit_value'] or 0),
-                                                 step=0.01, format="%.2f", 
-                                                 key=f"manual_val_{lot['lot_id']}")
+                # Use text input for manual value
+                new_manual_val = col2.text_input("Manual Value", 
+                                               value=format_float(lot['manual_est_unit_value']) if lot['manual_est_unit_value'] else "0.00",
+                                               key=f"manual_val_{lot['lot_id']}")
                 
                 # Storage
                 current_storage = lot['storage_name']
@@ -354,11 +390,15 @@ def render_transaction_editor(tx_id: int):
                                             key=f"lot_notes_{lot['lot_id']}")
                 
                 if st.button("Update Lot", key=f"update_lot_{lot['lot_id']}"):
+                    # Validate numeric inputs
+                    est_numeric_val = safe_float(new_est_numeric)
+                    manual_val = safe_float(new_manual_val)
+                    
                     updates = {
                         'estimated_grade_text': new_est_grade_text if new_est_grade_text else None,
-                        'estimated_numeric_grade': new_est_numeric if new_est_numeric else None,
+                        'estimated_numeric_grade': est_numeric_val if est_numeric_val else None,
                         'valuation_method': new_val_method,
-                        'manual_est_unit_value': new_manual_val if new_manual_val else None,
+                        'manual_est_unit_value': manual_val if manual_val else None,
                         'storage_location_id': storage_options.get(new_storage) if new_storage else None,
                         'notes': new_lot_notes if new_lot_notes else None
                     }
