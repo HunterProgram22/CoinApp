@@ -165,21 +165,9 @@ def get_inventory_by_flags(want_proofs=False, want_slabbed=False):
             ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value, 0), 2) AS "Lot Est. Value",
             CASE WHEN ct.is_proof = 1 THEN 'Yes' ELSE 'No' END AS Proof,
             CASE WHEN (COALESCE(l.slab_cert, '') <> '' OR 
-                    UPPER(COALESCE(l.purchase_grade_company, '')) IN ('PCGS','NGC','ANACS','ICG'))
-                THEN 'Yes' ELSE 'No' END AS Slabbed,
-            COALESCE(l.slab_cert, '') AS "Cert #",
-            COALESCE(l.purchase_grade_text, '') AS "Purchase Grade",
-            CASE 
-                WHEN UPPER(COALESCE(l.purchase_grade_company, '')) = 'PCGS' 
-                    AND COALESCE(l.slab_cert, '') <> ''
-                THEN 'https://www.pcgs.com/cert/' || COALESCE(l.slab_cert, tl.slab_cert)
-                WHEN UPPER(COALESCE(l.purchase_grade_company, '')) = 'NGC' 
-                    AND COALESCE(l.slab_cert, '') <> ''
-                THEN 'https://www.ngccoin.com/certlookup/' || COALESCE(l.slab_cert, tl.slab_cert)
-                ELSE ''
-            END AS "Cert Lookup" 
+                      UPPER(COALESCE(l.purchase_grade_company, '')) IN ('PCGS','NGC','ANACS','ICG'))
+                 THEN 'Yes' ELSE 'No' END AS Slabbed
         FROM lot l
-        JOIN tx_line tl ON tl.id = l.acquisition_line_id
         JOIN coin_type ct ON ct.id = l.coin_type_id
         JOIN coin_master cm ON cm.id = ct.master_id
         LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
@@ -323,13 +311,7 @@ with tab_flags:
         st.info("No lots matched those flags.")
     else:
         display_df = format_year_columns_for_display(df)
-        money_columns = ["Unit Cost (USD)", "Melt Unit Value", "Chosen Unit Value", "Lot Est. Value"]
+        money_columns = ["Unit Cost (USD)", "Chosen Unit Value", "Lot Est. Value"]
         display_df, csv_df = format_money_columns(display_df, money_columns)
-        st.dataframe(display_df, width='stretch', hide_index=True,
-                     column_config={
-                         "Cert Lookup": st.column_config.LinkColumn(
-                             "Cert Lookup",
-                             display_text="🔗 Lookup"
-                         ) if "Cert Lookup" in display_df.columns else None
-                     })
+        st.dataframe(display_df, width='stretch', hide_index=True)
         create_download_button("Download CSV (Flags)", df, "inventory_filter_flags.csv")
