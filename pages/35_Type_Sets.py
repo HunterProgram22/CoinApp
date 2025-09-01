@@ -2,7 +2,6 @@
 import streamlit as st
 import pandas as pd
 from type_sets_helpers import (
-    check_type_set_schema,
     get_all_type_sets,
     create_type_set,
     update_type_set,
@@ -11,13 +10,14 @@ from type_sets_helpers import (
     add_type_set_members,
     remove_type_set_members,
     get_type_set_progress,
-    analyze_missing_coins,
+    get_type_set_summary,
+    get_type_set_upgrade_targets,
+    get_type_set_metadata,
+    save_type_set_metadata,
     search_coin_types,
     get_all_series,
     format_coin_type_label,
-    search_coin_types_catalog,
-    get_type_set_metadata,
-    update_type_set_metadata
+    search_coin_types_catalog
 )
 from constants import GRADE_COMPANIES, GRADE_TEXT_VALUES
 
@@ -69,73 +69,66 @@ with tabs[0]:
         # Progress section
         st.subheader("Collection Progress")
         
-        # Get members of the set (what coins should be in it)
-        set_members = get_type_set_members(set_id)
+        # Get progress using the new view
+        progress_df = get_type_set_progress(set_id)
         
-        if not set_members:
+        if progress_df.empty:
             st.warning("This set has no coins defined yet. Use 'Modify Set' tab to add coins.")
         else:
-            # Check what we have vs what we need
-            progress_data = []
-            for member in set_members:
-                # Check if we have this coin on hand
-                have_query = """
-                    SELECT COUNT(*) as count, 
-                           MAX(l.purchase_grade_company) as grade_company,
-                           MAX(COALESCE(l.estimated_grade_text, l.purchase_grade_text)) as grade
-                    FROM lot l
-                    WHERE l.coin_type_id = ? AND l.qty_remaining > 0
-                """
-                from db_operations import execute_query_single
-                have_result = execute_query_single(have_query, (member['coin_type_id'],))
+            # Format the dataframe for display
+            progress_df['have'] = progress_df.apply(
+                lambda r: '✅' if r['meets_requirements'] else ('🔶' if r['qty_on_hand'] > 0 else '❌'),
+                axis=1
+            )
+            progress_df['is_proof'] = progress_df['is_proof'].apply(lambda x: '✓' if x else '')
+            progress_df['grade_info'] = progress_df.apply(
+                lambda r: f"{r['best_grade_company']}/{r['best_grade_text']}" 
+                if r['best_grade_company'] and r['best_grade_text'] else "",
+                axis=1
+            )
+            
+            # Calculate statistics using summary view
+            summary = get_type_set_summary(set_id)
+            if summary:
+                total_needed = summary['total_coins']
+                total_have = summary['coins_owned']
+                total_meeting_requirements = summary['coins_meeting_requirements']
+                percent_complete = summary['percent_complete']
                 
-                have_count = have_result['count'] if have_result else 0
-                grade_info = f"{have_result['grade_company']}/{have_result['grade']}" if have_result and have_result['grade_company'] else ""
+                # Display metrics
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Total Coins in Set", total_needed)
+                col2.metric("Coins Owned", total_have)
+                col3.metric("Meeting Requirements", total_meeting_requirements)
+                col4.metric("Complete", f"{percent_complete:.1f}%")
                 
-                progress_data.append({
-                    'series': member['series'],
-                    'year': member['year'],
-                    'mint_mark': member.get('mint_mark', ''),
-                    'variety': member.get('variety', ''),
-                    'is_proof': '✓' if member.get('is_proof') else '',
-                    'have': '✅' if have_count > 0 else '❌',
-                    'qty_on_hand': have_count,
-                    'grade_info': grade_info,
-                    'coin_type_id': member['coin_type_id']
-                })
+                # Progress bar
+                st.progress(percent_complete / 100 if percent_complete else 0)
             
-            progress_df = pd.DataFrame(progress_data)
-            
-            # Calculate statistics
-            total_needed = len(progress_df)
-            total_have = len(progress_df[progress_df['qty_on_hand'] > 0])
-            percent_complete = (total_have / total_needed * 100) if total_needed > 0 else 0
-            
-            # Display metrics
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Coins in Set", total_needed)
-            col2.metric("Coins Owned", total_have)
-            col3.metric("Still Need", total_needed - total_have)
-            col4.metric("Complete", f"{percent_complete:.1f}%")
-            
-            # Progress bar
-            st.progress(percent_complete / 100)
+            # Legend for status icons
+            st.caption("✅ = Meets all requirements | 🔶 = Have but doesn't meet requirements | ❌ = Don't have")
             
             # Display the full list
             st.subheader("Detailed Progress")
             
             # Filter options
             col1, col2 = st.columns(2)
-            show_filter = col1.selectbox("Show", ["All", "Have", "Need"], index=0)
+            show_filter = col1.selectbox("Show", ["All", "Have", "Need", "Need Upgrade"], index=0)
             
             if show_filter == "Have":
-                display_df = progress_df[progress_df['qty_on_hand'] > 0]
+                display_df = progress_df[progress_df['meets_requirements'] == 1]
             elif show_filter == "Need":
                 display_df = progress_df[progress_df['qty_on_hand'] == 0]
+            elif show_filter == "Need Upgrade":
+                display_df = progress_df[(progress_df['qty_on_hand'] > 0) & (progress_df['meets_requirements'] == 0)]
             else:
                 display_df = progress_df
             
-            st.dataframe(display_df.drop(columns=['coin_type_id']), width='stretch', hide_index=True)
+            # Select columns to display
+            display_columns = ['have', 'series', 'year', 'mint_mark', 'variety', 'is_proof', 
+                             'qty_on_hand', 'grade_info']
+            
+            st.dataframe(display_df[display_columns], width='stretch', hide_index=True)
             
             # Download buttons
             col1, col2 = st.columns(2)
@@ -149,16 +142,13 @@ with tabs[0]:
                 mime="text/csv"
             )
             
-            # Missing coins CSV
-            missing_df = progress_df[progress_df['qty_on_hand'] == 0]
-            if not missing_df.empty:
-                missing_csv = missing_df.to_csv(index=False).encode('utf-8')
-                col2.download_button(
-                    "📥 Download Need List",
-                    data=missing_csv,
-                    file_name=f"type_set_{set_id}_need.csv",
-                    mime="text/csv"
-                )
+            # Missing/upgrade analysis
+            if col2.button("Show Upgrade Targets"):
+                upgrade_targets = get_type_set_upgrade_targets(set_id)
+                if upgrade_targets:
+                    st.subheader("Coins Needing Upgrade")
+                    upgrade_df = pd.DataFrame(upgrade_targets)
+                    st.dataframe(upgrade_df, width='stretch', hide_index=True)
 
 # =====================================================
 # Tab 2: Define Set - Create new sets with criteria
@@ -253,13 +243,15 @@ with tabs[1]:
                 # Store in session state for creation
                 st.session_state['new_set_coins'] = catalog_matches
                 st.session_state['new_set_metadata'] = {
-                    'series': selected_series,
-                    'year_range': year_range,
-                    'proof_filter': proof_filter,
                     'grade_company': grade_company_filter if grade_company_filter != "Any" else None,
                     'min_grade': min_grade_filter if min_grade_filter != "Any" else None,
                     'max_grade': max_grade_filter if max_grade_filter != "Any" else None,
-                    'require_slab': require_slab
+                    'require_slab': require_slab,
+                    'proof_only': proof_filter == "Proofs only",
+                    'business_only': proof_filter == "Business strikes only",
+                    'include_varieties': specific_varieties,
+                    'year_start': start_year if start_year > 0 else None,
+                    'year_end': end_year if end_year > 0 else None
                 }
             else:
                 st.warning("No coins found matching these criteria in the catalog")
@@ -271,16 +263,12 @@ with tabs[1]:
             if not new_name:
                 st.error("Please enter a set name")
             else:
-                # Create the set
-                set_id = create_type_set(new_name, new_desc)
+                # Create the set with metadata
+                set_id = create_type_set(new_name, new_desc, st.session_state.get('new_set_metadata'))
                 
                 # Add all the coins to the set
                 coin_type_ids = [c['id'] for c in st.session_state['new_set_coins']]
                 added = add_type_set_members(set_id, coin_type_ids)
-                
-                # Store metadata if function exists
-                if 'update_type_set_metadata' in dir() and st.session_state.get('new_set_metadata'):
-                    update_type_set_metadata(set_id, st.session_state['new_set_metadata'])
                 
                 st.success(f"Created '{new_name}' with {added} coins!")
                 
