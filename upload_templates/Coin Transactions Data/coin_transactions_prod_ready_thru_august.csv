@@ -229,7 +229,7 @@ tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,seri
 8/8/2025,BUY,eBay - catskillcoinauctions,USD,0.5,0,0,,USA,Dime,Mercury (1916-1945),1942,-,,1,5.56,,,,,,AUTO,4.6,Dimes Box,,
 8/8/2025,BUY,eBay - catskillcoinauctions,USD,0.5,0,0,,USA,Quarter Dollar,Barber (1892-1916),1909,-,,1,5.56,,,,,,AUTO,18,Quarters Box,,
 8/8/2025,BUY,eBay - catskillcoinauctions,USD,0.49,0,0,,USA,Half Dollar,Modern Commemorative (1986-Present),1986,-,,1,5.55,,,,,,AUTO,,Commemorative Box,,
-8/9/2025,BUY,eBay - dzara007,USD,7.1,0,0,,USA,1 Dollar,"Susan B. Anthony (1979-1981, 1999)",1981,S,Type 1,1,40,PCGS,PF70,70,,,AUTO,,SBA Display,Y,50662834
+8/9/2025,BUY,eBay - dzara007,USD,7.1,0,0,,USA,1 Dollar,"Susan B. Anthony (1979-1981, 1999)",1981,S,Type 1,1,40,PCGS,PF70,70,PF70,70,AUTO,,SBA Display,Y,50662834
 8/10/2025,BUY,eBay - mbarrcoins,USD,0,0,0,,USA,1 Dollar,Morgan (1878-1921),1890,O,,1,34.5,,,,,,AUTO,64,Morgan Box,,
 8/10/2025,BUY,Warehouse 61,USD,0,0,0,,USA,1 Dollar,Peace (1921-1935),1934,D,,1,50,,,,,,AUTO,38,Peace Box,,
 8/11/2025,BUY,Don's Loans,USD,0,0,0,,USA,1 Dollar,Morgan (1878-1921),1887,O,,1,35,,,,,,AUTO,48.33,Morgan Box,,
@@ -243,7 +243,7 @@ tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,seri
 8/17/2025,BUY,Columbus Coin Show,USD,0,0,0,,USA,1 Dollar,Morgan (1878-1921),1884,O,,1,75,NGC,MS64,64,,,AUTO,126.67,Dollar Slab Box,,6035766-040
 8/19/2025,BUY,Don's Loans,USD,0,0,0,,USA,1 Dollar,Morgan (1878-1921),1884,-,,1,40,,,,AU58,58,AUTO,64,Morgan Box,,
 8/19/2025,BUY,Don's Loans,USD,0,0,0,,USA,1 Dollar,Morgan (1878-1921),1896,-,,1,40,,,,EF40,40,AUTO,48.67,Morgan Box,,
-8/25/2025,BUY,eBay - mbarrcoins,USD,0,2.94,0,,USA,1 Dollar,"Susan B. Anthony (1979-1981, 1999)",1979,S,Type 1,1,42,PCGS,PF70,70,,,AUTO,,SBA Display,Y,52786047
+8/25/2025,BUY,eBay - mbarrcoins,USD,0,2.94,0,,USA,1 Dollar,"Susan B. Anthony (1979-1981, 1999)",1979,S,Type 1,1,42,PCGS,PF70,70,PF70,70,AUTO,,SBA Display,Y,52786047
 8/29/2025,BUY,Darren Smith,USD,0,0,0,,USA,Half Dollar,Kennedy 40% Silver (1965-1970),1967,-,,1,6,,,,,,MELT_ONLY,,Kennedy Junk Tube,,
 8/29/2025,BUY,Darren Smith,USD,0,0,0,,USA,Half Dollar,Kennedy 40% Silver (1965-1970),1968,D,,1,6,,,,,,MELT_ONLY,,Kennedy Junk Tube,,
 8/29/2025,BUY,Darren Smith,USD,0,0,0,,USA,Half Dollar,Kennedy 40% Silver (1965-1970),1969,-,,1,6,,,,,,MELT_ONLY,,Kennedy Junk Tube,,
