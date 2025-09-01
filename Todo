@@ -170,3 +170,10 @@ Fix Transactions page UI bug (number input limit issue you noted)
 Add utils/ directory structure
 
 The most critical fix was the inventory bug in business_logic.py - sell transactions weren't actually reducing lot quantities, which would have caused major inventory tracking problems.
+
+#### TO DO AS OF SEPTEMBER 1 Midday ####
+
+*Issue with Slabbed Cert number not showing up in Inventory Filter by Series Detail even though it is in the Database
+* Is the Coin Type change to proof on the transaction creating a new coin type? Check to see if we have both SBA Proof and Circ
+* Issue with slab number on upload and editing after the fact.
+
