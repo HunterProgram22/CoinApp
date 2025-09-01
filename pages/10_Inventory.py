@@ -311,7 +311,7 @@ with tab_flags:
         st.info("No lots matched those flags.")
     else:
         display_df = format_year_columns_for_display(df)
-        money_columns = ["Unit Cost (USD)", "Chosen Unit Value", "Lot Est. Value"]
+        money_columns = ["Unit Cost (USD)", "Melt Unit Value", "Chosen Unit Value", "Lot Est. Value"]
         display_df, csv_df = format_money_columns(display_df, money_columns)
         st.dataframe(display_df, width='stretch', hide_index=True)
         create_download_button("Download CSV (Flags)", df, "inventory_filter_flags.csv")

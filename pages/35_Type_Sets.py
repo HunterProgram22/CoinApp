@@ -12,14 +12,12 @@ from type_sets_helpers import (
     remove_type_set_members,
     get_type_set_progress,
     analyze_missing_coins,
-    get_type_set_assignments,
-    get_unassigned_specimens,
-    assign_specimen_to_set,
-    unassign_specimen_from_set,
     search_coin_types,
     get_all_series,
-    format_coin_type_label
+    format_coin_type_label,
+    search_coin_types_with_grades
 )
+from constants import GRADE_COMPANIES, GRADE_TEXT_VALUES
 
 st.header("Type Sets")
 
@@ -106,59 +104,6 @@ with tabs[0]:
         else:
             st.warning("Progress views not found. Create v_type_set_progress view for tracking.")
 
-        # Specimen assignment section (if available)
-        assignment_schema = check_type_set_schema()
-        if all([assignment_schema['type_set_assignment'], assignment_schema['specimen']]):
-            st.subheader("Specimen Assignments")
-
-            # Get current assignments
-            assignments = get_type_set_assignments(set_id)
-
-            if assignments:
-                st.write("Current assignments:")
-                assignments_df = pd.DataFrame(assignments)
-                st.dataframe(assignments_df, width='stretch', hide_index=True)
-
-                # Unassign option
-                specimen_codes = [a['specimen_code'] for a in assignments]
-                to_unassign = st.selectbox("Unassign specimen", ["None"] + specimen_codes)
-
-                if to_unassign != "None" and st.button("Unassign"):
-                    unassign_specimen_from_set(set_id, to_unassign)
-                    st.success("Unassigned!")
-                    st.rerun()
-
-            # Assign new specimen
-            if not progress_df.empty and 'coin_type_id' in progress_df.columns:
-                st.markdown("**Assign new specimen:**")
-
-                # Select coin type
-                coin_types = progress_df[
-                    ['coin_type_id', 'series', 'year', 'mint_mark', 'variety']].drop_duplicates()
-                coin_labels = {
-                    format_coin_type_label(row.to_dict(), include_id=True): row['coin_type_id']
-                    for _, row in coin_types.iterrows()
-                }
-
-                selected_coin = st.selectbox("Select coin type", list(coin_labels.keys()))
-                coin_type_id = coin_labels[selected_coin]
-
-                # Get available specimens
-                available = get_unassigned_specimens(coin_type_id, set_id)
-
-                if available:
-                    specimen_map = {s['code']: s['id'] for s in available}
-                    selected_specimen = st.selectbox("Available specimens",
-                                                     list(specimen_map.keys()))
-
-                    if st.button("Assign Specimen", type="primary"):
-                        assign_specimen_to_set(set_id, coin_type_id,
-                                               specimen_map[selected_specimen])
-                        st.success("Assigned!")
-                        st.rerun()
-                else:
-                    st.info("No unassigned specimens available for this coin type.")
-
 # =====================================================
 # Tab 2: Define & Build
 # =====================================================
@@ -218,6 +163,43 @@ with tabs[1]:
 
             proof_filter = st.selectbox("Proof filter", ["Any", "Proofs only", "Non-proof only"])
 
+        # New: Grade and Slab Company filters
+        st.markdown("#### Grade & Certification Filters")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Grade company filter
+            grade_companies = ["Any"] + GRADE_COMPANIES
+            selected_grade_company = st.selectbox(
+                "Grade Company", 
+                grade_companies,
+                help="Filter to coins graded by specific company"
+            )
+        
+        with col2:
+            # Minimum grade filter
+            grade_options = ["Any"] + GRADE_TEXT_VALUES
+            min_grade = st.selectbox(
+                "Minimum Grade",
+                grade_options,
+                help="Only include coins with this grade or higher"
+            )
+        
+        with col3:
+            # Maximum grade filter
+            max_grade = st.selectbox(
+                "Maximum Grade",
+                grade_options,
+                help="Only include coins with this grade or lower"
+            )
+
+        # Additional filter options
+        col1, col2 = st.columns(2)
+        with col1:
+            require_slab_cert = st.checkbox("Must have slab cert #", value=False)
+        with col2:
+            only_on_hand = st.checkbox("Only coins I have on hand", value=False)
+
         # Build year range
         year_range = None
         if start_year > 0 and end_year > 0 and end_year >= start_year:
@@ -229,21 +211,40 @@ with tabs[1]:
 
         # Preview matches
         if st.button("Preview Matches", type="secondary"):
-            matches = search_coin_types(
-                series=selected_series if selected_series else None,
-                year_range=year_range,
-                proof_filter=proof_filter
-            )
+            # Build filters dictionary
+            filters = {
+                'series': selected_series if selected_series else None,
+                'year_range': year_range,
+                'proof_filter': proof_filter,
+                'grade_company': selected_grade_company if selected_grade_company != "Any" else None,
+                'min_grade': min_grade if min_grade != "Any" else None,
+                'max_grade': max_grade if max_grade != "Any" else None,
+                'require_slab_cert': require_slab_cert,
+                'only_on_hand': only_on_hand
+            }
+            
+            matches = search_coin_types_with_grades(**filters)
 
             if matches:
                 st.session_state['preview_matches'] = matches
                 st.write(f"Found {len(matches)} matches:")
 
                 matches_df = pd.DataFrame(matches)
-                matches_df['label'] = matches_df.apply(
-                    lambda r: format_coin_type_label(r.to_dict()),
-                    axis=1
-                )
+                
+                # Add grade info to display if available
+                if 'grade_company' in matches_df.columns or 'grade_text' in matches_df.columns:
+                    matches_df['label'] = matches_df.apply(
+                        lambda r: format_coin_type_label(r.to_dict()) + 
+                        (f" [{r.get('grade_company', '')}/{r.get('grade_text', '')}]" 
+                         if r.get('grade_company') or r.get('grade_text') else ""),
+                        axis=1
+                    )
+                else:
+                    matches_df['label'] = matches_df.apply(
+                        lambda r: format_coin_type_label(r.to_dict()),
+                        axis=1
+                    )
+                    
                 st.dataframe(matches_df[['label']], width='stretch', hide_index=True)
             else:
                 st.info("No matches found with those filters.")
