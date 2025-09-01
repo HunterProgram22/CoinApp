@@ -266,6 +266,31 @@ CREATE TABLE IF NOT EXISTS type_set_assignment (
     PRIMARY KEY (set_id, specimen_id)
 );
 
+/* ---------- Type Set Enhancements ---------- */
+
+-- Store metadata/criteria for type sets
+CREATE TABLE IF NOT EXISTS type_set_metadata (
+    set_id INTEGER PRIMARY KEY REFERENCES type_set(id) ON DELETE CASCADE,
+    grade_company TEXT,                    -- Required grading company (PCGS, NGC, etc)
+    min_grade TEXT,                         -- Minimum grade (MS-63, etc)
+    max_grade TEXT,                         -- Maximum grade
+    min_numeric_grade REAL,                 -- Numeric minimum for easier comparison
+    max_numeric_grade REAL,                 -- Numeric maximum for easier comparison
+    require_slab INTEGER DEFAULT 0,         -- Must have slab cert
+    require_cac INTEGER DEFAULT 0,          -- Must have CAC approval
+    proof_only INTEGER DEFAULT 0,           -- Only proof coins
+    business_only INTEGER DEFAULT 0,        -- Only business strikes
+    include_varieties INTEGER DEFAULT 1,    -- Include varieties in the set
+    year_start INTEGER,                     -- Year range start
+    year_end INTEGER,                       -- Year range end
+    created_date TEXT,                      -- When the set was created
+    modified_date TEXT                      -- Last modified
+);
+
+-- Index for quick lookups
+CREATE INDEX IF NOT EXISTS idx_type_set_metadata_set_id ON type_set_metadata(set_id);
+
+
 /* ---------- Views ---------- */
 /* Estimated Sale Proceeds View */
 CREATE VIEW IF NOT EXISTS v_portfolio_sale_proceeds AS
@@ -577,4 +602,153 @@ WHERE l.valuation_method = 'MELT_ONLY'
     AND cm.metal = 'Ag'
     AND cm.asset_category = 'COIN'
 ORDER BY cm.series, ct.year, ct.mint_mark;
+
+/* ---------- Enhanced Type Set Views ---------- */
+
+-- View showing type set progress with ownership details
+CREATE VIEW IF NOT EXISTS v_type_set_progress_detailed AS
+SELECT 
+    tsm.set_id,
+    ts.name as set_name,
+    tsm.coin_type_id,
+    cm.series,
+    ct.year,
+    ct.mint_mark,
+    ct.variety,
+    ct.is_proof,
+    -- What we have
+    COALESCE(owned.qty_on_hand, 0) as qty_on_hand,
+    CASE WHEN owned.qty_on_hand > 0 THEN 1 ELSE 0 END as have_any,
+    owned.best_grade_company,
+    owned.best_grade_text,
+    owned.best_numeric_grade,
+    owned.has_slab_cert,
+    -- Set requirements
+    meta.grade_company as required_grade_company,
+    meta.min_grade as required_min_grade,
+    meta.max_grade as required_max_grade,
+    meta.require_slab as requires_slab,
+    -- Validation
+    CASE 
+        WHEN owned.qty_on_hand IS NULL OR owned.qty_on_hand = 0 THEN 0
+        WHEN meta.grade_company IS NOT NULL AND owned.best_grade_company != meta.grade_company THEN 0
+        WHEN meta.min_numeric_grade IS NOT NULL AND owned.best_numeric_grade < meta.min_numeric_grade THEN 0
+        WHEN meta.max_numeric_grade IS NOT NULL AND owned.best_numeric_grade > meta.max_numeric_grade THEN 0
+        WHEN meta.require_slab = 1 AND owned.has_slab_cert = 0 THEN 0
+        ELSE 1
+    END as meets_requirements
+FROM type_set_member tsm
+JOIN type_set ts ON ts.id = tsm.set_id
+JOIN coin_type ct ON ct.id = tsm.coin_type_id
+JOIN coin_master cm ON cm.id = ct.master_id
+LEFT JOIN type_set_metadata meta ON meta.set_id = tsm.set_id
+LEFT JOIN (
+    -- Subquery to get best example of each coin type we own
+    SELECT 
+        l.coin_type_id,
+        SUM(l.qty_remaining) as qty_on_hand,
+        MAX(l.purchase_grade_company) as best_grade_company,
+        MAX(COALESCE(l.estimated_grade_text, l.purchase_grade_text)) as best_grade_text,
+        MAX(COALESCE(l.estimated_numeric_grade, l.purchase_numeric_grade)) as best_numeric_grade,
+        MAX(CASE WHEN l.slab_cert IS NOT NULL AND l.slab_cert != '' THEN 1 ELSE 0 END) as has_slab_cert
+    FROM lot l
+    WHERE l.qty_remaining > 0
+    GROUP BY l.coin_type_id
+) owned ON owned.coin_type_id = tsm.coin_type_id;
+
+-- Summary view for type set completion
+CREATE VIEW IF NOT EXISTS v_type_set_summary AS
+SELECT 
+    ts.id as set_id,
+    ts.name,
+    ts.description,
+    COUNT(DISTINCT tsm.coin_type_id) as total_coins,
+    COUNT(DISTINCT CASE WHEN p.qty_on_hand > 0 THEN tsm.coin_type_id END) as coins_owned,
+    COUNT(DISTINCT CASE WHEN p.meets_requirements = 1 THEN tsm.coin_type_id END) as coins_meeting_requirements,
+    ROUND(
+        100.0 * COUNT(DISTINCT CASE WHEN p.qty_on_hand > 0 THEN tsm.coin_type_id END) / 
+        NULLIF(COUNT(DISTINCT tsm.coin_type_id), 0), 
+        1
+    ) as percent_owned,
+    ROUND(
+        100.0 * COUNT(DISTINCT CASE WHEN p.meets_requirements = 1 THEN tsm.coin_type_id END) / 
+        NULLIF(COUNT(DISTINCT tsm.coin_type_id), 0), 
+        1
+    ) as percent_complete,
+    meta.grade_company,
+    meta.min_grade,
+    meta.max_grade,
+    meta.require_slab
+FROM type_set ts
+LEFT JOIN type_set_member tsm ON tsm.set_id = ts.id
+LEFT JOIN v_type_set_progress_detailed p ON p.set_id = ts.id AND p.coin_type_id = tsm.coin_type_id
+LEFT JOIN type_set_metadata meta ON meta.set_id = ts.id
+GROUP BY ts.id, ts.name, ts.description, 
+         meta.grade_company, meta.min_grade, meta.max_grade, meta.require_slab;
+
+-- View to find coins that could be upgraded for a set
+CREATE VIEW IF NOT EXISTS v_type_set_upgrade_targets AS
+SELECT 
+    p.set_id,
+    p.set_name,
+    p.coin_type_id,
+    p.series,
+    p.year,
+    p.mint_mark,
+    p.variety,
+    p.qty_on_hand,
+    p.best_grade_text as current_grade,
+    p.best_numeric_grade as current_numeric,
+    p.required_min_grade as target_grade,
+    meta.min_numeric_grade as target_numeric,
+    CASE 
+        WHEN p.qty_on_hand = 0 THEN 'Need to acquire'
+        WHEN p.best_grade_company != meta.grade_company THEN 'Wrong grading company'
+        WHEN p.best_numeric_grade < meta.min_numeric_grade THEN 'Grade too low'
+        WHEN meta.require_slab = 1 AND p.has_slab_cert = 0 THEN 'Needs slabbing'
+        ELSE 'Meets requirements'
+    END as upgrade_needed
+FROM v_type_set_progress_detailed p
+JOIN type_set_metadata meta ON meta.set_id = p.set_id
+WHERE p.meets_requirements = 0
+ORDER BY p.set_id, p.series, p.year, p.mint_mark;
+
+-- View showing best candidates from inventory to fill type set needs
+CREATE VIEW IF NOT EXISTS v_type_set_best_candidates AS
+SELECT 
+    tsm.set_id,
+    ts.name as set_name,
+    tsm.coin_type_id,
+    cm.series,
+    ct.year,
+    ct.mint_mark,
+    ct.variety,
+    l.id as lot_id,
+    l.qty_remaining,
+    l.purchase_grade_company,
+    COALESCE(l.estimated_grade_text, l.purchase_grade_text) as grade_text,
+    COALESCE(l.estimated_numeric_grade, l.purchase_numeric_grade) as numeric_grade,
+    l.slab_cert,
+    l.unit_cost,
+    meta.grade_company as required_company,
+    meta.min_grade as required_min_grade,
+    -- Scoring to find best candidate
+    CASE 
+        WHEN meta.grade_company IS NOT NULL AND l.purchase_grade_company = meta.grade_company THEN 10
+        WHEN l.purchase_grade_company IN ('PCGS', 'NGC') THEN 5
+        ELSE 0
+    END +
+    CASE 
+        WHEN l.slab_cert IS NOT NULL AND l.slab_cert != '' THEN 5
+        ELSE 0
+    END +
+    COALESCE(l.estimated_numeric_grade, l.purchase_numeric_grade, 0) as match_score
+FROM type_set_member tsm
+JOIN type_set ts ON ts.id = tsm.set_id
+JOIN coin_type ct ON ct.id = tsm.coin_type_id
+JOIN coin_master cm ON cm.id = ct.master_id
+JOIN lot l ON l.coin_type_id = tsm.coin_type_id AND l.qty_remaining > 0
+LEFT JOIN type_set_metadata meta ON meta.set_id = tsm.set_id
+ORDER BY tsm.set_id, tsm.coin_type_id, match_score DESC;
+
 """
