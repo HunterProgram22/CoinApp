@@ -290,6 +290,65 @@ CREATE TABLE IF NOT EXISTS type_set_metadata (
 -- Index for quick lookups
 CREATE INDEX IF NOT EXISTS idx_type_set_metadata_set_id ON type_set_metadata(set_id);
 
+/* ---------- Proof Sets Tables ---------- */
+CREATE TABLE IF NOT EXISTS proof_set_master (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    country TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    set_type TEXT NOT NULL CHECK (set_type IN ('PROOF', 'SILVER_PROOF', 'MINT', 'PRESTIGE', 'PREMIER', 'DELUXE', 'OTHER')),
+    set_name TEXT NOT NULL,  -- e.g., "US Proof Set", "Canadian Silver Proof Set"
+    mint_mark TEXT,           -- Some sets are mint-specific
+    face_value REAL,          -- Total face value of coins in set
+    original_mint_price REAL, -- Original issue price from mint
+    coin_count INTEGER,       -- Number of coins in the set
+    includes_silver INTEGER DEFAULT 0,  -- 1 if contains silver coins
+    special_features TEXT,    -- e.g., "50 State Quarters", "America the Beautiful"
+    packaging_type TEXT,      -- e.g., "Plastic Case", "Wooden Box", "Leather Case"
+    notes TEXT,
+    UNIQUE(country, year, set_type, mint_mark)
+);
+
+CREATE TABLE IF NOT EXISTS proof_set_inventory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    set_master_id INTEGER NOT NULL REFERENCES proof_set_master(id) ON DELETE RESTRICT,
+    acquisition_date TEXT NOT NULL,  -- ISO date format
+    acquisition_price REAL NOT NULL,
+    party_id INTEGER REFERENCES party(id) ON DELETE SET NULL,
+    condition TEXT CHECK (condition IN ('SEALED', 'OPENED', 'DAMAGED', 'PARTIAL')),
+    has_coa INTEGER DEFAULT 1,       -- Certificate of Authenticity
+    has_original_box INTEGER DEFAULT 1,
+    storage_location_id INTEGER REFERENCES storage_location(id) ON DELETE SET NULL,
+    purchase_notes TEXT,
+    current_value REAL,              -- User's estimate of current value
+    value_as_of TEXT,                -- Date of value estimate
+    sold_date TEXT,                  -- If sold
+    sold_price REAL,                 -- Sale price
+    sold_to_party_id INTEGER REFERENCES party(id) ON DELETE SET NULL,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS proof_set_contents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    set_master_id INTEGER NOT NULL REFERENCES proof_set_master(id) ON DELETE CASCADE,
+    coin_type_id INTEGER REFERENCES coin_type(id) ON DELETE SET NULL,
+    coin_description TEXT,  -- For coins not in coin_type table
+    denomination TEXT,
+    quantity INTEGER DEFAULT 1,
+    is_silver INTEGER DEFAULT 0,
+    special_finish TEXT,    -- e.g., "Reverse Proof", "Enhanced", "Satin"
+    notes TEXT
+);
+
+-- Track market values over time
+CREATE TABLE IF NOT EXISTS proof_set_values (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    set_master_id INTEGER NOT NULL REFERENCES proof_set_master(id) ON DELETE CASCADE,
+    value_date TEXT NOT NULL,
+    source TEXT,            -- e.g., "eBay", "PCGS", "Red Book"
+    condition TEXT,         -- Market condition (Sealed, Opened, etc.)
+    market_value REAL NOT NULL,
+    notes TEXT
+);
 
 /* ---------- Views ---------- */
 /* Estimated Sale Proceeds View */
@@ -750,5 +809,108 @@ JOIN coin_master cm ON cm.id = ct.master_id
 JOIN lot l ON l.coin_type_id = tsm.coin_type_id AND l.qty_remaining > 0
 LEFT JOIN type_set_metadata meta ON meta.set_id = tsm.set_id
 ORDER BY tsm.set_id, tsm.coin_type_id, match_score DESC;
+
+
+/* ---------- Proof Set Views ---------- */
+
+-- Summary of proof set inventory
+CREATE VIEW IF NOT EXISTS v_proof_set_inventory AS
+SELECT 
+    psi.id,
+    psm.country,
+    psm.year,
+    psm.set_type,
+    psm.set_name,
+    psm.coin_count,
+    psm.includes_silver,
+    psi.acquisition_date,
+    psi.acquisition_price,
+    COALESCE(p.name, '') AS acquired_from,
+    psi.condition,
+    psi.has_coa,
+    psi.has_original_box,
+    COALESCE(sl.name, '') AS storage_location,
+    psi.current_value,
+    psi.value_as_of,
+    -- Calculate gain/loss if current value is set
+    CASE 
+        WHEN psi.current_value IS NOT NULL 
+        THEN ROUND(psi.current_value - psi.acquisition_price, 2)
+        ELSE NULL 
+    END AS unrealized_gain_loss,
+    CASE 
+        WHEN psi.current_value IS NOT NULL AND psi.acquisition_price > 0
+        THEN ROUND((psi.current_value - psi.acquisition_price) / psi.acquisition_price * 100, 2)
+        ELSE NULL 
+    END AS gain_loss_percent,
+    psi.sold_date,
+    psi.sold_price,
+    -- Calculate realized gain/loss if sold
+    CASE 
+        WHEN psi.sold_price IS NOT NULL 
+        THEN ROUND(psi.sold_price - psi.acquisition_price, 2)
+        ELSE NULL 
+    END AS realized_gain_loss
+FROM proof_set_inventory psi
+JOIN proof_set_master psm ON psm.id = psi.set_master_id
+LEFT JOIN party p ON p.id = psi.party_id
+LEFT JOIN storage_location sl ON sl.id = psi.storage_location_id;
+
+-- Summary by year and type
+CREATE VIEW IF NOT EXISTS v_proof_set_summary AS
+SELECT 
+    psm.country,
+    psm.year,
+    psm.set_type,
+    COUNT(psi.id) AS sets_owned,
+    SUM(CASE WHEN psi.sold_date IS NULL THEN 1 ELSE 0 END) AS sets_on_hand,
+    SUM(CASE WHEN psi.condition = 'SEALED' THEN 1 ELSE 0 END) AS sealed_sets,
+    ROUND(SUM(psi.acquisition_price), 2) AS total_cost,
+    ROUND(SUM(COALESCE(psi.current_value, psi.acquisition_price)), 2) AS total_current_value,
+    ROUND(AVG(psi.acquisition_price), 2) AS avg_cost,
+    ROUND(MIN(psi.acquisition_price), 2) AS min_cost,
+    ROUND(MAX(psi.acquisition_price), 2) AS max_cost
+FROM proof_set_master psm
+LEFT JOIN proof_set_inventory psi ON psi.set_master_id = psm.id
+WHERE psi.sold_date IS NULL
+GROUP BY psm.country, psm.year, psm.set_type;
+
+-- Latest market values
+CREATE VIEW IF NOT EXISTS v_proof_set_latest_values AS
+SELECT 
+    psm.id AS set_master_id,
+    psm.country,
+    psm.year,
+    psm.set_type,
+    psm.set_name,
+    psv.market_value,
+    psv.value_date,
+    psv.source,
+    psv.condition
+FROM proof_set_master psm
+LEFT JOIN proof_set_values psv ON psv.set_master_id = psm.id
+WHERE psv.value_date = (
+    SELECT MAX(value_date) 
+    FROM proof_set_values 
+    WHERE set_master_id = psm.id
+);
+
+-- Portfolio summary including proof sets
+CREATE VIEW IF NOT EXISTS v_proof_set_portfolio AS
+SELECT 
+    'Proof Sets' AS category,
+    COUNT(DISTINCT psi.id) AS items,
+    ROUND(SUM(psi.acquisition_price), 2) AS total_cost,
+    ROUND(SUM(COALESCE(psi.current_value, psi.acquisition_price)), 2) AS total_value,
+    ROUND(SUM(COALESCE(psi.current_value, psi.acquisition_price)) - SUM(psi.acquisition_price), 2) AS unrealized_gl
+FROM proof_set_inventory psi
+WHERE psi.sold_date IS NULL;
+
+/* Indexes for performance */
+CREATE INDEX IF NOT EXISTS idx_proof_set_master_country_year ON proof_set_master(country, year);
+CREATE INDEX IF NOT EXISTS idx_proof_set_inventory_master ON proof_set_inventory(set_master_id);
+CREATE INDEX IF NOT EXISTS idx_proof_set_inventory_sold ON proof_set_inventory(sold_date);
+CREATE INDEX IF NOT EXISTS idx_proof_set_contents_master ON proof_set_contents(set_master_id);
+CREATE INDEX IF NOT EXISTS idx_proof_set_values_master ON proof_set_values(set_master_id);
 
 """

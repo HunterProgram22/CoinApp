@@ -14,6 +14,7 @@ NAVIGATION_ITEMS = [
     ("pages/25_Coin_Catalog.py", "Coin Catalog", "📚"),
     ("pages/30_Transactions.py", "Transactions", "➕"),
     ("pages/32_Transaction_Editor.py", "Transaction Editor", "✏️"),
+    ("pages/33_Proof_Sets.py", "Proof Sets", "🎁"),
     ("pages/35_Type_Sets.py", "Type Sets", "📚"),
     ("pages/37_Storage_Report.py", "Storage Report", "📦"),
     ("pages/40_Specimens.py", "Specimens", "🏷️"),
