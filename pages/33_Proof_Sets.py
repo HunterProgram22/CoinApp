@@ -430,16 +430,21 @@ with tabs[2]:
         # Actions
         st.markdown("### Actions")
 
-        action = st.radio("Select Action", ["Update Value", "Record Sale", "Edit Details"])
+        action = st.radio("Select Action", ["Update Value", "Record Sale", "Edit Details"],
+                         key=f"action_radio_{inv_id}")
 
         if action == "Update Value":
             col1, col2 = st.columns(2)
             current_val = float(item['current_value']) if pd.notna(item['current_value']) and item[
                 'current_value'] is not None else 0.0
-            new_value = col1.text_input("New Current Value ($)", value=format_float(current_val))
-            new_value_date = col2.date_input("Value As Of", value=date.today())
+            new_value = col1.text_input("New Current Value ($)",
+                                       value=format_float(current_val),
+                                       key=f"new_value_{inv_id}")
+            new_value_date = col2.date_input("Value As Of",
+                                            value=date.today(),
+                                            key=f"value_date_{inv_id}")
 
-            if st.button("Update Value", type="primary"):
+            if st.button("Update Value", type="primary", key=f"update_value_btn_{inv_id}"):
                 new_value_val = safe_float(new_value)
                 if update_current_value(inv_id, new_value_val, new_value_date.isoformat()):
                     st.success("Value updated!")
@@ -447,9 +452,14 @@ with tabs[2]:
 
         elif action == "Record Sale":
             col1, col2, col3 = st.columns(3)
-            sale_date = col1.date_input("Sale Date", value=date.today())
-            sale_price = col2.text_input("Sale Price ($)", value="0.00")
-            sold_to = col3.text_input("Sold To")
+            sale_date = col1.date_input("Sale Date",
+                                       value=date.today(),
+                                       key=f"sale_date_{inv_id}")
+            sale_price = col2.text_input("Sale Price ($)",
+                                        value="0.00",
+                                        key=f"sale_price_{inv_id}")
+            sold_to = col3.text_input("Sold To",
+                                     key=f"sold_to_{inv_id}")
 
             sale_price_val = safe_float(sale_price)
             if sale_price_val > 0:
@@ -459,7 +469,7 @@ with tabs[2]:
                 color = "🟢" if realized_gl >= 0 else "🔴"
                 st.write(f"**Realized Gain/Loss:** {color} ${realized_gl:,.2f}")
 
-            if st.button("Record Sale", type="primary"):
+            if st.button("Record Sale", type="primary", key=f"record_sale_btn_{inv_id}"):
                 if sale_price_val <= 0:
                     st.error("Please enter a sale price.")
                 else:
