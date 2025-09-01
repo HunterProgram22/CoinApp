@@ -308,3 +308,143 @@ def format_coin_type_label(coin_type: Dict[str, Any], include_id: bool = False) 
     if include_id:
         label += f" (#{coin_type.get('coin_type_id', coin_type.get('id'))})"
     return label
+
+
+def search_coin_types_with_grades(
+        series: Optional[List[str]] = None,
+        year_range: Optional[Tuple[int, int]] = None,
+        proof_filter: str = "Any",
+        grade_company: Optional[str] = None,
+        min_grade: Optional[str] = None,
+        max_grade: Optional[str] = None,
+        require_slab_cert: bool = False,
+        only_on_hand: bool = False
+) -> List[Dict[str, Any]]:
+    """
+    Search for coin types with advanced filtering including grades and certification.
+
+    Args:
+        series: List of series to filter by
+        year_range: Tuple of (start_year, end_year)
+        proof_filter: "Any", "Proofs only", or "Non-proof only"
+        grade_company: Specific grading company (PCGS, NGC, etc.)
+        min_grade: Minimum grade text (e.g., "MS-63")
+        max_grade: Maximum grade text (e.g., "MS-65")
+        require_slab_cert: Whether to require a slab certificate number
+        only_on_hand: Only include coins currently in inventory
+
+    Returns:
+        List of matching coin types with optional grade information
+    """
+    conditions = []
+    params = []
+
+    # If filtering by grades or on-hand, we need to join with lots
+    need_lot_join = (grade_company or min_grade or max_grade or
+                     require_slab_cert or only_on_hand)
+
+    if need_lot_join:
+        # Query that includes lot information for grade filtering
+        base_query = """
+            SELECT DISTINCT ct.id, cm.series, ct.year, ct.mint_mark, 
+                   COALESCE(ct.variety,'') AS variety, ct.is_proof,
+                   l.purchase_grade_company AS grade_company,
+                   COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade_text,
+                   l.slab_cert
+            FROM coin_type ct
+            JOIN coin_master cm ON cm.id = ct.master_id
+            LEFT JOIN lot l ON l.coin_type_id = ct.id
+        """
+
+        # For on-hand filter
+        if only_on_hand:
+            conditions.append("l.qty_remaining > 0")
+
+        # Grade company filter
+        if grade_company:
+            conditions.append("UPPER(l.purchase_grade_company) = UPPER(?)")
+            params.append(grade_company)
+
+        # Slab cert requirement
+        if require_slab_cert:
+            conditions.append("l.slab_cert IS NOT NULL AND l.slab_cert != ''")
+
+        # Min/Max grade filters (would need numeric grade conversion logic)
+        if min_grade or max_grade:
+            # For text-based grade comparison, we'd need to convert to numeric
+            # This is a simplified version - you might want to add proper grade ranking
+            if min_grade:
+                conditions.append(
+                    "COALESCE(l.estimated_grade_text, l.purchase_grade_text) >= ?"
+                )
+                params.append(min_grade)
+            if max_grade:
+                conditions.append(
+                    "COALESCE(l.estimated_grade_text, l.purchase_grade_text) <= ?"
+                )
+                params.append(max_grade)
+    else:
+        # Simple query without lot information
+        base_query = """
+            SELECT ct.id, cm.series, ct.year, ct.mint_mark, 
+                   COALESCE(ct.variety,'') AS variety, ct.is_proof
+            FROM coin_type ct
+            JOIN coin_master cm ON cm.id = ct.master_id
+        """
+
+    # Common filters that don't require lot join
+    if series:
+        placeholders = ",".join("?" for _ in series)
+        conditions.append(f"cm.series IN ({placeholders})")
+        params.extend(series)
+
+    if year_range:
+        start, end = year_range
+        conditions.append("ct.year BETWEEN ? AND ?")
+        params.extend([start, end])
+
+    if proof_filter == "Proofs only":
+        conditions.append("ct.is_proof = 1")
+    elif proof_filter == "Non-proof only":
+        conditions.append("(ct.is_proof IS NULL OR ct.is_proof = 0)")
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    query = f"""
+        {base_query}
+        {where_clause}
+        ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
+    """
+
+    return execute_query_all(query, tuple(params))
+
+
+def get_grade_numeric_value(grade_text: str) -> float:
+    """
+    Convert grade text to numeric value for comparison.
+    This is a helper function for grade range filtering.
+
+    Args:
+        grade_text: Grade text like "MS-63", "VF-20", etc.
+
+    Returns:
+        Numeric value for comparison, or 0 if invalid
+    """
+    if not grade_text:
+        return 0.0
+
+    # Map of grade prefixes to base values
+    grade_map = {
+        'P': 1, 'FR': 2, 'AG': 3, 'G': 4, 'VG': 8,
+        'F': 12, 'VF': 20, 'XF': 40, 'AU': 50,
+        'MS': 60, 'PF': 60, 'PR': 60
+    }
+
+    # Extract the numeric part
+    import re
+    match = re.match(r'([A-Z]+)-?(\d+)', grade_text.upper())
+    if match:
+        prefix, number = match.groups()
+        return float(number)
+
+    return 0.0
