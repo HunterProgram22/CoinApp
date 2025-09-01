@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS coin_master (
 );
 CREATE INDEX IF NOT EXISTS idx_coin_master_series ON coin_master(series);
 CREATE INDEX IF NOT EXISTS idx_coin_master_numista_url ON coin_master(numista_url);
+CREATE INDEX IF NOT EXISTS idx_cm_series_country ON coin_master(series, country);
+
 
 CREATE TABLE IF NOT EXISTS coin_type (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,6 +44,8 @@ CREATE TABLE IF NOT EXISTS coin_type (
 );
 CREATE INDEX IF NOT EXISTS idx_coin_type_master_id ON coin_type(master_id);
 CREATE INDEX IF NOT EXISTS idx_coin_type_year ON coin_type(year);
+CREATE INDEX IF NOT EXISTS idx_ct_year_mint ON coin_type(year, mint_mark); 
+
 
 /* ---------- Parties & storage ---------- */
 CREATE TABLE IF NOT EXISTS party (
@@ -123,6 +127,8 @@ CREATE INDEX IF NOT EXISTS idx_lot_coin_type_id ON lot(coin_type_id);
 CREATE INDEX IF NOT EXISTS idx_lot_storage_location_id ON lot(storage_location_id);
 CREATE INDEX IF NOT EXISTS idx_lot_status ON lot(status);
 CREATE INDEX IF NOT EXISTS idx_lot_acquired_date ON lot(acquired_date);
+CREATE INDEX IF NOT EXISTS idx_lot_series ON lot(coin_type_id, qty_remaining);
+
 
 /* Relief mapping */
 CREATE TABLE IF NOT EXISTS lot_relief (

@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from db_operations import execute_query_all, execute_query_single, execute_insert, execute_update, \
     execute_delete
 from db import get_conn
+from input_helpers import safe_float, safe_int, format_float
 
 st.header("🎁 Proof Sets & Mint Sets")
 
@@ -325,7 +326,7 @@ with tabs[1]:
 
         col1, col2 = st.columns(2)
         acq_date = col1.date_input("Acquisition Date", value=date.today())
-        acq_price = col2.number_input("Acquisition Price ($)", min_value=0.0, step=1.0, value=0.0)
+        acq_price = col2.text_input("Acquisition Price ($)", value="0.00")
 
         col1, col2 = st.columns(2)
         party_name = col1.text_input("Acquired From (Dealer/Person)")
@@ -345,7 +346,7 @@ with tabs[1]:
         # Current value (optional)
         st.markdown("### Current Market Value (Optional)")
         col1, col2 = st.columns(2)
-        current_value = col1.number_input("Current Value ($)", min_value=0.0, step=1.0, value=0.0)
+        current_value = col1.text_input("Current Value ($)", value="0.00")
         value_as_of = col2.date_input("Value As Of", value=date.today())
 
         # Notes
@@ -354,7 +355,10 @@ with tabs[1]:
 
         # Save button
         if st.button("Add to Inventory", type="primary"):
-            if acq_price <= 0:
+            acq_price_val = safe_float(acq_price)
+            current_value_val = safe_float(current_value)
+
+            if acq_price_val <= 0:
                 st.error("Please enter an acquisition price.")
             else:
                 storage_id = storage_options.get(
@@ -363,15 +367,15 @@ with tabs[1]:
                 inv_id = add_inventory_item(
                     set_master_id=set_master_id,
                     acquisition_date=acq_date.isoformat(),
-                    acquisition_price=acq_price,
+                    acquisition_price=acq_price_val,
                     party_name=party_name,
                     condition=condition,
                     has_coa=has_coa,
                     has_original_box=has_box,
                     storage_location_id=storage_id,
                     purchase_notes=purchase_notes,
-                    current_value=current_value if current_value > 0 else None,
-                    value_as_of=value_as_of.isoformat() if current_value > 0 else None,
+                    current_value=current_value_val if current_value_val > 0 else None,
+                    value_as_of=value_as_of.isoformat() if current_value_val > 0 else None,
                     notes=general_notes
                 )
 
@@ -432,34 +436,34 @@ with tabs[2]:
             col1, col2 = st.columns(2)
             current_val = float(item['current_value']) if pd.notna(item['current_value']) and item[
                 'current_value'] is not None else 0.0
-            new_value = col1.number_input("New Current Value ($)",
-                                          min_value=0.0, step=1.0,
-                                          value=current_val)
+            new_value = col1.text_input("New Current Value ($)", value=format_float(current_val))
             new_value_date = col2.date_input("Value As Of", value=date.today())
 
             if st.button("Update Value", type="primary"):
-                if update_current_value(inv_id, new_value, new_value_date.isoformat()):
+                new_value_val = safe_float(new_value)
+                if update_current_value(inv_id, new_value_val, new_value_date.isoformat()):
                     st.success("Value updated!")
                     st.rerun()
 
         elif action == "Record Sale":
             col1, col2, col3 = st.columns(3)
             sale_date = col1.date_input("Sale Date", value=date.today())
-            sale_price = col2.number_input("Sale Price ($)", min_value=0.0, step=1.0, value=0.0)
+            sale_price = col2.text_input("Sale Price ($)", value="0.00")
             sold_to = col3.text_input("Sold To")
 
-            if sale_price > 0:
+            sale_price_val = safe_float(sale_price)
+            if sale_price_val > 0:
                 acq_price = float(item['acquisition_price']) if pd.notna(
                     item['acquisition_price']) else 0.0
-                realized_gl = sale_price - acq_price
+                realized_gl = sale_price_val - acq_price
                 color = "🟢" if realized_gl >= 0 else "🔴"
                 st.write(f"**Realized Gain/Loss:** {color} ${realized_gl:,.2f}")
 
             if st.button("Record Sale", type="primary"):
-                if sale_price <= 0:
+                if sale_price_val <= 0:
                     st.error("Please enter a sale price.")
                 else:
-                    if record_sale(inv_id, sale_date.isoformat(), sale_price, sold_to):
+                    if record_sale(inv_id, sale_date.isoformat(), sale_price_val, sold_to):
                         st.success("Sale recorded!")
                         st.rerun()
 
@@ -498,11 +502,10 @@ with tabs[3]:
         col1, col2, col3 = st.columns(3)
         mint_mark = col1.text_input("Mint Mark (if applicable)")
         coin_count = col2.number_input("Number of Coins", min_value=0, value=0)
-        face_value = col3.number_input("Face Value ($)", min_value=0.0, step=0.01, value=0.0)
+        face_value = col3.text_input("Face Value ($)", value="0.00")
 
         col1, col2, col3 = st.columns(3)
-        original_price = col1.number_input("Original Mint Price ($)", min_value=0.0, step=1.0,
-                                           value=0.0)
+        original_price = col1.text_input("Original Mint Price ($)", value="0.00")
         includes_silver = col2.checkbox("Contains Silver Coins")
         packaging = col3.text_input("Packaging Type", placeholder="e.g., Plastic Case, Wooden Box")
 
@@ -514,14 +517,17 @@ with tabs[3]:
             if not all([country, year, set_type, set_name]):
                 st.error("Please fill in all required fields (marked with *)")
             else:
+                face_value_val = safe_float(face_value)
+                original_price_val = safe_float(original_price)
+
                 master_id = add_proof_set_master(
                     country=country,
                     year=year,
                     set_type=set_type,
                     set_name=set_name,
                     mint_mark=mint_mark if mint_mark else None,
-                    face_value=face_value if face_value > 0 else None,
-                    original_mint_price=original_price if original_price > 0 else None,
+                    face_value=face_value_val if face_value_val > 0 else None,
+                    original_mint_price=original_price_val if original_price_val > 0 else None,
                     coin_count=coin_count if coin_count > 0 else None,
                     includes_silver=includes_silver,
                     special_features=special_features if special_features else None,
@@ -568,7 +574,7 @@ with tabs[4]:
 
         col1, col2, col3 = st.columns(3)
         value_date = col1.date_input("Date", value=date.today())
-        market_value = col2.number_input("Market Value ($)", min_value=0.0, step=1.0, value=0.0)
+        market_value = col2.text_input("Market Value ($)", value="0.00")
         source = col3.text_input("Source", placeholder="e.g., eBay, PCGS, Red Book")
 
         col1, col2 = st.columns(2)
@@ -576,7 +582,8 @@ with tabs[4]:
         value_notes = col2.text_input("Notes")
 
         if st.button("Add Market Value", type="primary"):
-            if market_value <= 0:
+            market_value_val = safe_float(market_value)
+            if market_value_val <= 0:
                 st.error("Please enter a market value.")
             elif not source:
                 st.error("Please enter a source.")
@@ -586,7 +593,7 @@ with tabs[4]:
                     (set_master_id, value_date, source, condition, market_value, notes)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (master_id, value_date.isoformat(), source, condition,
-                      market_value, value_notes if value_notes else None))
+                      market_value_val, value_notes if value_notes else None))
 
                 st.success("Market value added!")
                 st.rerun()
