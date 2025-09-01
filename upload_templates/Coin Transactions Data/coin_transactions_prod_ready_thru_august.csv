@@ -191,7 +191,7 @@ tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,seri
 7/27/2025,BUY,eBay - Vintage Coins mart,USD,3.8,0.6,0,,USA,Quarter Dollar,State Quarter Series (1999-2009),2001,S,,1,4.26,PCGS,PR69,69,,,AUTO,,Quarter Slab Box,,50449409
 7/27/2025,BUY,eBay - Vintage Coins mart,USD,3.8,0.6,0,,USA,Dime,Roosevelt (1965-Present),1991,S,,1,4.25,PCGS,PR69,69,,,AUTO,3,Dime Slab Box,,52637275
 7/27/2025,BUY,eBay - goldandsilverguy,USD,1.5,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1850,-,,1,17.52,,,,F15,15,AUTO,60.33,Cents Box,,
-7/27/2025,BUY,eBay - goldandsilverguy,USD,1.5,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1851,-,,1,17.52,,,,F12,12,AUTO,40.67,Cents Box,,
+7/27/2025,BUY,eBay - goldandsilverguy,USD,1.5,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1851,-,Normal Date,1,17.52,,,,F12,12,AUTO,40.67,Cents Box,,
 7/27/2025,BUY,eBay - goldandsilverguy,USD,1.49,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1854,-,,1,17.51,,,,VG8,8,AUTO,38.67,Cents Box,,
 7/31/2025,BUY,Monument Metals,USD,0,0,0,,USA,Half Dollar,Franklin (1948-1963),1950,-,,2,13.11,,,,,,MELT_ONLY,,Franklin Junk Tube,,
 7/31/2025,BUY,Monument Metals,USD,0,0,0,,USA,Half Dollar,Franklin (1948-1963),1952,-,,1,13.11,,,,,,MELT_ONLY,,Franklin Junk Tube,,
@@ -203,7 +203,7 @@ tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,seri
 7/31/2025,BUY,Monument Metals,USD,0,0,0,,USA,Half Dollar,Franklin (1948-1963),1962,D,,2,13.11,,,,,,MELT_ONLY,,Franklin Junk Tube,,
 7/31/2025,BUY,Monument Metals,USD,0,0,0,,USA,Half Dollar,Franklin (1948-1963),1963,-,,2,13.11,,,,,,MELT_ONLY,,Franklin Junk Tube,,
 7/31/2025,BUY,Monument Metals,USD,0,0,0,,USA,Half Dollar,Franklin (1948-1963),1963,D,,4,13.11,,,,,,MELT_ONLY,,Franklin Junk Tube,,
-8/2/2025,BUY,PCB Hobby,USD,0,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1846,-,,1,50,,,,VF30,30,AUTO,32,Cents Box,,
+8/2/2025,BUY,PCB Hobby,USD,0,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1846,-,Small Date,1,50,,,,VF30,30,AUTO,32,Cents Box,,
 8/6/2025,BUY,eBay - FurmanCoins,USD,2,0,0,,USA,1 Dollar,"Susan B. Anthony (1979-1981, 1999)",1981,P,,1,3,,,,,,AUTO,5.87,Small Dollars Box,,
 8/6/2025,BUY,eBay - FurmanCoins,USD,2,0,0,,USA,1 Dollar,"Susan B. Anthony (1979-1981, 1999)",1981,S,,1,3,,,,,,AUTO,9.53,Small Dollars Box,,
 8/6/2025,BUY,eBay - FurmanCoins,USD,2,0,0,,USA,1 Dollar,"Susan B. Anthony (1979-1981, 1999)",1981,D,,1,3,,,,,,AUTO,7.7,Small Dollars Box,,
@@ -214,7 +214,7 @@ tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,seri
 8/8/2025,BUY,eBay - catskillcoinauctions,USD,0.5,0,0,,USA,1 Dollar,"Susan B. Anthony (1979-1981, 1999)",1980,P,,1,5.56,,,,,,AUTO,1.37,Small Dollars Box,,
 8/8/2025,BUY,eBay - catskillcoinauctions,USD,0.5,0,0,,USA,1 Dollar,"Susan B. Anthony (1979-1981, 1999)",1999,D,,1,5.56,,,,,,AUTO,1.03,Small Dollars Box,,
 8/8/2025,BUY,eBay - catskillcoinauctions,USD,0.5,0,0,,USA,1 Dollar,"Susan B. Anthony (1979-1981, 1999)",1980,S,,1,5.56,,,,MS68,68,AUTO,11,Small Dollars Box,Y,
-8/8/2025,BUY,eBay - catskillcoinauctions,USD,0.5,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1855,-,,1,5.56,,,,VF30,30,AUTO,12.1,Cents Box,,
+8/8/2025,BUY,eBay - catskillcoinauctions,USD,0.5,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1855,-,Upright 5's,1,5.56,,,,VF30,30,AUTO,12.1,Cents Box,,
 8/8/2025,BUY,eBay - catskillcoinauctions,USD,0.5,0,0,,USA,One Cent,Wheat (1909-1958),1909,-,,1,5.55,,,,F10,10,AUTO,1.5,Cents Box,,
 8/8/2025,BUY,eBay - catskillcoinauctions,USD,0.5,0,0,,USA,One Cent,Wheat (1909-1958),1933,-,,1,5.55,,,,G6,6,AUTO,59,Cents Box,,
 8/8/2025,BUY,eBay - catskillcoinauctions,USD,0.5,0,0,,USA,Nickel,Buffalo Flat Ground (1913-1938),1935,-,,1,5.55,,,,,,AUTO,3.13,Nickel Box,,
@@ -237,7 +237,7 @@ tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,seri
 8/12/2025,BUY,Fabulous Finds,USD,0,0,0,,USA,1 Dollar,Morgan (1878-1921),1896,-,,1,50,,,,,,AUTO,91.67,Morgan Box,,
 8/12/2025,BUY,Fabulous Finds,USD,0,0,0,,USA,Half Dollar,Walking Liberty (1916-1947),1942,-,,1,35,,,,,,AUTO,1,Halves Box,,
 8/17/2025,BUY,Columbus Coin Show,USD,0,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1845,-,,1,25,,,,VF20,20,AUTO,44.17,Cents Box,,
-8/17/2025,BUY,Columbus Coin Show,USD,0,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1856,-,,1,45,,,,VF30,30,AUTO,85,Cents Box,,
+8/17/2025,BUY,Columbus Coin Show,USD,0,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1856,-,Upright 5's,1,45,,,,VF30,30,AUTO,85,Cents Box,,
 8/17/2025,BUY,Columbus Coin Show,USD,0,0,0,,USA,Large One Cent,Liberty Head Braided Hair (1839-1857),1849,-,,1,45,,,,EF40,40,AUTO,81.67,Cents Box,,
 8/17/2025,BUY,Columbus Coin Show,USD,0,0,0,,Armenia,500 Dram,Noah's Ark (2011-Present),2023,-,,2,40,,,,,,MELT_ONLY,,Bullion Box,,
 8/17/2025,BUY,Columbus Coin Show,USD,0,0,0,,USA,1 Dollar,Morgan (1878-1921),1884,O,,1,75,NGC,MS64,64,,,AUTO,126.67,Dollar Slab Box,,6035766-040
