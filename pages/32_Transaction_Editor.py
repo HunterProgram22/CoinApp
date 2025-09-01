@@ -175,17 +175,30 @@ def update_lot_details(lot_id: int, **kwargs) -> bool:
 
 
 def update_tx_line(line_id: int, unit_price: float, grade_company: str = None,
-                  grade_text: str = None, numeric_grade: float = None,
-                  slab_cert: str = None, condition_notes: str = None) -> bool:
+                   grade_text: str = None, numeric_grade: float = None,
+                   slab_cert: str = None, condition_notes: str = None) -> bool:
     """Update transaction line details."""
     try:
+        # Update tx_line
         execute_update("""
             UPDATE tx_line 
             SET unit_price=?, grade_company=?, grade_text=?, numeric_grade=?, 
                 slab_cert=?, condition_notes=?
             WHERE id=?
-        """, (unit_price, grade_company, grade_text, numeric_grade, 
+        """, (unit_price, grade_company, grade_text, numeric_grade,
               slab_cert, condition_notes, line_id))
+
+        # Also update the corresponding lot if this is from a BUY transaction
+        # The lot.acquisition_line_id points to the tx_line
+        execute_update("""
+            UPDATE lot
+            SET slab_cert=?, 
+                purchase_grade_company=?, 
+                purchase_grade_text=?, 
+                purchase_numeric_grade=?
+            WHERE acquisition_line_id=?
+        """, (slab_cert, grade_company, grade_text, numeric_grade, line_id))
+
         return True
     except Exception as e:
         st.error(f"Failed to update transaction line: {e}")
