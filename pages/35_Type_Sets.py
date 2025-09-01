@@ -307,11 +307,24 @@ with tabs[2]:
                 st.success("Updated!")
                 st.rerun()
             
+            # Use session state for delete confirmation
             if col2.button("Delete Set", type="secondary"):
-                confirm = st.checkbox("I understand this will permanently delete this set")
-                if confirm and st.button("Confirm Delete"):
+                st.session_state['confirm_delete'] = work_set_id
+            
+            # Show confirmation outside of button click
+            if st.session_state.get('confirm_delete') == work_set_id:
+                st.warning("⚠️ Are you sure you want to delete this set? This cannot be undone.")
+                col_confirm, col_cancel = st.columns(2)
+                
+                if col_confirm.button("Yes, Delete", type="primary", key="confirm_del"):
                     delete_type_set(work_set_id)
                     st.success("Set deleted!")
+                    if 'confirm_delete' in st.session_state:
+                        del st.session_state['confirm_delete']
+                    st.rerun()
+                
+                if col_cancel.button("Cancel", key="cancel_del"):
+                    del st.session_state['confirm_delete']
                     st.rerun()
         
         # Current members
