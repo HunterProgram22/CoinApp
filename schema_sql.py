@@ -485,27 +485,38 @@ SELECT
 
     WHEN 'MANUAL'     THEN l.manual_est_unit_value
 
-    ELSE -- AUTO mode: choose the highest value using MAX with UNION
-      (SELECT MAX(val) FROM (
-        SELECT COALESCE((SELECT g.price_usd
-                         FROM v_latest_guide g
-                        WHERE g.coin_type_id = l.coin_type_id
-                          AND g.grade_text = COALESCE(l.estimated_grade_text, l.purchase_grade_text)), 0) AS val
-        UNION ALL
-        SELECT COALESCE((cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
-                       * (SELECT price_per_oz_usd FROM v_latest_spot s WHERE s.metal = cm.metal), 0) AS val
-        UNION ALL
-        SELECT COALESCE(l.manual_est_unit_value, 0) AS val
-        UNION ALL
-        SELECT COALESCE(l.unit_cost, 0) AS val
-      ))
+    ELSE -- AUTO mode: hierarchical selection based on available data
+      COALESCE(
+        -- First priority: Guide price if available
+        (SELECT g.price_usd
+         FROM v_latest_guide g
+         WHERE g.coin_type_id = l.coin_type_id
+           AND g.grade_text = COALESCE(l.estimated_grade_text, l.purchase_grade_text)),
+        
+        -- Second priority: If has melt value, use MAX(melt, manual)
+        CASE 
+          WHEN (cm.weight_grams * COALESCE(cm.fineness,0)) > 0 
+               AND cm.metal IN ('Ag','Au','Pt','Pd')
+          THEN (SELECT MAX(val) FROM (
+            SELECT (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
+              * COALESCE((SELECT price_per_oz_usd FROM v_latest_spot s WHERE s.metal = cm.metal), 0) AS val
+            UNION ALL
+            SELECT COALESCE(l.manual_est_unit_value, 0) AS val
+          ))
+          -- Third priority: No melt value, use manual if available
+          ELSE l.manual_est_unit_value
+        END,
+        
+        -- Last resort: unit cost
+        l.unit_cost,
+        0
+      )
   END AS chosen_unit_value
 
 FROM lot l
 JOIN coin_type  ct ON ct.id = l.coin_type_id
 JOIN coin_master cm ON cm.id = ct.master_id
 WHERE l.qty_remaining > 0;
-
 
 /* Portfolio summary */
 CREATE VIEW IF NOT EXISTS v_portfolio_value_summary AS
