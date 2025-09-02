@@ -1,2 +1,0 @@
-tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,series,year,mint_mark,variety,quantity,unit_price,purchase_grade_company,purchase_grade_text,purchase_numeric_grade,estimated_grade_text,estimated_numeric_grade,valuation_method,manual_est_unit_value,storage_location,slab_cert,is_proof
-9/1/2025,Buy,Kat's Grandparents,USD,0,0,0,,USA,1 Dollar,Morgan (1878-1921),1921,O,TEST,1,0,NGC,MS63,63,,,AUTO,47.33,Morgan Box,1234567,Y
