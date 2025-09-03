@@ -1,5 +1,10 @@
 # pages/50_Data_Import.py
 import streamlit as st
+from auth_utils import require_auth
+
+# Check authentication first
+require_auth()
+import streamlit as st
 import pandas as pd
 from import_helpers import (
     TransactionImporter,

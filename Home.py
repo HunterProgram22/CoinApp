@@ -3,7 +3,7 @@ import streamlit as st
 import streamlit_authenticator as stauth
 from db import init_db
 from constants import NAVIGATION_ITEMS, APP_TITLE, APP_SUBTITLE
-from auth_config import get_auth_config
+from auth_utils import get_auth_config
 
 st.set_page_config(page_title=APP_TITLE, page_icon="🪙", layout="wide")
 

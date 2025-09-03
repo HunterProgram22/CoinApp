@@ -1,4 +1,9 @@
 # pages/05_Dashboard.py
+import streamlit as st
+from auth_utils import require_auth
+
+# Check authentication first
+require_auth()
 import pandas as pd
 import streamlit as st
 from db_operations import execute_query_all, execute_query_single

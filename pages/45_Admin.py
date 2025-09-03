@@ -1,4 +1,9 @@
 # pages/45_Admin.py
+import streamlit as st
+from auth_utils import require_auth
+
+# Check authentication first
+require_auth()
 import os
 from datetime import datetime, UTC
 import pandas as pd

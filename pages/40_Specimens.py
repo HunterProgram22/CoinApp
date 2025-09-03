@@ -1,5 +1,10 @@
 # pages/40_Specimens.py
 import streamlit as st
+from auth_utils import require_auth
+
+# Check authentication first
+require_auth()
+import streamlit as st
 import pandas as pd
 from typing import List, Tuple, Optional, Dict, Any
 from db_operations import execute_query_all, execute_query_single, execute_insert, execute_update, \
