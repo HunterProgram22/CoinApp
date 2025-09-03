@@ -123,3 +123,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Streamlit secrets - NEVER commit these!
+.streamlit/secrets.toml
+.streamlit/secrets*.toml
+
+# Also ignore any local test files with passwords
+generate_password.py
+*password*.py
+
