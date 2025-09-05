@@ -81,34 +81,34 @@ def get_inventory_by_series_detail(series_name):
     specimen_check = execute_query_single(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='specimen'"
     )
-    
+
     flip_cte = ""
     flip_join = ""
-    flip_select = "'' AS \"Flip IDs\","
-    
+    flip_select = ""
+
     if specimen_check:
-        # Check if specimen_code column exists
+        # Check if code column exists (NOT specimen_code)
         code_check = execute_query_single(
-            "SELECT 1 FROM pragma_table_info('specimen') WHERE name='specimen_code'"
+            "SELECT 1 FROM pragma_table_info('specimen') WHERE name='code'"
         )
-        
+
         if code_check:
             # Check if sold_line_id column exists
             sold_check = execute_query_single(
                 "SELECT 1 FROM pragma_table_info('specimen') WHERE name='sold_line_id'"
             )
-            
+
             where_unsold = " WHERE sold_line_id IS NULL" if sold_check else ""
             flip_cte = f"""
                 WITH flip AS (
-                    SELECT lot_id, GROUP_CONCAT(specimen_code, ', ') AS flip_ids
+                    SELECT lot_id, GROUP_CONCAT(code, ', ') AS flip_ids
                     FROM specimen{where_unsold}
                     GROUP BY lot_id
                 )
             """
             flip_join = "LEFT JOIN flip f ON f.lot_id = l.id"
             flip_select = "COALESCE(f.flip_ids, '') AS \"Flip IDs\","
-    
+
     query = f"""
         {flip_cte}
         SELECT
@@ -125,7 +125,7 @@ def get_inventory_by_series_detail(series_name):
             ROUND(v.chosen_unit_value, 2) AS "Chosen Unit Value",
             ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value, 0), 2) AS "Lot Est. Value",
             COALESCE(l.estimated_grade_text, l.purchase_grade_text, '') AS Grade,
-            {flip_select}
+            {flip_select if flip_select else "'' AS \"Flip IDs\","}
             COALESCE(l.slab_cert, '') AS "Cert #"
         FROM lot l
         JOIN tx_line tl ON tl.id = l.acquisition_line_id
@@ -138,7 +138,7 @@ def get_inventory_by_series_detail(series_name):
         WHERE l.qty_remaining > 0 AND cm.series = ?
         ORDER BY ct.year, ct.mint_mark, ct.variety, l.id
     """
-    
+
     return execute_query_all(query, (series_name,))
 
 
@@ -146,17 +146,50 @@ def get_inventory_by_flags(want_proofs=False, want_slabbed=False):
     """Get inventory filtered by flags (proofs, slabbed)."""
     where_conditions = ["l.qty_remaining > 0"]
     params = []
-    
+
     if want_proofs:
         where_conditions.append("ct.is_proof = 1")
-    
+
     if want_slabbed:
         where_conditions.append(
             "(COALESCE(l.slab_cert, '') <> '' OR "
             "UPPER(COALESCE(l.purchase_grade_company, '')) IN ('PCGS','NGC','ANACS','ICG'))"
         )
-    
+
+    # Check for specimen table and columns
+    specimen_check = execute_query_single(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='specimen'"
+    )
+
+    flip_cte = ""
+    flip_join = ""
+    flip_select = ""
+
+    if specimen_check:
+        # Check if code column exists (NOT specimen_code)
+        code_check = execute_query_single(
+            "SELECT 1 FROM pragma_table_info('specimen') WHERE name='code'"
+        )
+
+        if code_check:
+            # Check if sold_line_id column exists
+            sold_check = execute_query_single(
+                "SELECT 1 FROM pragma_table_info('specimen') WHERE name='sold_line_id'"
+            )
+
+            where_unsold = " WHERE sold_line_id IS NULL" if sold_check else ""
+            flip_cte = f"""
+                WITH flip AS (
+                    SELECT lot_id, GROUP_CONCAT(code, ', ') AS flip_ids
+                    FROM specimen{where_unsold}
+                    GROUP BY lot_id
+                )
+            """
+            flip_join = "LEFT JOIN flip f ON f.lot_id = l.id"
+            flip_select = "COALESCE(f.flip_ids, '') AS \"Flip IDs\","
+
     query = f"""
+        {flip_cte}
         SELECT
             cm.series AS Series,
             ct.year AS Year,
@@ -171,15 +204,18 @@ def get_inventory_by_flags(want_proofs=False, want_slabbed=False):
             CASE WHEN ct.is_proof = 1 THEN 'Yes' ELSE 'No' END AS Proof,
             CASE WHEN (COALESCE(l.slab_cert, '') <> '' OR 
                       UPPER(COALESCE(l.purchase_grade_company, '')) IN ('PCGS','NGC','ANACS','ICG'))
-                 THEN 'Yes' ELSE 'No' END AS Slabbed
+                 THEN 'Yes' ELSE 'No' END AS Slabbed,
+            {flip_select}
+            COALESCE(l.estimated_grade_text, l.purchase_grade_text, '') AS Grade
         FROM lot l
         JOIN coin_type ct ON ct.id = l.coin_type_id
         JOIN coin_master cm ON cm.id = ct.master_id
         LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+        {flip_join}
         WHERE {" AND ".join(where_conditions)}
         ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, l.id
     """
-    
+
     return execute_query_all(query, params)
 
 
