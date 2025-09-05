@@ -86,9 +86,28 @@ def get_series_list():
 # ---------------------------
 # UI Tabs
 # ---------------------------
-tab_type, tab_series, tab_series_detail, tab_flags = st.tabs(
-    ["By Type", "By Series (summary)", "Filter by Series (detail)", "Filter by Flags"]
+tab_series, tab_type, tab_series_detail, tab_flags = st.tabs(
+    ["By Series (summary)", "By Type", "Filter by Series (detail)", "Filter by Flags"]
 )
+
+# ===== By Series (summary) =====
+with tab_series:
+    rows = get_inventory_by_series()
+    df = pd.DataFrame(rows)
+
+    if df.empty:
+        st.info("No inventory yet.")
+    else:
+        df = df.rename(columns={
+            "series": "Series",
+            "coins": "Coins",
+            "est_value_usd": "Est. Value (USD)"
+        })
+
+        display_df, csv_df = format_money_columns(df, ["Est. Value (USD)"])
+        st.dataframe(display_df, width='stretch', hide_index=True)
+        create_download_button("Download CSV (Series Summary)", csv_df,
+                               "inventory_by_series_summary.csv")
 
 # ===== By Type =====
 with tab_type:
@@ -121,25 +140,6 @@ with tab_type:
         display_df = format_year_columns_for_display(df)
         st.dataframe(display_df, width='stretch', hide_index=True)
         create_download_button("Download CSV (By Type)", df, "inventory_by_type.csv")
-
-# ===== By Series (summary) =====
-with tab_series:
-    rows = get_inventory_by_series()
-    df = pd.DataFrame(rows)
-
-    if df.empty:
-        st.info("No inventory yet.")
-    else:
-        df = df.rename(columns={
-            "series": "Series",
-            "coins": "Coins",
-            "est_value_usd": "Est. Value (USD)"
-        })
-
-        display_df, csv_df = format_money_columns(df, ["Est. Value (USD)"])
-        st.dataframe(display_df, width='stretch', hide_index=True)
-        create_download_button("Download CSV (Series Summary)", csv_df,
-                               "inventory_by_series_summary.csv")
 
 # ===== Filter by Series (detail) =====
 with tab_series_detail:
