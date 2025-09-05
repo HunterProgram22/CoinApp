@@ -41,35 +41,49 @@ def get_inventory_by_type():
     return execute_query_all(query)
 
 
-def get_inventory_by_series():
+def get_inventory_by_series(country_filter="All"):
     """Get inventory summary by series using v_lot_value_details view."""
     # Check if view exists first
     view_check = execute_query_single(
         "SELECT 1 FROM sqlite_master WHERE type='view' AND name='v_lot_value_details'"
     )
 
+    # Build WHERE clause based on filter
+    where_clause = ""
+    if country_filter == "US Only":
+        where_clause = "WHERE cm.country = 'USA'"
+    elif country_filter == "World Only":
+        where_clause = "WHERE cm.country != 'USA'"
+
     if view_check:
-        query = """
+        query = f"""
             SELECT
-                series,
-                SUM(qty_remaining) AS coins,
-                ROUND(SUM(qty_remaining * COALESCE(chosen_unit_value, 0)), 2) AS est_value_usd
-            FROM v_lot_value_details
-            GROUP BY series
-            ORDER BY est_value_usd DESC, series
+                cm.series as series,
+                cm.country,
+                SUM(v.qty_remaining) AS coins,
+                ROUND(SUM(v.qty_remaining * COALESCE(v.chosen_unit_value, 0)), 2) AS est_value_usd
+            FROM v_lot_value_details v
+            JOIN lot l ON l.id = v.lot_id
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            {where_clause}
+            GROUP BY cm.series, cm.country
+            ORDER BY est_value_usd DESC, cm.series
         """
     else:
         # Fallback if view doesn't exist
-        query = """
+        query = f"""
             SELECT 
-                cm.series AS series, 
+                cm.series AS series,
+                cm.country,
                 SUM(l.qty_remaining) AS coins, 
                 NULL AS est_value_usd
             FROM lot l
             JOIN coin_type ct ON ct.id = l.coin_type_id
             JOIN coin_master cm ON cm.id = ct.master_id
             WHERE l.qty_remaining > 0
-            GROUP BY cm.series
+            {' AND ' + where_clause.replace('WHERE ', '') if where_clause else ''}
+            GROUP BY cm.series, cm.country
             ORDER BY coins DESC, cm.series
         """
 
@@ -92,22 +106,44 @@ tab_series, tab_type, tab_series_detail, tab_flags = st.tabs(
 
 # ===== By Series (summary) =====
 with tab_series:
-    rows = get_inventory_by_series()
+    # Add country filter
+    country_filter = st.radio(
+        "Filter by:",
+        ["All", "US Only", "World Only"],
+        horizontal=True,
+        key="series_country_filter"
+    )
+
+    rows = get_inventory_by_series(country_filter)
     df = pd.DataFrame(rows)
 
     if df.empty:
-        st.info("No inventory yet.")
+        filter_msg = f" ({country_filter.lower()})" if country_filter != "All" else ""
+        st.info(f"No inventory yet{filter_msg}.")
     else:
+        # Optionally show country column for "All" and "World Only" views
+        show_country = country_filter in ["All", "World Only"]
+
+        if not show_country and "country" in df.columns:
+            df = df.drop(columns=["country"])
+
         df = df.rename(columns={
             "series": "Series",
+            "country": "Country",
             "coins": "Coins",
             "est_value_usd": "Est. Value (USD)"
         })
 
         display_df, csv_df = format_money_columns(df, ["Est. Value (USD)"])
         st.dataframe(display_df, width='stretch', hide_index=True)
-        create_download_button("Download CSV (Series Summary)", csv_df,
-                               "inventory_by_series_summary.csv")
+
+        # Add filter to filename
+        filename_suffix = "_us" if country_filter == "US Only" else "_world" if country_filter == "World Only" else ""
+        create_download_button(
+            f"Download CSV (Series Summary{' - ' + country_filter if country_filter != 'All' else ''})",
+            csv_df,
+            f"inventory_by_series_summary{filename_suffix}.csv"
+        )
 
 # ===== By Type =====
 with tab_type:
