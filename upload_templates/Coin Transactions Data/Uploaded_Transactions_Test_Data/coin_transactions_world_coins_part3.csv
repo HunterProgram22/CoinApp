@@ -1,0 +1,15 @@
+tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,series,year,mint_mark,variety,quantity,unit_price,purchase_grade_company,purchase_grade_text,purchase_numeric_grade,estimated_grade_text,estimated_numeric_grade,valuation_method,manual_est_unit_value,storage_location
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,UK,20 Pence,Elizabeth II - 20 Pence (1985-1997),1987,,,1,0,,,,,,AUTO,0.05,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,USSR,10 Kopecks,Soviet Union - 10 Kopeks (1931-1934),1934,,,1,0,,,,,,AUTO,3,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,Netherlands,10 Cents,Wilhelmina - 10 Cents (1926-1945),1936,,,1,0,,,,,,AUTO,1,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,France,1 Franc,Third Republic - 1 Franc (1931-1941),1936,,,1,0,,,,,,AUTO,0.2,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,France,50 Centimes,Third Republic - 50 Centimes (1931-1947),1936,,,1,0,,,,,,AUTO,0.5,World Coins Box
+8/21/2025,BUY,Self,USD,0,0,0,,Dutch Caribbean,25 Cents,Willem-Alexander - 25 Cents (1989-2023),2016,,,1,0,,,,,,AUTO,1,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,Germany,5 Reichspfennig,Third Reich - 5 Reichspfennig (1940-1944),1942,A,,1,0,,,,,,AUTO,0.2,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,France,1 Franc,Third Republic - 1 Franc (1931-1941),1938,,,1,0,,,,,,AUTO,0.2,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,Canada,10 Cents,Elizabeth II - 10 Cents (1953-1964),1963,,,1,0,,,,,,AUTO,1,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,UK,6 Pence,George V - 6 Pence (1920-1926),1921,,,1,0,,,,,,AUTO,2,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,Germany,2 Reichspfennig,Federal Republic - 2 Reichspfennig (1950-1969),1966,F,,1,0,,,,,,AUTO,0.5,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,Germany,10 Rentenpfennig,Weimar Republic - 10 Rentenpfennig (1923-1925),1924,A,,1,0,,,,,,AUTO,0.5,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,Belgium,10 Centimes,Leopold II - 10 Centimes (1903-1906),1903,,,1,0,,,,,,AUTO,1,World Coins Box
+5/1/2025,BUY,Edward Lyons / Unky,USD,0,0,0,,Mexico,2 Pesos,United Mexican States - 2 Pesos (1995-Present),2004,,,1,0,,,,,,AUTO,0.3,World Coins Box
