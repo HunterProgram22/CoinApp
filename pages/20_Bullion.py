@@ -8,7 +8,7 @@ import streamlit as st
 import pandas as pd
 from db_operations import execute_query_all, execute_query_single
 
-st.header("Bullion Overview (Rounds & Bars)")
+st.header("Bullion Overview (Bars, Rounds, Bullion Coins and Junk Silver)")
 
 
 # ---------------------------------
@@ -56,13 +56,28 @@ def get_bullion_by_series():
 
 
 def get_bullion_totals():
-    """Get total bullion statistics."""
+    """Get total bullion statistics including constitutional silver."""
     query = """
+        WITH bullion_totals AS (
+            SELECT 
+                SUM(units_on_hand) as total_units,
+                SUM(fine_oz) as total_fine_oz,
+                SUM(melt_value_usd) as total_value
+            FROM v_inventory_bullion_by_category
+        ),
+        constitutional_totals AS (
+            SELECT 
+                SUM(quantity) as total_units,
+                SUM(total_fine_oz) as total_fine_oz,
+                SUM(total_melt_value) as total_value
+            FROM v_junk_silver
+        )
         SELECT 
-            SUM(units_on_hand) as total_units,
-            SUM(fine_oz) as total_fine_oz,
-            SUM(melt_value_usd) as total_value
-        FROM v_inventory_bullion_by_category
+            COALESCE(b.total_units, 0) + COALESCE(c.total_units, 0) as total_units,
+            COALESCE(b.total_fine_oz, 0) + COALESCE(c.total_fine_oz, 0) as total_fine_oz,
+            COALESCE(b.total_value, 0) + COALESCE(c.total_value, 0) as total_value
+        FROM bullion_totals b
+        CROSS JOIN constitutional_totals c
     """
     return execute_query_single(query)
 
