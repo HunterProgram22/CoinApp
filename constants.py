@@ -17,7 +17,7 @@ NAVIGATION_ITEMS = [
     ("pages/33_Proof_Sets.py", "Proof Sets", "🎁"),
     ("pages/35_Type_Sets.py", "Type Sets", "📚"),
     ("pages/37_Storage_Report.py", "Storage Report", "📦"),
-    ("pages/40_Specimens.py", "Specimens", "🏷️"),
+    ("pages/40_Coin_Registry.py", "Specimens", "🏷️"),
     ("pages/45_Admin.py", "Admin", "🛠️"),
     ("pages/50_Data_Import.py", "Data Import", "📥"),
 ]
