@@ -127,22 +127,6 @@ def get_slabbed_by_grade_company() -> List[Dict[str, Any]]:
 # ---------------------------------
 # Specimen Helper Functions
 # ---------------------------------
-def get_specimen_series_list() -> List[str]:
-    """Get list of series that have specimens."""
-    query = """
-        SELECT DISTINCT cm.series
-        FROM specimen s
-        JOIN coin_type ct ON ct.id = s.coin_type_id
-        JOIN coin_master cm ON cm.id = ct.master_id
-        LEFT JOIN lot l ON l.id = s.lot_id
-        WHERE s.sold_line_id IS NULL 
-        AND (l.id IS NULL OR l.qty_remaining > 0)
-        ORDER BY cm.series
-    """
-    results = execute_query_all(query)
-    return [r['series'] for r in results]
-
-
 def get_specimens_by_series(series: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get specimens optionally filtered by series."""
     conditions = ["s.sold_line_id IS NULL"]
@@ -421,11 +405,15 @@ def render_browse_tab():
                 "est_value": "Est. Value (USD)"
             })
 
+            # Format year column
+            if "Year" in df.columns:
+                df["Year"] = df["Year"].apply(lambda x: str(int(x)) if pd.notna(x) else '')
+
             # Format money columns for display
             money_columns = ["Cost (USD)", "Est. Value (USD)"]
             for col in money_columns:
                 if col in df.columns:
-                    df[col] = df[col].apply(lambda x: f"${x:,.2f}" if pd.notna(x) else "")
+                    df[col] = df[col].apply(lambda x: f"${x:,.2f}" if pd.notna(x) and x > 0 else "")
 
             # Display metrics
             col1, col2, col3 = st.columns(3)
