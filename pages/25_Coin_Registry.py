@@ -1,10 +1,10 @@
-# pages/40_Coin_Registry.py
+# pages/25_Coin_Registry.py
 import streamlit as st
 from auth_utils import require_auth
 
 # Check authentication first
 require_auth()
-# pages/40_Coin_Registry.py
+# pages/25_Coin_Registry.py
 import streamlit as st
 import pandas as pd
 from typing import List, Dict, Any, Optional, Tuple

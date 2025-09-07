@@ -1,5 +1,5 @@
 # ---- ADMIN: DELETE LOT (safe) TOOL ----
-# Paste this into pages/45_Admin.py (after imports) and call render_admin_delete_lot_tool()
+# Paste this into pages/48_Admin.py (after imports) and call render_admin_delete_lot_tool()
 # inside your Admin tabs, e.g.:
 #   tab_catalog, tab_void, tab_maint = st.tabs(["Catalog", "Void Tx", "Maintenance"])
 #   with tab_maint:

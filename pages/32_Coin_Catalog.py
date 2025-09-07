@@ -1,4 +1,4 @@
-# pages/25_Coin_Catalog.py
+# pages/32_Coin_Catalog.py
 import streamlit as st
 from auth_utils import require_auth
 

@@ -1,4 +1,4 @@
-# pages/33_Proof_Sets.py
+# pages/30_Proof_Sets.py
 import streamlit as st
 from auth_utils import require_auth
 
