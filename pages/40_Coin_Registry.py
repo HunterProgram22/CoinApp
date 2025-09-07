@@ -316,6 +316,45 @@ def format_lot_label(lot: Dict[str, Any]) -> str:
     return label
 
 
+def get_specimens_by_series_enhanced(filter_series: str = None) -> List[Dict[str, Any]]:
+    """Get specimens with enhanced details including acquisition info and values."""
+    conditions = ["s.sold_line_id IS NULL"]
+    params = []
+
+    if filter_series and filter_series != "All":
+        conditions.append("cm.series = ?")
+        params.append(filter_series)
+
+    where_clause = "WHERE " + " AND ".join(conditions)
+
+    query = f"""
+        SELECT 
+            s.code,
+            cm.series,
+            ct.year,
+            ct.mint_mark,
+            ct.variety,
+            s.lot_id,
+            l.acquired_date,
+            COALESCE(p.name, '') AS acquired_from,
+            ROUND(l.unit_cost, 2) AS unit_cost,
+            COALESCE(l.estimated_grade_text, l.purchase_grade_text, '') AS grade,
+            ROUND(COALESCE(v.chosen_unit_value, l.unit_cost), 2) AS est_value
+        FROM specimen s
+        JOIN coin_type ct ON ct.id = s.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        LEFT JOIN lot l ON l.id = s.lot_id
+        LEFT JOIN tx_line tl ON tl.id = l.acquisition_line_id
+        LEFT JOIN tx t ON t.id = tl.tx_id
+        LEFT JOIN party p ON p.id = t.party_id
+        LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+        {where_clause}
+        ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, s.code
+    """
+
+    return execute_query_all(query, params)
+
+
 def parse_codes_input(text: str) -> List[str]:
     """Parse user input for specimen codes."""
     if not text:
@@ -554,59 +593,7 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("Browse Specimens by Series")
 
-    # Get series that have specimens
-    specimen_series = get_specimen_series_list()
-
-    if not specimen_series:
-        st.info("No specimens found. Add some using the 'Add Flips' tab.")
-    else:
-        # Series selection dropdown
-        selected_specimen_series = st.selectbox(
-            "Select Series",
-            ["All"] + specimen_series,
-            key="specimen_series_select"
-        )
-
-        # Get specimens for selected series
-        specimens = get_specimens_by_series(
-            selected_specimen_series if selected_specimen_series != "All" else None)
-
-        if specimens:
-            # Convert to DataFrame
-            df = pd.DataFrame(specimens)
-
-            # Format year column
-            if 'year' in df.columns:
-                df['year'] = df['year'].apply(lambda x: str(int(x)) if pd.notna(x) else '')
-
-            # Rename columns for display
-            df = df.rename(columns={
-                'code': 'Code',
-                'series': 'Series',
-                'year': 'Year',
-                'mint_mark': 'Mint Mark',
-                'variety': 'Variety',
-                'lot_id': 'Lot ID',
-                'notes': 'Notes'
-            })
-
-            # Display count
-            st.write(f"**Found {len(specimens)} specimens**")
-
-            # Display table
-            st.dataframe(df, width='stretch', hide_index=True)
-
-            # Download button
-            csv = df.to_csv(index=False).encode('utf-8')
-            filename = f"specimens_{selected_specimen_series.lower().replace(' ', '_')}.csv" if selected_specimen_series != "All" else "specimens_all.csv"
-            st.download_button(
-                "📥 Download CSV",
-                data=csv,
-                file_name=filename,
-                mime="text/csv"
-            )
-        else:
-            st.info(f"No specimens found for {selected_specimen_series}")
+    render_browse_tab()
 
 # ---------------------------------
 # Tab 3: Add Flip IDs to Lots
