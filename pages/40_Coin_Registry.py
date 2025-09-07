@@ -4,6 +4,7 @@ from auth_utils import require_auth
 
 # Check authentication first
 require_auth()
+# pages/40_Coin_Registry.py
 import streamlit as st
 import pandas as pd
 from typing import List, Dict, Any, Optional, Tuple
@@ -21,7 +22,7 @@ st.header("🏷️ Coin Registry")
 
 # Create tabs
 tabs = st.tabs(
-    ["🛡️ Slabbed Coins", "🔍 Lookup Flip", "➕ Add Flips", "✏️ Edit Flip", "⚙️ Browse/Settings"])
+    ["🛡️ Slabbed Coins", "📚 Browse Specimens", "➕ Add Flips", "✏️ Edit Flip", "🔍 Lookup Flip"])
 
 
 # ---------------------------------
@@ -126,6 +127,52 @@ def get_slabbed_by_grade_company() -> List[Dict[str, Any]]:
 # ---------------------------------
 # Specimen Helper Functions
 # ---------------------------------
+def get_specimen_series_list() -> List[str]:
+    """Get list of series that have specimens."""
+    query = """
+        SELECT DISTINCT cm.series
+        FROM specimen s
+        JOIN coin_type ct ON ct.id = s.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        LEFT JOIN lot l ON l.id = s.lot_id
+        WHERE s.sold_line_id IS NULL 
+        AND (l.id IS NULL OR l.qty_remaining > 0)
+        ORDER BY cm.series
+    """
+    results = execute_query_all(query)
+    return [r['series'] for r in results]
+
+
+def get_specimens_by_series(series: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Get specimens optionally filtered by series."""
+    conditions = ["s.sold_line_id IS NULL"]
+    params = []
+
+    if series and series != "All":
+        conditions.append("cm.series = ?")
+        params.append(series)
+
+    where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+
+    query = f"""
+        SELECT 
+            s.code,
+            cm.series,
+            ct.year,
+            ct.mint_mark,
+            COALESCE(ct.variety, '') as variety,
+            s.lot_id,
+            COALESCE(s.notes, '') as notes
+        FROM specimen s
+        JOIN coin_type ct ON ct.id = s.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        {where_clause}
+        ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, s.code
+    """
+
+    return execute_query_all(query, tuple(params))
+
+
 def count_specimens_for_lot(lot_id: int) -> int:
     """Count specimens assigned to a specific lot."""
     query = "SELECT COUNT(*) AS count FROM specimen WHERE lot_id = ?"
@@ -416,43 +463,84 @@ with tabs[0]:
             st.info("No slabbed coins found matching your criteria.")
 
 # ---------------------------------
-# Tab 2: Lookup by Flip Code
+# Tab 2: Browse Specimens by Series
 # ---------------------------------
 with tabs[1]:
-    st.subheader("Lookup by Flip Code")
+    st.subheader("Browse Specimens by Series")
 
-    code = st.text_input(
-        "Flip code (e.g., P1, M23, CB7)",
-        help="Codes are series prefix + sequence, like P17 for Peace Dollars.",
-        key="lookup_code"
-    )
+    # Get series that have specimens
+    specimen_series = get_specimen_series_list()
 
-    col_search, col_clear = st.columns([1, 1])
+    if not specimen_series:
+        st.info("No specimens found. Add some using the 'Add Flips' tab.")
+    else:
+        # Series selection dropdown
+        selected_specimen_series = st.selectbox(
+            "Select Series",
+            ["All"] + specimen_series,
+            key="specimen_series_select"
+        )
 
-    if col_search.button("Search", key="lookup_search") and code:
-        result = get_specimen_by_code(code.strip())
+        # Get specimens for selected series
+        specimens = get_specimens_by_series(
+            selected_specimen_series if selected_specimen_series != "All" else None)
 
-        if not result:
-            st.warning(f"No specimen found for code '{code}'.")
+        if specimens:
+            # Convert to DataFrame
+            df = pd.DataFrame(specimens)
+
+            # Format year column
+            if 'year' in df.columns:
+                df['year'] = df['year'].apply(lambda x: str(int(x)) if pd.notna(x) else '')
+
+            # Rename columns for display
+            df = df.rename(columns={
+                'code': 'Code',
+                'series': 'Series',
+                'year': 'Year',
+                'mint_mark': 'Mint Mark',
+                'variety': 'Variety',
+                'lot_id': 'Lot ID',
+                'notes': 'Notes'
+            })
+
+            # Display count
+            st.write(f"**Found {len(specimens)} specimens**")
+
+            # Display table
+            st.dataframe(df, width='stretch', hide_index=True)
+
+            # Download button
+            csv = df.to_csv(index=False).encode('utf-8')
+            filename = f"specimens_{selected_specimen_series.lower().replace(' ', '_')}.csv" if selected_specimen_series != "All" else "specimens_all.csv"
+            st.download_button(
+                "📥 Download CSV",
+                data=csv,
+                file_name=filename,
+                mime="text/csv"
+            )
         else:
-            left, right = st.columns([2, 1])
-            with left:
-                st.write("**Details**")
-                details = {
-                    "Code": result.get("code"),
-                    "Series": result.get("series"),
-                    "Year": result.get("year"),
-                    "Mint Mark": result.get("mint_mark") or "—",
-                    "Variety": result.get("variety") or "—",
-                    "Lot ID": result.get("lot_id"),
-                }
-                for key, value in details.items():
-                    st.write(f"• **{key}:** {value}")
-            with right:
-                st.success("Match found ✅")
+            st.info(f"No specimens found for {selected_specimen_series}")
 
-    if col_clear.button("Clear", key="lookup_clear"):
-        st.rerun()
+    # Series prefix configuration
+    with st.expander("Set / Update Series Prefix"):
+        st.caption(
+            "Define the prefix used when auto-assigning codes (e.g., Peace → P, Morgan → M, Capped Bust → CB).")
+
+        series = st.text_input("Series name (must match your 'series' exactly, e.g., 'Peace')",
+                               key="prefix_series")
+        prefix = st.text_input("Prefix (1–3 letters)", placeholder="P, M, CB", key="prefix_code")
+
+        if st.button("Save Prefix", key="save_prefix"):
+            if not series or not prefix:
+                st.error("Both Series and Prefix are required.")
+            else:
+                try:
+                    prefix_clean = prefix.strip().upper()[:3]
+                    create_or_update_series_code(series.strip(), prefix_clean)
+                    st.success(f"Saved: {series.strip()} → {prefix_clean}")
+                except Exception as e:
+                    st.error(str(e))
 
 # ---------------------------------
 # Tab 3: Add Flip IDs to Lots
@@ -611,55 +699,40 @@ with tabs[3]:
             st.rerun()
 
 # ---------------------------------
-# Tab 5: Browse/Settings
+# Tab 5: Lookup by Flip Code
 # ---------------------------------
 with tabs[4]:
-    st.subheader("Browse & Settings")
+    st.subheader("Lookup by Flip Code")
 
-    # Series prefix configuration
-    with st.expander("Set / Update Series Prefix"):
-        st.caption(
-            "Define the prefix used when auto-assigning codes (e.g., Peace → P, Morgan → M, Capped Bust → CB).")
+    code = st.text_input(
+        "Flip code (e.g., P1, M23, CB7)",
+        help="Codes are series prefix + sequence, like P17 for Peace Dollars.",
+        key="lookup_code"
+    )
 
-        series = st.text_input("Series name (must match your 'series' exactly, e.g., 'Peace')",
-                               key="prefix_series")
-        prefix = st.text_input("Prefix (1–3 letters)", placeholder="P, M, CB", key="prefix_code")
+    col_search, col_clear = st.columns([1, 1])
 
-        if st.button("Save Prefix", key="save_prefix"):
-            if not series or not prefix:
-                st.error("Both Series and Prefix are required.")
-            else:
-                try:
-                    prefix_clean = prefix.strip().upper()[:3]
-                    create_or_update_series_code(series.strip(), prefix_clean)
-                    st.success(f"Saved: {series.strip()} → {prefix_clean}")
-                except Exception as e:
-                    st.error(str(e))
+    if col_search.button("Search", key="lookup_search") and code:
+        result = get_specimen_by_code(code.strip())
 
-    # Browse specimens on hand
-    with st.expander("Browse current specimens on hand"):
-        flt = st.text_input(
-            "Filter by series (optional)",
-            placeholder="e.g., Peace, Morgan",
-            key="browse_filter"
-        )
+        if not result:
+            st.warning(f"No specimen found for code '{code}'.")
+        else:
+            left, right = st.columns([2, 1])
+            with left:
+                st.write("**Details**")
+                details = {
+                    "Code": result.get("code"),
+                    "Series": result.get("series"),
+                    "Year": result.get("year"),
+                    "Mint Mark": result.get("mint_mark") or "—",
+                    "Variety": result.get("variety") or "—",
+                    "Lot ID": result.get("lot_id"),
+                }
+                for key, value in details.items():
+                    st.write(f"• **{key}:** {value}")
+            with right:
+                st.success("Match found ✅")
 
-        try:
-            rows = get_specimens_on_hand(flt.strip() or None)
-            if rows:
-                df = pd.DataFrame(rows)
-                df = df.rename(columns={"mint_mark": "Mint Mark"})
-                st.dataframe(df, width='stretch', hide_index=True)
-
-                # Add download button
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "Download CSV",
-                    data=csv,
-                    file_name="specimens_on_hand.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.info("No specimens found (on hand).")
-        except Exception as e:
-            st.error(str(e))
+    if col_clear.button("Clear", key="lookup_clear"):
+        st.rerun()
