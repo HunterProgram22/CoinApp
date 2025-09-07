@@ -324,6 +324,92 @@ def parse_codes_input(text: str) -> List[str]:
     return [x.strip() for x in text.replace(",", "\n").splitlines() if x.strip()]
 
 
+def render_browse_tab():
+    """Render the browse specimens by series tab."""
+    st.subheader("Browse Specimens by Series")
+
+    # Get list of series that have specimens
+    series_with_specimens = get_series_with_specimens()
+
+    if not series_with_specimens:
+        st.info("No specimens found in the database.")
+        return
+
+    # Create dropdown with "All" as default
+    series_options = ["All"] + series_with_specimens
+    selected_series = st.selectbox(
+        "Select Series",
+        options=series_options,
+        index=0,  # Default to "All"
+        key="browse_series_filter"
+    )
+
+    # Get and display specimens
+    try:
+        rows = get_specimens_by_series_enhanced(selected_series)
+
+        if rows:
+            # Convert to DataFrame
+            df = pd.DataFrame(rows)
+
+            # Rename columns with proper capitalization
+            df = df.rename(columns={
+                "code": "Code",
+                "series": "Series",
+                "year": "Year",
+                "mint_mark": "Mint Mark",
+                "variety": "Variety",
+                "lot_id": "Lot ID",
+                "acquired_date": "Acquired Date",
+                "acquired_from": "Acquired From",
+                "unit_cost": "Cost (USD)",
+                "grade": "Estimated Grade",
+                "est_value": "Est. Value (USD)"
+            })
+
+            # Format money columns for display
+            money_columns = ["Cost (USD)", "Est. Value (USD)"]
+            for col in money_columns:
+                if col in df.columns:
+                    df[col] = df[col].apply(lambda x: f"${x:,.2f}" if pd.notna(x) else "")
+
+            # Display metrics
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total Specimens", len(df))
+
+            # Show series count if "All" is selected
+            if selected_series == "All":
+                unique_series = df["Series"].nunique() if "Series" in df.columns else 0
+                col2.metric("Series Count", unique_series)
+
+            # Calculate total value if available
+            if rows and 'est_value' in rows[0]:
+                total_value = sum(r.get('est_value', 0) for r in rows if r.get('est_value'))
+                col3.metric("Total Est. Value", f"${total_value:,.2f}")
+
+            # Display the dataframe
+            st.dataframe(df, width='stretch', hide_index=True)
+
+            # Download button
+            csv = df.to_csv(index=False).encode('utf-8')
+            filename = f"specimens_{selected_series.replace(' ', '_').lower()}.csv" if selected_series != "All" else "specimens_all.csv"
+            st.download_button(
+                "📥 Download CSV",
+                data=csv,
+                file_name=filename,
+                mime="text/csv"
+            )
+        else:
+            if selected_series == "All":
+                st.info("No specimens found in the database.")
+            else:
+                st.info(f"No specimens found for {selected_series}.")
+
+    except Exception as e:
+        st.error(f"Error loading specimens: {str(e)}")
+
+
+
 # ---------------------------------
 # Tab 1: Slabbed Coins
 # ---------------------------------
@@ -521,26 +607,6 @@ with tabs[1]:
             )
         else:
             st.info(f"No specimens found for {selected_specimen_series}")
-
-    # Series prefix configuration
-    with st.expander("Set / Update Series Prefix"):
-        st.caption(
-            "Define the prefix used when auto-assigning codes (e.g., Peace → P, Morgan → M, Capped Bust → CB).")
-
-        series = st.text_input("Series name (must match your 'series' exactly, e.g., 'Peace')",
-                               key="prefix_series")
-        prefix = st.text_input("Prefix (1–3 letters)", placeholder="P, M, CB", key="prefix_code")
-
-        if st.button("Save Prefix", key="save_prefix"):
-            if not series or not prefix:
-                st.error("Both Series and Prefix are required.")
-            else:
-                try:
-                    prefix_clean = prefix.strip().upper()[:3]
-                    create_or_update_series_code(series.strip(), prefix_clean)
-                    st.success(f"Saved: {series.strip()} → {prefix_clean}")
-                except Exception as e:
-                    st.error(str(e))
 
 # ---------------------------------
 # Tab 3: Add Flip IDs to Lots
