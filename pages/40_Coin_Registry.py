@@ -316,6 +316,21 @@ def format_lot_label(lot: Dict[str, Any]) -> str:
     return label
 
 
+def get_series_with_specimens() -> List[str]:
+    """Get list of series that have specimens."""
+    query = """
+        SELECT DISTINCT cm.series
+        FROM specimen s
+        JOIN coin_type ct ON ct.id = s.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        WHERE s.sold_line_id IS NULL
+        ORDER BY cm.series
+    """
+    results = execute_query_all(query)
+    return [r['series'] for r in results]
+
+
+
 def get_specimens_by_series_enhanced(filter_series: str = None) -> List[Dict[str, Any]]:
     """Get specimens with enhanced details including acquisition info and values."""
     conditions = ["s.sold_line_id IS NULL"]
@@ -591,8 +606,6 @@ with tabs[0]:
 # Tab 2: Browse Specimens by Series
 # ---------------------------------
 with tabs[1]:
-    st.subheader("Browse Specimens by Series")
-
     render_browse_tab()
 
 # ---------------------------------
