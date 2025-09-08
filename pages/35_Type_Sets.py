@@ -42,124 +42,140 @@ with tabs[0]:
     if not type_sets:
         st.info("No Type Sets yet. Use 'Define Set' tab to create one.")
     else:
-        # Select type set - REMOVED ID from display
+        # Select type set - alphabetical and starts blank
         set_options = {s['name']: s for s in type_sets}
-        selected_label = st.selectbox("Choose a Type Set", list(set_options.keys()))
-        selected_set = set_options[selected_label]
-        set_id = selected_set['id']
+        sorted_names = sorted(set_options.keys())  # Sort alphabetically
+        selected_label = st.selectbox(
+            "Choose a Type Set",
+            [""] + sorted_names,  # Empty option first, then sorted names
+            index=0  # Start with empty selection
+        )
+
+        # Only proceed if a set is selected
+        if selected_label:
+            selected_set = set_options[selected_label]
+
+        # # Select type set - REMOVED ID from display
+        # set_options = {s['name']: s for s in type_sets}
+        # selected_label = st.selectbox("Choose a Type Set", list(set_options.keys()))
+        # selected_set = set_options[selected_label]
+            set_id = selected_set['id']
 
         # Show set details and metadata
-        st.subheader(f"📚 {selected_set['name']}")
-        if selected_set.get('description'):
-            st.caption(selected_set['description'])
+            st.subheader(f"📚 {selected_set['name']}")
+            if selected_set.get('description'):
+                st.caption(selected_set['description'])
 
-        # Get and display set metadata/criteria if it exists
-        metadata = get_type_set_metadata(set_id) if 'get_type_set_metadata' in dir() else {}
-        if metadata:
-            with st.expander("Set Criteria", expanded=False):
-                criteria_text = []
-                if metadata.get('series'):
-                    criteria_text.append(f"**Series:** {', '.join(metadata['series'])}")
-                if metadata.get('year_range'):
-                    criteria_text.append(
-                        f"**Years:** {metadata['year_range'][0]}-{metadata['year_range'][1]}")
-                if metadata.get('grade_company'):
-                    criteria_text.append(f"**Grading Company:** {metadata['grade_company']}")
-                if metadata.get('min_grade'):
-                    criteria_text.append(f"**Minimum Grade:** {metadata['min_grade']}")
-                if metadata.get('require_slab'):
-                    criteria_text.append("**Must be slabbed**")
+            # Get and display set metadata/criteria if it exists
+            metadata = get_type_set_metadata(set_id) if 'get_type_set_metadata' in dir() else {}
+            if metadata:
+                with st.expander("Set Criteria", expanded=False):
+                    criteria_text = []
+                    if metadata.get('series'):
+                        criteria_text.append(f"**Series:** {', '.join(metadata['series'])}")
+                    if metadata.get('year_range'):
+                        criteria_text.append(
+                            f"**Years:** {metadata['year_range'][0]}-{metadata['year_range'][1]}")
+                    if metadata.get('grade_company'):
+                        criteria_text.append(f"**Grading Company:** {metadata['grade_company']}")
+                    if metadata.get('min_grade'):
+                        criteria_text.append(f"**Minimum Grade:** {metadata['min_grade']}")
+                    if metadata.get('require_slab'):
+                        criteria_text.append("**Must be slabbed**")
 
-                if criteria_text:
-                    for line in criteria_text:
-                        st.markdown(line)
+                    if criteria_text:
+                        for line in criteria_text:
+                            st.markdown(line)
 
-        # Progress section
-        st.subheader("Collection Progress")
+            # Progress section
+            st.subheader("Collection Progress")
 
-        # Get progress using the new view
-        progress_df = get_type_set_progress(set_id)
+            # Get progress using the new view
+            progress_df = get_type_set_progress(set_id)
 
-        if progress_df.empty:
-            st.warning("This set has no coins defined yet. Use 'Modify Set' tab to add coins.")
-        else:
-            # Format the dataframe for display
-            progress_df['have'] = progress_df.apply(
-                lambda r: '✅' if r['meets_requirements'] else (
-                    '🔶' if r['qty_on_hand'] > 0 else '❌'),
-                axis=1
-            )
-            progress_df['is_proof'] = progress_df['is_proof'].apply(lambda x: '✔' if x else '')
-            progress_df['grade_info'] = progress_df.apply(
-                lambda r: f"{r['best_grade_company']}/{r['best_grade_text']}"
-                if r['best_grade_company'] and r['best_grade_text'] else "",
-                axis=1
-            )
-
-            # Calculate statistics using summary view
-            summary = get_type_set_summary(set_id)
-            if summary:
-                total_needed = summary['total_coins']
-                total_have = summary['coins_owned']
-                total_meeting_requirements = summary['coins_meeting_requirements']
-                percent_complete = summary['percent_complete']
-
-                # Display metrics
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Total Coins in Set", total_needed)
-                col2.metric("Coins Owned", total_have)
-                col3.metric("Meeting Requirements", total_meeting_requirements)
-                col4.metric("Complete", f"{percent_complete:.1f}%")
-
-                # Progress bar
-                st.progress(percent_complete / 100 if percent_complete else 0)
-
-            # Legend for status icons
-            st.caption(
-                "✅ = Meets all requirements | 🔶 = Have but doesn't meet requirements | ❌ = Don't have")
-
-            # Display the full list
-            st.subheader("Detailed Progress")
-
-            # Filter options
-            col1, col2 = st.columns(2)
-            show_filter = col1.selectbox("Show", ["All", "Have", "Need", "Need Upgrade"], index=0)
-
-            if show_filter == "Have":
-                display_df = progress_df[progress_df['meets_requirements'] == 1]
-            elif show_filter == "Need":
-                display_df = progress_df[progress_df['qty_on_hand'] == 0]
-            elif show_filter == "Need Upgrade":
-                display_df = progress_df[
-                    (progress_df['qty_on_hand'] > 0) & (progress_df['meets_requirements'] == 0)]
+            if progress_df.empty:
+                st.warning("This set has no coins defined yet. Use 'Modify Set' tab to add coins.")
             else:
-                display_df = progress_df
+                # Format the dataframe for display
+                progress_df['have'] = progress_df.apply(
+                    lambda r: '✅' if r['meets_requirements'] else (
+                        '🔶' if r['qty_on_hand'] > 0 else '❌'),
+                    axis=1
+                )
+                progress_df['is_proof'] = progress_df['is_proof'].apply(lambda x: '✔' if x else '')
+                progress_df['grade_info'] = progress_df.apply(
+                    lambda r: f"{r['best_grade_company']}/{r['best_grade_text']}"
+                    if r['best_grade_company'] and r['best_grade_text'] else "",
+                    axis=1
+                )
 
-            # Select columns to display
-            display_columns = ['have', 'series', 'year', 'mint_mark', 'variety', 'is_proof',
-                               'qty_on_hand', 'grade_info']
+                # Calculate statistics using summary view
+                summary = get_type_set_summary(set_id)
+                if summary:
+                    total_needed = summary['total_coins']
+                    total_have = summary['coins_owned']
+                    total_meeting_requirements = summary['coins_meeting_requirements']
+                    percent_complete = summary['percent_complete']
 
-            st.dataframe(display_df[display_columns], width='stretch', hide_index=True)
+                    # Display metrics
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("Total Coins in Set", total_needed)
+                    col2.metric("Coins Owned", total_have)
+                    col3.metric("Meeting Requirements", total_meeting_requirements)
+                    col4.metric("Complete", f"{percent_complete:.1f}%")
 
-            # Download buttons
-            col1, col2 = st.columns(2)
+                    # Progress bar
+                    st.progress(percent_complete / 100 if percent_complete else 0)
 
-            # Full progress CSV
-            csv = progress_df.to_csv(index=False).encode('utf-8')
-            col1.download_button(
-                "📥 Download Full Progress",
-                data=csv,
-                file_name=f"type_set_{set_id}_progress.csv",
-                mime="text/csv"
-            )
+                # Legend for status icons
+                st.caption(
+                    "✅ = Meets all requirements | 🔶 = Have but doesn't meet requirements | ❌ = Don't have")
 
-            # Missing/upgrade analysis
-            if col2.button("Show Upgrade Targets"):
-                upgrade_targets = get_type_set_upgrade_targets(set_id)
-                if upgrade_targets:
-                    st.subheader("Coins Needing Upgrade")
-                    upgrade_df = pd.DataFrame(upgrade_targets)
-                    st.dataframe(upgrade_df, width='stretch', hide_index=True)
+                # Display the full list
+                st.subheader("Detailed Progress")
+
+                # Filter options
+                col1, col2 = st.columns(2)
+                show_filter = col1.selectbox("Show", ["All", "Have", "Need", "Need Upgrade"],
+                                             index=0)
+
+                if show_filter == "Have":
+                    display_df = progress_df[progress_df['meets_requirements'] == 1]
+                elif show_filter == "Need":
+                    display_df = progress_df[progress_df['qty_on_hand'] == 0]
+                elif show_filter == "Need Upgrade":
+                    display_df = progress_df[
+                        (progress_df['qty_on_hand'] > 0) & (progress_df['meets_requirements'] == 0)]
+                else:
+                    display_df = progress_df
+
+                # Select columns to display
+                display_columns = ['have', 'series', 'year', 'mint_mark', 'variety', 'is_proof',
+                                   'qty_on_hand', 'grade_info']
+
+                st.dataframe(display_df[display_columns], width='stretch', hide_index=True)
+
+                # Download buttons
+                col1, col2 = st.columns(2)
+
+                # Full progress CSV
+                csv = progress_df.to_csv(index=False).encode('utf-8')
+                col1.download_button(
+                    "📥 Download Full Progress",
+                    data=csv,
+                    file_name=f"type_set_{set_id}_progress.csv",
+                    mime="text/csv"
+                )
+
+                # Missing/upgrade analysis
+                if col2.button("Show Upgrade Targets"):
+                    upgrade_targets = get_type_set_upgrade_targets(set_id)
+                    if upgrade_targets:
+                        st.subheader("Coins Needing Upgrade")
+                        upgrade_df = pd.DataFrame(upgrade_targets)
+                        st.dataframe(upgrade_df, width='stretch', hide_index=True)
+        else:
+            st.info("👆 Select a Type Set above to view progress")
 
 # =====================================================
 # Tab 2: Set Summary - NEW TAB
