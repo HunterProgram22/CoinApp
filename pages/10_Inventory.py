@@ -97,11 +97,43 @@ def get_series_list():
     return [r['series'] for r in results]
 
 
+def get_countries_with_inventory():
+    """Get list of countries that have inventory on hand."""
+    query = """
+        SELECT DISTINCT cm.country
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        WHERE l.qty_remaining > 0 AND cm.country IS NOT NULL
+        ORDER BY cm.country
+    """
+    results = execute_query_all(query)
+    return [r['country'] for r in results]
+
+
+def get_series_list_for_country(country=None):
+    """Get list of available series, optionally filtered by country."""
+    if country:
+        query = """
+            SELECT DISTINCT cm.series 
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            WHERE l.qty_remaining > 0 AND cm.country = ?
+            ORDER BY cm.series
+        """
+        results = execute_query_all(query, (country,))
+    else:
+        query = "SELECT DISTINCT series FROM coin_master ORDER BY series"
+        results = execute_query_all(query)
+    return [r['series'] for r in results]
+
+
 # ---------------------------
 # UI Tabs
 # ---------------------------
-tab_series, tab_type, tab_series_detail, tab_flags = st.tabs(
-    ["By Series (summary)", "By Type", "Filter by Series (detail)", "Filter by Flags"]
+tab_series, tab_series_detail, tab_flags = st.tabs(
+    ["Series Summary", "Series Detail", "Filter by Flags"]
 )
 
 # ===== By Series (summary) =====
@@ -145,73 +177,76 @@ with tab_series:
             f"inventory_by_series_summary{filename_suffix}.csv"
         )
 
-# ===== By Type =====
-with tab_type:
-    rows = get_inventory_by_type()
-    df = pd.DataFrame(rows)
-
-    if df.empty:
-        st.info("No inventory yet.")
-    else:
-        # Hide internal ID and reorder columns
-        if "coin_type_id" in df.columns:
-            df = df.drop(columns=["coin_type_id"])
-
-        # Reorder columns
-        column_order = [c for c in ["series", "year", "mint_mark", "variety", "coins_on_hand"] if
-                        c in df.columns]
-        remaining_columns = [c for c in df.columns if c not in column_order]
-        df = df[column_order + remaining_columns]
-
-        # Apply friendly labels
-        df = df.rename(columns={
-            "series": "Series",
-            "year": "Year",
-            "mint_mark": "Mint Mark",
-            "variety": "Variety",
-            "coins_on_hand": "Qty on Hand",
-        })
-
-        # Format for display
-        display_df = format_year_columns_for_display(df)
-        st.dataframe(display_df, width='stretch', hide_index=True)
-        create_download_button("Download CSV (By Type)", df, "inventory_by_type.csv")
-
 # ===== Filter by Series (detail) =====
 with tab_series_detail:
-    series_list = get_series_list()
+    # Get countries with inventory
+    countries = get_countries_with_inventory()
 
-    if not series_list:
-        st.info("No series found in catalog (coin_master).")
+    if not countries:
+        st.info("No inventory found.")
     else:
-        selected_series = st.selectbox("Series", options=series_list, key="inv_series_pick")
+        col1, col2 = st.columns(2)
 
-        rows = get_inventory_by_series_detail(selected_series)
-        df = pd.DataFrame(rows)
+        # Country dropdown (starts blank)
+        selected_country = col1.selectbox(
+            "Country",
+            [""] + countries,
+            index=0,
+            key="inv_detail_country",
+            help="Select a country to filter series"
+        )
 
-        if df.empty:
-            st.info("No on-hand lots for this series.")
+        # Series dropdown (dependent on country)
+        if selected_country:
+            series_list = get_series_list_for_country(selected_country)
+            selected_series = col2.selectbox(
+                "Series",
+                [""] + series_list,
+                index=0,
+                key="inv_series_pick"
+            )
         else:
-            # Hide the lot_id column for display
-            if "lot_id" in df.columns:
-                csv_df = df.copy()  # Keep lot_id in CSV
-                df = df.drop(columns=["lot_id"])
+            col2.selectbox(
+                "Series",
+                ["Select a country first"],
+                index=0,
+                key="inv_series_pick",
+                disabled=True
+            )
+            selected_series = None
+
+        # Only show results if both country and series are selected
+        if selected_country and selected_series:
+            rows = get_inventory_by_series_detail(selected_series)
+            df = pd.DataFrame(rows)
+
+            if df.empty:
+                st.info("No on-hand lots for this series.")
             else:
-                csv_df = df.copy()
+                # Hide the lot_id column for display
+                if "lot_id" in df.columns:
+                    csv_df = df.copy()  # Keep lot_id in CSV
+                    df = df.drop(columns=["lot_id"])
+                else:
+                    csv_df = df.copy()
 
-            # Format year columns
-            display_df = format_year_columns_for_display(df)
+                # Format year columns
+                display_df = format_year_columns_for_display(df)
 
-            # Format money columns - all currency columns should have $ and 2 decimals
-            # except Melt Unit Value which should have 4 decimals
-            money_columns = ["Unit Cost (USD)", "Melt Unit Value", "Chosen Unit Value",
-                             "Lot Est. Value"]
-            display_df, _ = format_money_columns(display_df, money_columns,
-                                                 keep_melt_precision=True)
+                # Format money columns - all currency columns should have $ and 2 decimals
+                # except Melt Unit Value which should have 4 decimals
+                money_columns = ["Unit Cost (USD)", "Melt Unit Value", "Chosen Unit Value",
+                                 "Lot Est. Value"]
+                display_df, _ = format_money_columns(display_df, money_columns,
+                                                     keep_melt_precision=True)
 
-            st.dataframe(display_df, width='stretch', hide_index=True)
-            filename = f"{selected_series}_detail.csv".replace(" ", "_")
-            create_download_button("Download CSV (Series Detail)", csv_df, filename)
+                st.dataframe(display_df, width='stretch', hide_index=True)
+                filename = f"{selected_series}_detail.csv".replace(" ", "_")
+                create_download_button("Download CSV (Series Detail)", csv_df, filename)
+        elif selected_country:
+            st.info("👆 Select a series above to view inventory details")
+        else:
+            st.info("👆 Select a country above to begin")
 
 # ===== Filter by Flags =====
 with tab_flags:
