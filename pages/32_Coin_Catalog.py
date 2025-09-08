@@ -4,21 +4,23 @@ from auth_utils import require_auth
 
 # Check authentication first
 require_auth()
+# pages/25_Coin_Catalog.py
 import streamlit as st
 import pandas as pd
 from typing import List, Optional, Dict, Any
 from db_operations import execute_query_all
 
 st.title("📚 Coin Catalog")
-st.caption("Filter your Master Coins and jump to Numista, NGC, and PCGS references.")
+st.caption("Browse Master Coins and Coin Types with reference links.")
 
 
 # ---------------------------------
 # Data Access Functions
 # ---------------------------------
-def get_distinct_values(column: str, filter_column: Optional[str] = None,
+def get_distinct_values(column: str, table: str = "coin_master",
+                        filter_column: Optional[str] = None,
                         filter_value: Optional[str] = None) -> List[str]:
-    """Get distinct values from coin_master table."""
+    """Get distinct values from specified table."""
     conditions = []
     params = []
 
@@ -30,7 +32,7 @@ def get_distinct_values(column: str, filter_column: Optional[str] = None,
 
     query = f"""
         SELECT DISTINCT {column} AS value
-        FROM coin_master
+        FROM {table}
         {where_clause}
         ORDER BY value
     """
@@ -39,50 +41,30 @@ def get_distinct_values(column: str, filter_column: Optional[str] = None,
     return [r['value'] for r in results if r['value']]  # Filter out None/NULL values
 
 
-def search_coin_masters(
-        country: Optional[str] = None,
-        denomination: Optional[str] = None,
-        series_search: Optional[str] = None
-) -> List[Dict[str, Any]]:
-    """Search coin masters with filters."""
-    conditions = []
-    params = []
-
-    if country and country != "All":
-        conditions.append("country = ?")
-        params.append(country)
-
-    if denomination and denomination != "All":
-        conditions.append("denomination = ?")
-        params.append(denomination)
-
-    if series_search and series_search.strip():
-        conditions.append("LOWER(series) LIKE ?")
-        params.append(f"%{series_search.strip().lower()}%")
-
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-    query = f"""
-        SELECT 
-            id,
-            country,
-            denomination,
-            series,
-            years_start,
-            years_end,
-            metal,
-            fineness,
-            weight_grams,
-            asset_category,
-            COALESCE(numista_url, '') AS numista_url,
-            COALESCE(ngc_url, '') AS ngc_url,
-            COALESCE(pcgs_url, '') AS pcgs_url
-        FROM coin_master
-        {where_clause}
-        ORDER BY country, denomination, series
+def get_countries_for_coin_types() -> List[str]:
+    """Get distinct countries that have coin types."""
+    query = """
+        SELECT DISTINCT cm.country
+        FROM coin_type ct
+        JOIN coin_master cm ON cm.id = ct.master_id
+        WHERE cm.country IS NOT NULL
+        ORDER BY cm.country
     """
+    results = execute_query_all(query)
+    return [r['country'] for r in results]
 
-    return execute_query_all(query, tuple(params))
+
+def get_series_for_country(country: str) -> List[str]:
+    """Get distinct series for a specific country."""
+    query = """
+        SELECT DISTINCT cm.series
+        FROM coin_type ct
+        JOIN coin_master cm ON cm.id = ct.master_id
+        WHERE cm.country = ?
+        ORDER BY cm.series
+    """
+    results = execute_query_all(query, (country,))
+    return [r['series'] for r in results]
 
 
 # ---------------------------------
@@ -119,8 +101,8 @@ def format_year_range(row: Dict[str, Any]) -> str:
         return f"{start_int}–{end_int}"
 
 
-def prepare_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Prepare dataframe for display."""
+def prepare_master_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Prepare coin master dataframe for display."""
     # Add formatted years column
     df["Years"] = df.apply(format_year_range, axis=1)
 
@@ -152,53 +134,154 @@ def prepare_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def create_download_button(df: pd.DataFrame):
+def prepare_types_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Prepare coin types dataframe for display."""
+    # Select and order columns
+    columns = ["denomination", "series", "year", "mint_mark", "variety", "mintage", "is_proof"]
+
+    # Only include columns that exist
+    present_columns = [col for col in columns if col in df.columns]
+    df = df[present_columns]
+
+    # Rename columns for display
+    df = df.rename(columns={
+        "denomination": "Denomination",
+        "series": "Series",
+        "year": "Year",
+        "mint_mark": "Mint Mark",
+        "variety": "Variety",
+        "mintage": "Mintage",
+        "is_proof": "Proof"
+    })
+
+    # Format proof column
+    if "Proof" in df.columns:
+        df["Proof"] = df["Proof"].apply(lambda x: "✓" if x else "")
+
+    # Format mintage with commas
+    if "Mintage" in df.columns:
+        df["Mintage"] = df["Mintage"].apply(lambda x: f"{int(x):,}" if x and x > 0 else "")
+
+    return df
+
+
+def create_download_button(df: pd.DataFrame, filename: str = "coin_catalog.csv"):
     """Create CSV download button."""
     csv = df.to_csv(index=False).encode("utf-8")
     st.download_button(
         "⬇️ Download CSV",
         data=csv,
-        file_name="coin_catalog.csv",
+        file_name=filename,
         mime="text/csv"
     )
 
 
 # ---------------------------------
-# UI Components
+# UI Components for Coin Masters Tab
 # ---------------------------------
-def render_filters() -> tuple:
-    """Render filter controls and return selected values."""
+def render_master_filters() -> tuple:
+    """Render filter controls for coin masters and return selected values."""
     col1, col2, col3 = st.columns([2, 2, 3])
 
-    # Country filter
-    countries = ["All"] + get_distinct_values("country")
-    selected_country = col1.selectbox("Country", countries, index=0, key="cat_country")
+    # Country filter with empty default
+    countries = get_distinct_values("country")
+    selected_country = col1.selectbox(
+        "Country",
+        [""] + countries,  # Empty string as default instead of "All"
+        index=0,
+        key="cat_country",
+        help="Select a country to filter results"
+    )
 
-    # Denomination filter (filtered by country if selected)
-    if selected_country != "All":
-        denominations = ["All"] + get_distinct_values("denomination", "country", selected_country)
+    # Denomination filter (only active if country is selected)
+    if selected_country:
+        denominations = get_distinct_values("denomination", "coin_master", "country", selected_country)
+        selected_denomination = col2.selectbox(
+            "Denomination",
+            ["All"] + denominations,  # Keep "All" here to see all denominations for a country
+            index=0,
+            key="cat_denom"
+        )
     else:
-        denominations = ["All"] + get_distinct_values("denomination")
-    selected_denomination = col2.selectbox("Denomination", denominations, index=0, key="cat_denom")
+        col2.selectbox(
+            "Denomination",
+            ["Select a country first"],
+            index=0,
+            key="cat_denom",
+            disabled=True
+        )
+        selected_denomination = None
 
-    # Series search
+    # Series search (always available but won't return results without country)
     series_search = col3.text_input(
         "Search Series",
         placeholder="e.g., Morgan, Peace, Eagle",
-        key="cat_search"
+        key="cat_search",
+        disabled=not selected_country,
+        help="Search within series names"
     )
 
     return selected_country, selected_denomination, series_search
 
 
-def render_results(results: List[Dict[str, Any]]):
-    """Render the results table."""
+def search_coin_masters(
+        country: Optional[str] = None,
+        denomination: Optional[str] = None,
+        series_search: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Search coin masters with filters."""
+    conditions = []
+    params = []
+
+    # Require country to be selected (no longer check for "All")
+    if country:
+        conditions.append("country = ?")
+        params.append(country)
+    else:
+        # Return empty list if no country selected
+        return []
+
+    if denomination and denomination != "All":
+        conditions.append("denomination = ?")
+        params.append(denomination)
+
+    if series_search and series_search.strip():
+        conditions.append("LOWER(series) LIKE ?")
+        params.append(f"%{series_search.strip().lower()}%")
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    query = f"""
+        SELECT 
+            id,
+            country,
+            denomination,
+            series,
+            years_start,
+            years_end,
+            metal,
+            fineness,
+            weight_grams,
+            asset_category,
+            COALESCE(numista_url, '') AS numista_url,
+            COALESCE(ngc_url, '') AS ngc_url,
+            COALESCE(pcgs_url, '') AS pcgs_url
+        FROM coin_master
+        {where_clause}
+        ORDER BY country, denomination, series
+    """
+
+    return execute_query_all(query, tuple(params))
+
+
+def render_master_results(results: List[Dict[str, Any]]):
+    """Render the coin master results table."""
     if not results:
         st.info("No Master Coins found. Try relaxing the filters or import some masters first.")
         return
 
     df = pd.DataFrame(results)
-    display_df = prepare_display_dataframe(df)
+    display_df = prepare_master_display_dataframe(df)
 
     # Configure column display with link columns for all three references
     column_config = {}
@@ -244,33 +327,197 @@ def render_results(results: List[Dict[str, Any]]):
     )
 
     # Add download button
-    create_download_button(display_df)
+    create_download_button(display_df, "coin_masters.csv")
 
 
 # ---------------------------------
-# Main UI
+# UI Components for Coin Types Tab
+# ---------------------------------
+def render_types_filters() -> tuple:
+    """Render filter controls for coin types and return selected values."""
+    col1, col2 = st.columns(2)
+
+    # Country filter with empty default
+    countries = get_countries_for_coin_types()
+    if not countries:
+        st.info("No coin types found in the database.")
+        return None, None
+
+    selected_country = col1.selectbox(
+        "Country",
+        [""] + countries,  # Empty string as default
+        index=0,
+        key="types_country",
+        help="Select a country to view coin types"
+    )
+
+    # Series filter (only show if country is selected)
+    if selected_country:
+        series_list = get_series_for_country(selected_country)
+        # Removed "All" option - must select a specific series
+        selected_series = col2.selectbox(
+            "Series",
+            [""] + series_list,  # Empty as default, no "All" option
+            index=0,
+            key="types_series",
+            help="Select a series to view coin types"
+        )
+    else:
+        # Show disabled/empty dropdown when no country selected
+        col2.selectbox(
+            "Series",
+            ["Select a country first"],
+            index=0,
+            key="types_series",
+            disabled=True
+        )
+        selected_series = None
+
+    return selected_country, selected_series
+
+
+def search_coin_types(country: Optional[str] = None,
+                      series: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Search coin types with filters."""
+    conditions = []
+    params = []
+
+    # Both country and series are required now
+    if country:
+        conditions.append("cm.country = ?")
+        params.append(country)
+
+    if series:
+        conditions.append("cm.series = ?")
+        params.append(series)
+
+    # Return empty if either is missing
+    if not country or not series:
+        return []
+
+    where_clause = f"WHERE {' AND '.join(conditions)}"
+
+    query = f"""
+        SELECT 
+            ct.id,
+            cm.denomination,
+            cm.series,
+            ct.year,
+            COALESCE(ct.mint_mark, '') AS mint_mark,
+            COALESCE(ct.variety, '') AS variety,
+            COALESCE(ct.mintage, 0) AS mintage,
+            ct.is_proof
+        FROM coin_type ct
+        JOIN coin_master cm ON cm.id = ct.master_id
+        {where_clause}
+        ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
+    """
+
+    return execute_query_all(query, tuple(params))
+
+
+def render_types_results(results: List[Dict[str, Any]]):
+    """Render the coin types results table."""
+    if not results:
+        st.info("No coin types found. Try adjusting the filters.")
+        return
+
+    df = pd.DataFrame(results)
+    display_df = prepare_types_display_dataframe(df)
+
+    # Configure column display
+    column_config = {
+        "Year": st.column_config.NumberColumn(format="%d"),
+        "Mintage": st.column_config.TextColumn(),
+    }
+
+    # Display the dataframe
+    st.dataframe(
+        display_df,
+        width='stretch',
+        hide_index=True,
+        column_config=column_config
+    )
+
+    # Add download button
+    create_download_button(display_df, "coin_types.csv")
+
+
+# ---------------------------------
+# Main UI with Tabs
 # ---------------------------------
 
-# Render filters
-selected_country, selected_denomination, series_search = render_filters()
+# Create tabs
+tab_masters, tab_types = st.tabs(["📖 Coin Masters", "🪙 Coin Types"])
 
-# Execute search
-results = search_coin_masters(selected_country, selected_denomination, series_search)
+# ===== Coin Masters Tab =====
+with tab_masters:
+    st.caption("Filter your Master Coins and jump to Numista, NGC, and PCGS references.")
 
-# Display result count
-st.markdown(f"**Results:** {len(results):,} master coins")
+    # Render filters
+    selected_country, selected_denomination, series_search = render_master_filters()
 
-# Render results
-render_results(results)
+    # Only search and display if a country is selected
+    if selected_country:
+        # Execute search
+        results = search_coin_masters(selected_country, selected_denomination, series_search)
 
-# Add help information
-with st.expander("ℹ️ About Reference Links"):
-    st.markdown("""
-    **Reference Links:**
-    - **Numista** - Community-driven world coin catalog with detailed information
-    - **NGC** - Numismatic Guaranty Company price guides and population reports
-    - **PCGS** - Professional Coin Grading Service price guides and population reports
+        # Display result count
+        st.markdown(f"**Results:** {len(results):,} master coins")
 
-    Links will only appear if they've been added to the coin master records.
-    You can add these URLs in Admin → Coin Master Editor.
-    """)
+        # Render results
+        render_master_results(results)
+    else:
+        # Show instruction message when no country is selected
+        st.info("👆 Select a country above to view coin masters")
+
+    # Add help information
+    with st.expander("ℹ️ About Reference Links"):
+        st.markdown("""
+        **Reference Links:**
+        - **Numista** - Community-driven world coin catalog with detailed information
+        - **NGC** - Numismatic Guaranty Company price guides and population reports
+        - **PCGS** - Professional Coin Grading Service price guides and population reports
+
+        Links will only appear if they've been added to the coin master records.
+        You can add these URLs in Admin → Coin Master Editor.
+        """)
+
+# ===== Coin Types Tab =====
+with tab_types:
+    st.caption("Browse individual coin types with year, mint mark, and variety details.")
+
+    # Render filters
+    filter_result = render_types_filters()
+
+    if filter_result:
+        selected_country, selected_series = filter_result
+
+        # Only search and display if both country AND series are selected
+        if selected_country and selected_series:
+            # Execute search
+            type_results = search_coin_types(selected_country, selected_series)
+
+            # Display result count
+            st.markdown(f"**Results:** {len(type_results):,} coin types")
+
+            # Render results
+            render_types_results(type_results)
+        elif selected_country:
+            # Country selected but no series
+            st.info("👆 Select a series above to view coin types")
+        else:
+            # No country selected
+            st.info("👆 Select a country above to begin")
+
+        # Add help information
+        with st.expander("ℹ️ About Coin Types"):
+            st.markdown("""
+            **Coin Types represent individual coins with specific:**
+            - Year of minting
+            - Mint mark (if applicable)
+            - Variety (special characteristics or errors)
+            - Mintage (number produced)
+
+            Each coin type belongs to a coin master which defines the series, denomination, and specifications.
+            """)
