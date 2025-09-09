@@ -153,7 +153,19 @@ with tabs[0]:
                 display_columns = ['have', 'series', 'year', 'mint_mark', 'variety', 'is_proof',
                                    'qty_on_hand', 'grade_info']
 
-                st.dataframe(display_df[display_columns], width='stretch', hide_index=True)
+                # Rename columns for display
+                display_df = display_df[display_columns].rename(columns={
+                    'have': 'Have',
+                    'series': 'Series',
+                    'year': 'Year',
+                    'mint_mark': 'Mint Mark',
+                    'variety': 'Variety',
+                    'is_proof': 'Proof',
+                    'qty_on_hand': 'Qty on Hand',
+                    'grade_info': 'Grade Info'
+                })
+
+                st.dataframe(display_df, width='stretch', hide_index=True)
 
                 # Download buttons
                 col1, col2 = st.columns(2)
