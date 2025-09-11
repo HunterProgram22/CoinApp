@@ -4,6 +4,12 @@ from auth_utils import require_auth
 
 # Check authentication first
 require_auth()
+# pages/43_Transactions.py
+import streamlit as st
+from auth_utils import require_auth
+
+# Check authentication first
+require_auth()
 import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
@@ -17,6 +23,12 @@ from queries import (
 )
 
 st.header("Transactions")
+
+# Initialize session state for line items if not exists
+if 'buy_line_items' not in st.session_state:
+    st.session_state.buy_line_items = []
+if 'sell_line_items' not in st.session_state:
+    st.session_state.sell_line_items = []
 
 
 # ---------------------------------
@@ -347,99 +359,139 @@ def render_search_filters():
 
 
 def render_buy_form():
-    """Render the buy transaction form."""
+    """Render the buy transaction form with multiple line items support."""
     coin_types = get_all_coin_types()
     storage_options = get_storage_locations()
 
-    with st.form("buy_form", clear_on_submit=False):
-        colA, colB, colC = st.columns(3)
-        tx_date = colA.date_input("Date", value=date.today(), key="buy_date")
-        party_name = colB.text_input("Counterparty (Dealer/Person)", key="buy_party")
-        currency = colC.text_input("Currency", value="USD", key="buy_ccy")
+    # Transaction Header
+    st.subheader("Transaction Details")
+    colA, colB, colC = st.columns(3)
+    tx_date = colA.date_input("Date", value=date.today(), key="buy_date")
+    party_name = colB.text_input("Counterparty (Dealer/Person)", key="buy_party")
+    currency = colC.text_input("Currency", value="USD", key="buy_ccy")
 
-        # Use text inputs for money fields to avoid Streamlit number_input issues
-        shipping = colA.text_input("Shipping", value="0.00", key="buy_ship")
-        tax = colB.text_input("Tax", value="0.00", key="buy_tax")
-        fees = colC.text_input("Fees", value="0.00", key="buy_fees")
-        notes = st.text_area("Notes", height=70, key="buy_notes")
+    colA, colB, colC = st.columns(3)
+    shipping = colA.text_input("Shipping", value="0.00", key="buy_ship")
+    tax = colB.text_input("Tax", value="0.00", key="buy_tax")
+    fees = colC.text_input("Fees", value="0.00", key="buy_fees")
+    notes = st.text_area("Notes", height=70, key="buy_notes")
 
-        st.subheader("Line Item")
+    st.divider()
 
+    # Line Items Section
+    st.subheader("Line Items")
+
+    # Display current line items
+    if st.session_state.buy_line_items:
+        st.write(f"**{len(st.session_state.buy_line_items)} items added:**")
+
+        # Create a summary table
+        items_df = []
+        for idx, item in enumerate(st.session_state.buy_line_items):
+            items_df.append({
+                'Index': idx,
+                'Coin': item['display_label'],
+                'Qty': item['quantity'],
+                'Unit Price': f"${item['unit_price']:.2f}",
+                'Total': f"${item['quantity'] * item['unit_price']:.2f}",
+                'Grade': item.get('purchase_grade_text', ''),
+                'Storage': item.get('storage_name', '')
+            })
+
+        df = pd.DataFrame(items_df)
+        st.dataframe(df.drop(columns=['Index']), width='stretch', hide_index=True)
+
+        # Calculate totals
+        subtotal = sum(
+            item['quantity'] * item['unit_price'] for item in st.session_state.buy_line_items)
+        st.write(f"**Subtotal: ${subtotal:.2f}**")
+
+        # Remove item functionality
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            remove_idx = st.selectbox("Remove item:",
+                                      options=range(len(st.session_state.buy_line_items)),
+                                      format_func=lambda x: st.session_state.buy_line_items[x][
+                                          'display_label'],
+                                      key="remove_buy_item_select")
+        with col2:
+            if st.button("Remove", key="remove_buy_item"):
+                st.session_state.buy_line_items.pop(remove_idx)
+                st.rerun()
+
+        if st.button("Clear All Items", key="clear_buy_items"):
+            st.session_state.buy_line_items = []
+            st.rerun()
+
+    st.divider()
+
+    # Add new line item form
+    with st.expander("➕ Add Line Item", expanded=True):
         if coin_types:
             selection = st.selectbox(
                 "Coin Type",
                 coin_types,
                 format_func=format_coin_type_label,
-                key="buy_ct"
+                key="buy_ct_add"
             )
             coin_type_id = selection["id"] if selection else None
         else:
             st.warning("Add at least one Coin Type in Admin → Coin Types.")
             coin_type_id = None
 
-        quantity = st.number_input("Quantity", min_value=1, step=1, value=1, key="buy_qty")
-        unit_price = st.text_input("Unit Price (per coin)", value="0.00", key="buy_unit")
+        col1, col2 = st.columns(2)
+        quantity = col1.number_input("Quantity", min_value=1, step=1, value=1, key="buy_qty_add")
+        unit_price = col2.text_input("Unit Price (per coin)", value="0.00", key="buy_unit_add")
 
-        with st.expander("Grades & Valuation"):
+        with st.expander("Grades & Valuation (Optional)"):
             purchase_grade_company = st.text_input("Purchase Grade Company (PCGS/NGC/RAW)",
-                                                   key="buy_pgc")
-            purchase_grade_text = st.text_input("Purchase Grade Text (e.g., MS64)", key="buy_pgt")
+                                                   key="buy_pgc_add")
+            purchase_grade_text = st.text_input("Purchase Grade Text (e.g., MS64)",
+                                                key="buy_pgt_add")
             purchase_numeric_grade = st.number_input("Purchase Numeric Grade", min_value=0.0,
-                                                     step=0.5, value=0.0, key="buy_png")
-            slab_cert = st.text_input("Slab Cert #", key="buy_cert")
+                                                     step=0.5, value=0.0, key="buy_png_add")
+            slab_cert = st.text_input("Slab Cert #", key="buy_cert_add")
 
             estimated_grade_text = st.text_input("Estimated Grade (your current opinion)",
-                                                 key="buy_egt")
+                                                 key="buy_egt_add")
             estimated_numeric_grade = st.number_input("Estimated Numeric Grade", min_value=0.0,
-                                                      step=0.5, value=0.0, key="buy_eng")
+                                                      step=0.5, value=0.0, key="buy_eng_add")
             valuation_method = st.selectbox("Valuation Method",
                                             ["AUTO", "MELT_ONLY", "GUIDE_ONLY", "MANUAL"], index=0,
-                                            key="buy_valm")
+                                            key="buy_valm_add")
             manual_est_unit_value = st.text_input("Manual Unit Value (used only if MANUAL)",
-                                                  value="0.00", key="buy_manual")
+                                                  value="0.00", key="buy_manual_add")
 
-        with st.expander("Storage"):
+        with st.expander("Storage (Optional)"):
             storage_location_id = None
+            storage_name = ""
             if storage_options:
                 stg = st.selectbox(
                     "Storage Location",
-                    storage_options,
-                    format_func=format_storage_label,
-                    key="buy_storage"
+                    [None] + storage_options,
+                    format_func=lambda x: "None" if x is None else format_storage_label(x),
+                    key="buy_storage_add"
                 )
-                storage_location_id = stg["id"] if stg else None
+                if stg:
+                    storage_location_id = stg["id"]
+                    storage_name = stg["name"]
             else:
                 st.info("No storage locations yet. Add some in Admin → Storage.")
 
-            lot_notes = st.text_input("Lot Notes", key="buy_lot_notes")
+            lot_notes = st.text_input("Lot Notes", key="buy_lot_notes_add")
 
-        submitted = st.form_submit_button("Save BUY", type="primary")
-
-        if submitted:
-            # Validate numeric inputs
-            try:
-                shipping_val = float(shipping) if shipping else 0.0
-                tax_val = float(tax) if tax else 0.0
-                fees_val = float(fees) if fees else 0.0
-                unit_price_val = float(unit_price) if unit_price else 0.0
-                manual_val = float(manual_est_unit_value) if manual_est_unit_value else 0.0
-            except ValueError:
-                st.error("Please enter valid numbers for monetary fields")
-                return
-
+        if st.button("Add Line Item", type="secondary", key="add_buy_line"):
             if not coin_type_id:
-                st.error("Please add/select a Coin Type first.")
+                st.error("Please select a Coin Type.")
             else:
-                create_buy_transaction(
-                    tx_date=tx_date.isoformat(),
-                    party_name=party_name,
-                    currency=currency,
-                    shipping=shipping_val,
-                    tax=tax_val,
-                    fees=fees_val,
-                    notes=notes,
-                    items=[{
+                try:
+                    unit_price_val = float(unit_price) if unit_price else 0.0
+                    manual_val = float(manual_est_unit_value) if manual_est_unit_value else 0.0
+
+                    # Add to session state
+                    st.session_state.buy_line_items.append({
                         "coin_type_id": int(coin_type_id),
+                        "display_label": format_coin_type_label(selection),
                         "quantity": int(quantity),
                         "unit_price": unit_price_val,
                         "purchase_grade_company": purchase_grade_company or None,
@@ -451,77 +503,122 @@ def render_buy_form():
                         "valuation_method": valuation_method,
                         "manual_est_unit_value": manual_val or None,
                         "storage_location_id": storage_location_id,
+                        "storage_name": storage_name,
                         "lot_notes": lot_notes or None,
-                    }]
-                )
-                st.success("BUY saved.")
-                st.rerun()
+                    })
+                    st.success(f"Added {format_coin_type_label(selection)} to transaction")
+                    st.rerun()
+                except ValueError:
+                    st.error("Please enter valid numbers for price fields")
 
+    st.divider()
 
-def check_inventory_availability(coin_type_id: int, quantity: int) -> Tuple[bool, str, List[Dict]]:
-    """Check if enough inventory is available for sale and return lot details."""
-    query = """
-        SELECT 
-            l.id as lot_id,
-            l.qty_remaining,
-            l.acquired_date,
-            cm.series,
-            ct.year,
-            ct.mint_mark,
-            ct.variety
-        FROM lot l
-        JOIN coin_type ct ON ct.id = l.coin_type_id
-        JOIN coin_master cm ON cm.id = ct.master_id
-        WHERE l.coin_type_id = ? AND l.qty_remaining > 0
-        ORDER BY l.acquired_date ASC, l.id ASC
-    """
-
-    results = execute_query_all(query, (coin_type_id,))
-
-    total_available = sum(r['qty_remaining'] for r in results)
-
-    if total_available < quantity:
-        if results:
-            coin_desc = f"{results[0]['series']} {results[0]['year']}"
-            if results[0]['mint_mark']:
-                coin_desc += f" {results[0]['mint_mark']}"
-            if results[0]['variety']:
-                coin_desc += f" • {results[0]['variety']}"
+    # Save transaction button
+    if st.button("💾 Save Transaction", type="primary", key="save_buy_tx"):
+        if not st.session_state.buy_line_items:
+            st.error("Please add at least one line item.")
         else:
-            coin_desc = f"coin_type_id {coin_type_id}"
+            try:
+                shipping_val = float(shipping) if shipping else 0.0
+                tax_val = float(tax) if tax else 0.0
+                fees_val = float(fees) if fees else 0.0
 
-        return False, f"Insufficient inventory: Only {total_available} available for {coin_desc}, but trying to sell {quantity}", results
-
-    return True, "", results
+                create_buy_transaction(
+                    tx_date=tx_date.isoformat(),
+                    party_name=party_name,
+                    currency=currency,
+                    shipping=shipping_val,
+                    tax=tax_val,
+                    fees=fees_val,
+                    notes=notes,
+                    items=st.session_state.buy_line_items
+                )
+                st.success(
+                    f"BUY transaction saved with {len(st.session_state.buy_line_items)} line items!")
+                st.session_state.buy_line_items = []  # Clear after saving
+                st.rerun()
+            except ValueError as e:
+                st.error(f"Validation error: {e}")
+            except Exception as e:
+                st.error(f"Error saving transaction: {e}")
 
 
 def render_sell_form():
-    """Render the sell transaction form."""
+    """Render the sell transaction form with multiple line items support."""
     coin_types = get_all_coin_types()
 
-    with st.form("sell_form", clear_on_submit=False):
-        colA, colB, colC = st.columns(3)
-        tx_date = colA.date_input("Date", value=date.today(), key="sell_date")
-        party_name = colB.text_input("Counterparty (Buyer)", key="sell_party")
-        currency = colC.text_input("Currency", value="USD", key="sell_ccy")
+    # Transaction Header
+    st.subheader("Transaction Details")
+    colA, colB, colC = st.columns(3)
+    tx_date = colA.date_input("Date", value=date.today(), key="sell_date")
+    party_name = colB.text_input("Counterparty (Buyer)", key="sell_party")
+    currency = colC.text_input("Currency", value="USD", key="sell_ccy")
 
-        shipping = colA.text_input("Shipping", value="0.00", key="sell_ship")
-        tax = colB.text_input("Tax", value="0.00", key="sell_tax")
-        fees = colC.text_input("Fees", value="0.00", key="sell_fees")
-        notes = st.text_area("Notes", height=70, key="sell_notes")
+    colA, colB, colC = st.columns(3)
+    shipping = colA.text_input("Shipping", value="0.00", key="sell_ship")
+    tax = colB.text_input("Tax", value="0.00", key="sell_tax")
+    fees = colC.text_input("Fees", value="0.00", key="sell_fees")
+    notes = st.text_area("Notes", height=70, key="sell_notes")
 
-        st.subheader("Line Item")
+    st.divider()
 
+    # Line Items Section
+    st.subheader("Line Items to Sell")
+
+    # Display current line items
+    if st.session_state.sell_line_items:
+        st.write(f"**{len(st.session_state.sell_line_items)} items to sell:**")
+
+        # Create a summary table
+        items_df = []
+        for idx, item in enumerate(st.session_state.sell_line_items):
+            items_df.append({
+                'Index': idx,
+                'Coin': item['display_label'],
+                'Qty': item['quantity'],
+                'Unit Price': f"${item['unit_price']:.2f}",
+                'Total': f"${item['quantity'] * item['unit_price']:.2f}"
+            })
+
+        df = pd.DataFrame(items_df)
+        st.dataframe(df.drop(columns=['Index']), width='stretch', hide_index=True)
+
+        # Calculate totals
+        subtotal = sum(
+            item['quantity'] * item['unit_price'] for item in st.session_state.sell_line_items)
+        st.write(f"**Subtotal: ${subtotal:.2f}**")
+
+        # Remove item functionality
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            remove_idx = st.selectbox("Remove item:",
+                                      options=range(len(st.session_state.sell_line_items)),
+                                      format_func=lambda x: st.session_state.sell_line_items[x][
+                                          'display_label'],
+                                      key="remove_sell_item_select")
+        with col2:
+            if st.button("Remove", key="remove_sell_item"):
+                st.session_state.sell_line_items.pop(remove_idx)
+                st.rerun()
+
+        if st.button("Clear All Items", key="clear_sell_items"):
+            st.session_state.sell_line_items = []
+            st.rerun()
+
+    st.divider()
+
+    # Add new line item form
+    with st.expander("➕ Add Line Item", expanded=True):
         if coin_types:
             selection = st.selectbox(
                 "Coin Type",
                 coin_types,
                 format_func=format_coin_type_label,
-                key="sell_ct"
+                key="sell_ct_add"
             )
             coin_type_id = selection["id"] if selection else None
 
-            # Show available inventory for selected coin with lot breakdown
+            # Show available inventory for selected coin
             if coin_type_id:
                 has_inv, msg, lots = check_inventory_availability(coin_type_id, 0)
                 if lots:
@@ -539,64 +636,78 @@ def render_sell_form():
             st.warning("Add at least one Coin Type in Admin → Coin Types.")
             coin_type_id = None
 
-        quantity = st.number_input("Quantity to SELL", min_value=1, step=1, value=1, key="sell_qty")
-        unit_price = st.text_input("Unit Price (per coin)", value="0.00", key="sell_unit")
+        col1, col2 = st.columns(2)
+        quantity = col1.number_input("Quantity to SELL", min_value=1, step=1, value=1,
+                                     key="sell_qty_add")
+        unit_price = col2.text_input("Unit Price (per coin)", value="0.00", key="sell_unit_add")
 
-        submitted = st.form_submit_button("Save SELL (FIFO)", type="primary")
+        if st.button("Add Line Item", type="secondary", key="add_sell_line"):
+            if not coin_type_id:
+                st.error("Please select a Coin Type.")
+            else:
+                try:
+                    unit_price_val = float(unit_price) if unit_price else 0.0
 
-        if submitted:
-            # Validate numeric inputs
+                    # Check inventory availability for this specific item
+                    has_inventory, error_msg, lots = check_inventory_availability(coin_type_id,
+                                                                                  quantity)
+                    if not has_inventory:
+                        st.error(error_msg)
+                    else:
+                        # Add to session state
+                        st.session_state.sell_line_items.append({
+                            "coin_type_id": int(coin_type_id),
+                            "display_label": format_coin_type_label(selection),
+                            "quantity": int(quantity),
+                            "unit_price": unit_price_val
+                        })
+                        st.success(f"Added {format_coin_type_label(selection)} to transaction")
+                        st.rerun()
+                except ValueError:
+                    st.error("Please enter valid numbers for price fields")
+
+    st.divider()
+
+    # Save transaction button
+    if st.button("💾 Save Transaction (FIFO)", type="primary", key="save_sell_tx"):
+        if not st.session_state.sell_line_items:
+            st.error("Please add at least one line item.")
+        else:
             try:
                 shipping_val = float(shipping) if shipping else 0.0
                 tax_val = float(tax) if tax else 0.0
                 fees_val = float(fees) if fees else 0.0
-                unit_price_val = float(unit_price) if unit_price else 0.0
-            except ValueError:
-                st.error("Please enter valid numbers for monetary fields")
-                return
 
-            if not coin_type_id:
-                st.error("Please add/select a Coin Type first.")
-                return
+                # Verify all items have inventory available
+                all_available = True
+                for item in st.session_state.sell_line_items:
+                    has_inv, error_msg, _ = check_inventory_availability(item['coin_type_id'],
+                                                                         item['quantity'])
+                    if not has_inv:
+                        st.error(f"Inventory check failed: {error_msg}")
+                        all_available = False
+                        break
 
-            # Check inventory before attempting sale with detailed lot info
-            has_inventory, error_msg, lots = check_inventory_availability(coin_type_id, quantity)
-            if not has_inventory:
-                st.error(error_msg)
-                if lots:
-                    st.write("**Available lots:**")
-                    for lot in lots:
-                        st.write(f"• Lot #{lot['lot_id']}: {lot['qty_remaining']} units")
-                return
-
-            try:
-                create_sell_transaction(
-                    tx_date=tx_date.isoformat(),
-                    party_name=party_name,
-                    currency=currency,
-                    shipping=shipping_val,
-                    tax=tax_val,
-                    fees=fees_val,
-                    notes=notes,
-                    items=[{
-                        "coin_type_id": int(coin_type_id),
-                        "quantity": int(quantity),
-                        "unit_price": unit_price_val
-                    }],
-                    method='FIFO'
-                )
-                st.success("SELL saved (FIFO).")
-                st.rerun()
+                if all_available:
+                    create_sell_transaction(
+                        tx_date=tx_date.isoformat(),
+                        party_name=party_name,
+                        currency=currency,
+                        shipping=shipping_val,
+                        tax=tax_val,
+                        fees=fees_val,
+                        notes=notes,
+                        items=st.session_state.sell_line_items,
+                        method='FIFO'
+                    )
+                    st.success(
+                        f"SELL transaction saved with {len(st.session_state.sell_line_items)} line items (FIFO)!")
+                    st.session_state.sell_line_items = []  # Clear after saving
+                    st.rerun()
             except ValueError as e:
-                st.error(str(e))
+                st.error(f"Validation error: {e}")
             except Exception as e:
-                st.error(f"Transaction failed: {str(e)}")
-                # Show debug info
-                st.write("Debug: Attempted to sell", quantity, "units")
-                if lots:
-                    st.write("Available lots were:")
-                    for lot in lots:
-                        st.write(f"• Lot #{lot['lot_id']}: {lot['qty_remaining']} units")
+                st.error(f"Error saving transaction: {e}")
 
 
 # ---------------------------------
