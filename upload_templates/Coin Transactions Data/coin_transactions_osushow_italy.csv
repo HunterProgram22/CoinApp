@@ -1,0 +1,7 @@
+tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,series,year,mint_mark,variety,quantity,unit_price,purchase_grade_company,purchase_grade_text,purchase_numeric_grade,estimated_grade_text,estimated_numeric_grade,valuation_method,manual_est_unit_value,storage_location
+8/30/2025,Buy,Ohio State Coin Show,USD,,,,,Italy,2 Lire,Victor Emmanuel III - 2 Lire (1923-1935),1924,R,,1,2.1,,,,XF45,45,AUTO,10,World Coins Box
+8/30/2025,Buy,Ohio State Coin Show,USD,,,,,Italy,2 Lire,Victor Emmanuel III - 2 Lire (1923-1935),1924,R,,1,2.1,,,,VF20,20,AUTO,3,World Coins Box
+8/30/2025,Buy,Ohio State Coin Show,USD,,,,,Italy,2 Lire,Victor Emmanuel III - 2 Lire (1939-1943),1940,R,Non-magnetic,1,2.1,,,,XF40,40,AUTO,2,World Coins Box
+8/30/2025,Buy,Ohio State Coin Show,USD,,,,,Italy,5 Centesimi,Victor Emmanuel III - 5 Centesimi (1939-1943),1941,R,,1,2.1,,,,XF40,40,AUTO,0.2,World Coins Box
+8/30/2025,Buy,Ohio State Coin Show,USD,,,,,Italy,5 Centesimi,Victor Emmanuel III - 5 Centesimi (1939-1943),1942,R,,1,2.08,,,,XF40,40,AUTO,0.2,World Coins Box
+8/30/2025,Buy,Ohio State Coin Show,USD,,,,,Italy,20 Centesimi,Victor Emmanuel III - 20 Centesimi (1939-1943),1940,R,,1,2.08,,,,XF45,45,AUTO,0.4,World Coins Box
