@@ -16,23 +16,74 @@ st.header("📦 Storage Location Report")
 # ---------------------------------
 # Data Access Functions
 # ---------------------------------
-def get_storage_locations() -> List[Dict[str, Any]]:
-    """Get all storage locations with inventory counts."""
+def get_storage_locations(category_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Get all storage locations with inventory counts, optionally filtered by category."""
+    if category_filter and category_filter != "All":
+        query = """
+            SELECT 
+                sl.id,
+                sl.name,
+                COALESCE(sl.category, '') AS category,
+                COALESCE(sl.description, '') AS description,
+                COUNT(l.id) AS lot_count,
+                COALESCE(SUM(l.qty_remaining), 0) AS total_coins,
+                COALESCE(SUM(l.qty_remaining * l.unit_cost), 0) AS total_cost_usd,
+                COALESCE(SUM(l.qty_remaining * COALESCE(v.chosen_unit_value, l.unit_cost)), 0) AS total_value_usd
+            FROM storage_location sl
+            LEFT JOIN lot l ON l.storage_location_id = sl.id AND l.qty_remaining > 0
+            LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+            WHERE sl.category = ?
+            GROUP BY sl.id, sl.name, sl.category, sl.description
+            ORDER BY sl.name
+        """
+        return execute_query_all(query, (category_filter,))
+    else:
+        query = """
+            SELECT 
+                sl.id,
+                sl.name,
+                COALESCE(sl.category, '') AS category,
+                COALESCE(sl.description, '') AS description,
+                COUNT(l.id) AS lot_count,
+                COALESCE(SUM(l.qty_remaining), 0) AS total_coins,
+                COALESCE(SUM(l.qty_remaining * l.unit_cost), 0) AS total_cost_usd,
+                COALESCE(SUM(l.qty_remaining * COALESCE(v.chosen_unit_value, l.unit_cost)), 0) AS total_value_usd
+            FROM storage_location sl
+            LEFT JOIN lot l ON l.storage_location_id = sl.id AND l.qty_remaining > 0
+            LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+            GROUP BY sl.id, sl.name, sl.category, sl.description
+            ORDER BY sl.name
+        """
+        return execute_query_all(query)
+
+
+def get_storage_categories() -> List[str]:
+    """Get list of unique storage categories."""
+    query = """
+        SELECT DISTINCT category 
+        FROM storage_location 
+        WHERE category IS NOT NULL AND category != ''
+        ORDER BY category
+    """
+    results = execute_query_all(query)
+    return [r['category'] for r in results]
+
+
+def get_category_summary(category: str) -> Dict[str, Any]:
+    """Get summary statistics for a specific storage category."""
     query = """
         SELECT 
-            sl.id,
-            sl.name,
-            COALESCE(sl.category, '') AS category,
-            COALESCE(sl.description, '') AS description,
-            COUNT(l.id) AS lot_count,
+            COUNT(DISTINCT sl.id) AS location_count,
             COALESCE(SUM(l.qty_remaining), 0) AS total_coins,
-            COALESCE(SUM(l.qty_remaining * l.unit_cost), 0) AS total_cost_usd
+            COALESCE(SUM(l.qty_remaining * l.unit_cost), 0) AS total_cost,
+            COALESCE(SUM(l.qty_remaining * COALESCE(v.chosen_unit_value, l.unit_cost)), 0) AS total_value
         FROM storage_location sl
         LEFT JOIN lot l ON l.storage_location_id = sl.id AND l.qty_remaining > 0
-        GROUP BY sl.id, sl.name, sl.category, sl.description
-        ORDER BY sl.name
+        LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+        WHERE sl.category = ?
     """
-    return execute_query_all(query)
+    result = execute_query_single(query, (category,))
+    return result if result else {}
 
 
 def get_inventory_by_storage(storage_id: int) -> List[Dict[str, Any]]:
@@ -168,34 +219,66 @@ def create_download_button(label: str, df: pd.DataFrame, filename: str):
 # Tab Components
 # ---------------------------------
 def render_summary_tab():
-    """Render the storage summary tab."""
+    """Render the storage summary tab with category filtering."""
     st.subheader("Storage Summary")
 
-    # Overall summary metrics
-    summary = get_storage_summary()
+    # Get available categories
+    categories = get_storage_categories()
+    category_options = ["All"] + categories
 
-    if summary:
-        col1, col2, col3, col4 = st.columns(4)
-
-        col1.metric("Total Storage Locations", int(summary.get('total_locations', 0)))
-        col2.metric("Locations with Inventory", int(summary.get('locations_with_inventory', 0)))
-        col3.metric("Unassigned Coins", int(summary.get('unassigned_coins', 0)))
-        col4.metric("Unassigned Value", f"${float(summary.get('unassigned_value', 0)):,.2f}")
+    # Category filter dropdown
+    selected_category = st.selectbox(
+        "Filter by Category:",
+        category_options,
+        index=0,
+        key="storage_category_filter"
+    )
 
     st.divider()
 
-    # Storage locations table
-    st.markdown("### Storage Locations Overview")
+    # Show overall or category-specific metrics
+    if selected_category == "All":
+        # Overall summary metrics (existing code)
+        summary = get_storage_summary()
 
-    locations = get_storage_locations()
+        if summary:
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total Storage Locations", int(summary.get('total_locations', 0)))
+            col2.metric("Locations with Inventory", int(summary.get('locations_with_inventory', 0)))
+            col3.metric("Unassigned Coins", int(summary.get('unassigned_coins', 0)))
+            col4.metric("Unassigned Value", f"${float(summary.get('unassigned_value', 0)):,.2f}")
+    else:
+        # Category-specific metrics
+        category_summary = get_category_summary(selected_category)
+
+        if category_summary:
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric(f"Locations in '{selected_category}'",
+                        int(category_summary.get('location_count', 0)))
+            col2.metric("Total Coins", f"{int(category_summary.get('total_coins', 0)):,}")
+            col3.metric("Total Cost", f"${float(category_summary.get('total_cost', 0)):,.2f}")
+            col4.metric("Total Value", f"${float(category_summary.get('total_value', 0)):,.2f}")
+
+    st.divider()
+
+    # Storage locations table (filtered by category if selected)
+    if selected_category == "All":
+        st.markdown("### Storage Locations Overview")
+    else:
+        st.markdown(f"### Storage Locations in '{selected_category}'")
+
+    locations = get_storage_locations(None if selected_category == "All" else selected_category)
 
     if not locations:
-        st.info("No storage locations defined. Add some in Admin → Storage.")
+        if selected_category == "All":
+            st.info("No storage locations defined. Add some in Admin → Storage.")
+        else:
+            st.info(f"No storage locations found in category '{selected_category}'.")
     else:
         # Convert to DataFrame for display
         df = pd.DataFrame(locations)
 
-        # Drop the id column as requested
+        # Drop the id column
         if 'id' in df.columns:
             df = df.drop(columns=['id'])
 
@@ -205,11 +288,12 @@ def render_summary_tab():
             "description": "Description",
             "lot_count": "Lots",
             "total_coins": "Coins",
-            "total_cost_usd": "Total Cost (USD)"
+            "total_cost_usd": "Total Cost (USD)",
+            "total_value_usd": "Total Value (USD)"
         })
 
         # Format money columns
-        display_df, csv_df = format_money_columns(df, ["Total Cost (USD)"])
+        display_df, csv_df = format_money_columns(df, ["Total Cost (USD)", "Total Value (USD)"])
 
         st.dataframe(display_df, width='stretch', hide_index=True,
                      column_config={
@@ -218,82 +302,85 @@ def render_summary_tab():
                      })
 
         # Download button for storage summary
+        filename = f"storage_summary_{selected_category.lower().replace(' ', '_')}.csv" if selected_category != "All" else "storage_summary.csv"
         create_download_button(
-            "📥 Download Storage Summary CSV",
+            f"📥 Download Storage Summary CSV ({selected_category})",
             csv_df,
-            "storage_summary.csv"
+            filename
         )
 
     st.divider()
 
-    # Unassigned Inventory Section
-    with st.expander("🚨 Unassigned Inventory", expanded=False):
-        inventory = get_unassigned_inventory()
+    # Unassigned Inventory Section (only show when "All" is selected)
+    if selected_category == "All":
+        with st.expander("🚨 Unassigned Inventory", expanded=False):
+            inventory = get_unassigned_inventory()
 
-        if not inventory:
-            st.info("✅ All inventory is assigned to storage locations.")
-        else:
-            st.warning(f"Found {len(inventory)} lots not assigned to any storage location.")
+            if not inventory:
+                st.info("✅ All inventory is assigned to storage locations.")
+            else:
+                st.warning(f"Found {len(inventory)} lots not assigned to any storage location.")
 
-            # Summary
-            total_coins = sum(item['quantity'] for item in inventory)
-            total_cost = sum(item['lot_cost_usd'] for item in inventory)
-            total_est_value = sum(item['est_value_usd'] for item in inventory)
+                # Summary
+                total_coins = sum(item['quantity'] for item in inventory)
+                total_cost = sum(item['lot_cost_usd'] for item in inventory)
+                total_est_value = sum(item['est_value_usd'] for item in inventory)
 
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Unassigned Coins", f"{total_coins:,}")
-            col2.metric("Unassigned Cost", f"${total_cost:,.2f}")
-            col3.metric("Unassigned Est. Value", f"${total_est_value:,.2f}")
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Unassigned Coins", f"{total_coins:,}")
+                col2.metric("Unassigned Cost", f"${total_cost:,.2f}")
+                col3.metric("Unassigned Est. Value", f"${total_est_value:,.2f}")
 
-            # Display table
-            df = pd.DataFrame(inventory)
+                # Display table
+                df = pd.DataFrame(inventory)
 
-            # Hide lot_id and format display
-            if "lot_id" in df.columns:
-                df = df.drop(columns=["lot_id"])
+                # Hide lot_id and format display
+                if "lot_id" in df.columns:
+                    df = df.drop(columns=["lot_id"])
 
-            # Rename columns
-            df = df.rename(columns={
-                "series": "Series",
-                "year": "Year",
-                "mint_mark": "Mint Mark",
-                "variety": "Variety",
-                "is_proof": "Proof",
-                "quantity": "Qty",
-                "acquired_date": "Acquired",
-                "acquired_from": "From",
-                "unit_cost_usd": "Unit Cost (USD)",
-                "lot_cost_usd": "Lot Cost (USD)",
-                "est_value_usd": "Est. Value (USD)",
-                "grade": "Grade",
-                "cert_number": "Cert #",
-                "valuation_method": "Val. Method",
-                "notes": "Notes"
-            })
+                # Rename columns
+                df = df.rename(columns={
+                    "series": "Series",
+                    "year": "Year",
+                    "mint_mark": "Mint Mark",
+                    "variety": "Variety",
+                    "is_proof": "Proof",
+                    "quantity": "Qty",
+                    "acquired_date": "Acquired",
+                    "acquired_from": "From",
+                    "unit_cost_usd": "Unit Cost (USD)",
+                    "lot_cost_usd": "Lot Cost (USD)",
+                    "est_value_usd": "Est. Value (USD)",
+                    "grade": "Grade",
+                    "cert_number": "Cert #",
+                    "valuation_method": "Val. Method",
+                    "notes": "Notes"
+                })
 
-            # Format for display
-            display_df = format_year_columns_for_display(df)
-            money_columns = ["Unit Cost (USD)", "Lot Cost (USD)", "Est. Value (USD)"]
-            display_df, csv_df = format_money_columns(display_df, money_columns)
+                # Format for display
+                display_df = format_year_columns_for_display(df)
+                money_columns = ["Unit Cost (USD)", "Lot Cost (USD)", "Est. Value (USD)"]
+                display_df, csv_df = format_money_columns(display_df, money_columns)
 
-            st.dataframe(display_df, width='stretch', hide_index=True)
+                st.dataframe(display_df, width='stretch', hide_index=True)
 
-            # Download button
-            create_download_button(
-                "Download Unassigned Inventory CSV",
-                csv_df,
-                "unassigned_inventory.csv"
-            )
+                # Download button
+                create_download_button(
+                    "Download Unassigned Inventory CSV",
+                    csv_df,
+                    "unassigned_inventory.csv"
+                )
 
-            st.info("💡 **Tip:** You can assign storage locations when editing transactions " +
-                    "or by updating lots in the Admin section.")
+                st.info("💡 **Tip:** You can assign storage locations when editing transactions " +
+                        "or by updating lots in the Admin section.")
 
     # Help section
     with st.expander("ℹ️ About Storage Reports"):
         st.markdown("""
         **Storage Location Reports help you:**
         - Track where your coins are physically stored
-        - See the total value stored in each location
+        - Filter by storage category (Safe, Bank Box, etc.)
+        - See the total value stored in each location or category
         - Identify coins that haven't been assigned to a storage location
         - Generate lists for insurance or inventory purposes
 
@@ -306,6 +393,7 @@ def render_summary_tab():
         - Set up storage locations in Admin → Storage first
         - Use descriptive names like "Home Safe", "Bank Box #123", etc.
         - Include category information to group similar storage types
+        - Use the category filter to view specific types of storage
         """)
 
 
