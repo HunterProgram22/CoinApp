@@ -1,0 +1,8 @@
+tx_date,tx_type,party,currency,shipping,tax,fees,notes,country,denomination,series,year,mint_mark,variety,quantity,unit_price,purchase_grade_company,purchase_grade_text,purchase_numeric_grade,estimated_grade_text,estimated_numeric_grade,valuation_method,manual_est_unit_value,storage_location
+9/7/2025,Buy,eBay - collinscoinsandvintageitems,USD,,0.63,,,Netherlands,1 Cent,Wilhelmina - 1 Cent (1913-1941),1913,,,1,1.28,,,,VG8,8,AUTO,1.5,World Coins M-R
+9/7/2025,Buy,eBay - collinscoinsandvintageitems,USD,,,,,UK,Half Penny,Elizabeth II - Half Penny (1971-1981),1971,,,1,1.28,,,,EF45,45,AUTO,0.3,World Coins S-Z
+9/7/2025,Buy,eBay - collinscoinsandvintageitems,USD,,,,,UK,1 Penny,Elizabeth II - 1 Penny (1985-1992),1990,,,1,1.28,,,,VF35,30,AUTO,0.05,World Coins S-Z
+9/7/2025,Buy,eBay - collinscoinsandvintageitems,USD,,,,,Mexico,10 Centavos,Mexican Republic - 10 Centavos (2009-2019),2009,M,,1,1.28,,,,AU50,50,AUTO,0.1,World Coins M-R
+9/7/2025,Buy,eBay - collinscoinsandvintageitems,USD,,,,,Germany,2 Pfennigs,Federal Republic - 2 Pfennigs (1967-2001),1992,F,,1,1.28,,,,EF45,45,AUTO,0.05,World Coins G-L
+9/7/2025,Buy,eBay - collinscoinsandvintageitems,USD,,,,,Austria,50 Groschen,Second Republic - 50 Groschen (1959-2001),1979,,,1,1.28,,,,VF35,35,AUTO,0.1,World Coins A-F
+9/7/2025,Buy,eBay - collinscoinsandvintageitems,USD,,,,,Japan,1 Yen,Showa - 1 Yen (1955-1989),1974,,,1,1.28,,,,VF25,25,AUTO,0.2,World Coins G-L
