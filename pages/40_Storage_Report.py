@@ -8,7 +8,8 @@ require_auth()
 import streamlit as st
 import pandas as pd
 from typing import List, Dict, Any, Optional
-from db_operations import execute_query_all, execute_query_single
+from db_operations import (execute_query_all, execute_query_single, execute_insert,
+                           execute_update, execute_delete)
 
 st.header("📦 Storage Location Report")
 
@@ -213,6 +214,86 @@ def create_download_button(label: str, df: pd.DataFrame, filename: str):
         file_name=filename,
         mime="text/csv",
     )
+
+
+# ---------------------------------
+# Storage Management Functions (NEW)
+# ---------------------------------
+def create_storage_location(name: str, category: str = None, description: str = None) -> int:
+    """Create a new storage location."""
+    query = "INSERT INTO storage_location (name, category, description) VALUES (?, ?, ?)"
+    return execute_insert(query, (name, category, description))
+
+
+def update_storage_location(storage_id: int, name: str, category: str = None,
+                            description: str = None) -> int:
+    """Update an existing storage location."""
+    query = "UPDATE storage_location SET name = ?, category = ?, description = ? WHERE id = ?"
+    return execute_update(query, (name, category, description, storage_id))
+
+
+def delete_storage_location(storage_id: int) -> bool:
+    """Delete a storage location if it has no inventory."""
+    # Check if location has inventory
+    check_query = "SELECT COUNT(*) as count FROM lot WHERE storage_location_id = ? AND qty_remaining > 0"
+    result = execute_query_single(check_query, (storage_id,))
+
+    if result and result['count'] > 0:
+        return False  # Has inventory, cannot delete
+
+    delete_query = "DELETE FROM storage_location WHERE id = ?"
+    execute_delete(delete_query, (storage_id,))
+    return True
+
+
+def bulk_move_lots(lot_ids: List[int], new_storage_id: Optional[int]) -> int:
+    """Move multiple lots to a new storage location."""
+    if not lot_ids:
+        return 0
+
+    # Build the query with proper parameterization
+    placeholders = ','.join('?' * len(lot_ids))
+    query = f"UPDATE lot SET storage_location_id = ? WHERE id IN ({placeholders})"
+
+    # Parameters: new_storage_id first, then all lot_ids
+    params = [new_storage_id] + lot_ids
+    return execute_update(query, tuple(params))
+
+
+def get_lots_in_storage(storage_id: Optional[int]) -> List[Dict[str, Any]]:
+    """Get all lots in a specific storage location (or unassigned if None)."""
+    if storage_id is None:
+        query = """
+            SELECT 
+                l.id,
+                cm.series || ' ' || ct.year || 
+                CASE WHEN ct.mint_mark != '' THEN ' ' || ct.mint_mark ELSE '' END ||
+                CASE WHEN ct.variety != '' THEN ' • ' || ct.variety ELSE '' END AS description,
+                l.qty_remaining,
+                ROUND(l.unit_cost * l.qty_remaining, 2) as total_value
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            WHERE l.storage_location_id IS NULL AND l.qty_remaining > 0
+            ORDER BY cm.series, ct.year
+        """
+        return execute_query_all(query)
+    else:
+        query = """
+            SELECT 
+                l.id,
+                cm.series || ' ' || ct.year || 
+                CASE WHEN ct.mint_mark != '' THEN ' ' || ct.mint_mark ELSE '' END ||
+                CASE WHEN ct.variety != '' THEN ' • ' || ct.variety ELSE '' END AS description,
+                l.qty_remaining,
+                ROUND(l.unit_cost * l.qty_remaining, 2) as total_value
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            WHERE l.storage_location_id = ? AND l.qty_remaining > 0
+            ORDER BY cm.series, ct.year
+        """
+        return execute_query_all(query, (storage_id,))
 
 
 # ---------------------------------
@@ -506,13 +587,242 @@ def render_detail_tab():
     )
 
 
+def render_manage_storage_tab():
+    """Render the manage storage locations tab."""
+    st.subheader("Manage Storage Locations")
+
+    # Add new storage location section
+    with st.expander("➕ Add New Storage Location", expanded=False):
+        with st.form("add_storage_form"):
+            col1, col2 = st.columns(2)
+            new_name = col1.text_input("Location Name*",
+                                       placeholder="e.g., Home Safe, Bank Box #123")
+            new_category = col2.text_input("Category", placeholder="e.g., Safe, Bank, Display")
+            new_description = st.text_area("Description",
+                                           placeholder="Optional description or notes", height=80)
+
+            submitted = st.form_submit_button("Create Storage Location", type="primary")
+
+            if submitted:
+                if not new_name:
+                    st.error("Location name is required.")
+                else:
+                    try:
+                        storage_id = create_storage_location(
+                            new_name,
+                            new_category if new_category else None,
+                            new_description if new_description else None
+                        )
+                        st.success(f"✅ Created storage location '{new_name}' (ID: {storage_id})")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to create storage location: {e}")
+
+    st.divider()
+
+    # Edit existing storage locations
+    st.markdown("### Edit Existing Storage Locations")
+
+    locations = get_storage_locations()
+
+    if not locations:
+        st.info("No storage locations defined yet. Add one above.")
+    else:
+        # Create a selectbox for choosing location to edit
+        location_options = {
+            f"{loc['name']}" + (f" ({loc['category']})" if loc['category'] else ""): loc
+            for loc in locations
+        }
+
+        selected_location_name = st.selectbox(
+            "Select location to edit:",
+            list(location_options.keys()),
+            key="edit_storage_select"
+        )
+
+        if selected_location_name:
+            selected_location = location_options[selected_location_name]
+
+            with st.form(f"edit_storage_{selected_location['id']}"):
+                col1, col2 = st.columns(2)
+                edit_name = col1.text_input("Location Name*", value=selected_location['name'])
+                edit_category = col2.text_input("Category",
+                                                value=selected_location['category'] or '')
+                edit_description = st.text_area("Description",
+                                                value=selected_location['description'] or '',
+                                                height=80)
+
+                # Show inventory count
+                if selected_location['total_coins'] > 0:
+                    st.info(
+                        f"📦 This location contains {selected_location['total_coins']} coins in {selected_location['lot_count']} lots")
+
+                col1, col2, col3 = st.columns(3)
+
+                update_btn = col1.form_submit_button("💾 Update", type="primary")
+                delete_btn = col2.form_submit_button("🗑️ Delete", type="secondary")
+
+                if update_btn:
+                    if not edit_name:
+                        st.error("Location name is required.")
+                    else:
+                        try:
+                            update_storage_location(
+                                selected_location['id'],
+                                edit_name,
+                                edit_category if edit_category else None,
+                                edit_description if edit_description else None
+                            )
+                            st.success(f"✅ Updated storage location '{edit_name}'")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed to update: {e}")
+
+                if delete_btn:
+                    if selected_location['total_coins'] > 0:
+                        st.error(
+                            "Cannot delete location with inventory. Move or remove items first.")
+                    else:
+                        if delete_storage_location(selected_location['id']):
+                            st.success(f"✅ Deleted storage location '{selected_location['name']}'")
+                            st.rerun()
+                        else:
+                            st.error("Cannot delete location with inventory.")
+
+
+def render_bulk_move_tab():
+    """Render the bulk move items tab."""
+    st.subheader("Bulk Move Items Between Storage Locations")
+
+    # Get all storage locations
+    locations = get_storage_locations()
+    location_dict = {loc['name']: loc['id'] for loc in locations}
+    location_options = ["Unassigned"] + list(location_dict.keys())
+
+    col1, col2 = st.columns(2)
+
+    # Source location
+    source_location = col1.selectbox(
+        "From Storage Location:",
+        location_options,
+        key="bulk_move_source"
+    )
+
+    # Destination location
+    dest_location = col2.selectbox(
+        "To Storage Location:",
+        location_options,
+        key="bulk_move_dest"
+    )
+
+    if source_location == dest_location:
+        st.warning("⚠️ Source and destination locations are the same.")
+        return
+
+    # Get source location ID
+    source_id = None if source_location == "Unassigned" else location_dict[source_location]
+
+    # Get lots in source location
+    lots = get_lots_in_storage(source_id)
+
+    if not lots:
+        st.info(f"No items found in '{source_location}'")
+        return
+
+    st.divider()
+
+    # Display lots with checkboxes
+    st.markdown(f"### Select items to move from '{source_location}' to '{dest_location}'")
+    st.caption(f"Found {len(lots)} lots in {source_location}")
+
+    # Use session state to track selections
+    if 'selected_lot_ids' not in st.session_state:
+        st.session_state.selected_lot_ids = []
+
+    # Select/Deselect all buttons
+    col1, col2, col3 = st.columns([1, 1, 4])
+    if col1.button("Select All", key="select_all_btn"):
+        st.session_state.selected_lot_ids = [lot['id'] for lot in lots]
+    if col2.button("Deselect All", key="deselect_all_btn"):
+        st.session_state.selected_lot_ids = []
+
+    st.divider()
+
+    # Display lots with checkboxes (outside of form for dynamic updates)
+    selected_lots = []
+    total_selected_items = 0
+    total_selected_value = 0.0
+
+    for i, lot in enumerate(lots):
+        col1, col2, col3, col4 = st.columns([0.5, 4, 1, 1])
+
+        # Checkbox with proper label
+        is_selected = col1.checkbox(
+            "Select",  # Provide a non-empty label
+            value=(lot['id'] in st.session_state.selected_lot_ids),
+            key=f"lot_select_{lot['id']}",
+            label_visibility="collapsed"  # Hide the label but keep it for accessibility
+        )
+
+        if is_selected:
+            if lot['id'] not in st.session_state.selected_lot_ids:
+                st.session_state.selected_lot_ids.append(lot['id'])
+            selected_lots.append(lot)
+            total_selected_items += lot['qty_remaining']
+            total_selected_value += lot['total_value']
+        else:
+            if lot['id'] in st.session_state.selected_lot_ids:
+                st.session_state.selected_lot_ids.remove(lot['id'])
+
+        # Description
+        col2.write(lot['description'])
+
+        # Quantity
+        col3.write(f"Qty: {lot['qty_remaining']}")
+
+        # Value
+        col4.write(f"${lot['total_value']:,.2f}")
+
+    st.divider()
+
+    # Summary of selection
+    if selected_lots:
+        st.info(
+            f"**Selected:** {len(selected_lots)} lots containing {total_selected_items} items worth ${total_selected_value:,.2f}")
+
+        # Get destination ID
+        dest_id = None if dest_location == "Unassigned" else location_dict[dest_location]
+
+        # Move button (outside of form for immediate action)
+        if st.button(
+                f"🚚 Move {len(selected_lots)} Selected Items to '{dest_location}'",
+                type="primary",
+                key="move_items_btn"
+        ):
+            try:
+                selected_lot_ids = [lot['id'] for lot in selected_lots]
+                count = bulk_move_lots(selected_lot_ids, dest_id)
+                st.success(
+                    f"✅ Successfully moved {len(selected_lot_ids)} lots to '{dest_location}'")
+                # Clear selections after successful move
+                st.session_state.selected_lot_ids = []
+                st.balloons()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to move lots: {e}")
+    else:
+        st.info("Select items above to enable the move button")
+
+
 # ---------------------------------
 # Main UI with Tabs
 # ---------------------------------
 
 tabs = st.tabs([
     "📊 Storage Summary",
-    "📋 Storage Details"
+    "📋 Storage Details",
+    "⚙️ Manage Storage",
+    "📦 Bulk Move Items"
 ])
 
 with tabs[0]:
@@ -520,3 +830,9 @@ with tabs[0]:
 
 with tabs[1]:
     render_detail_tab()
+
+with tabs[2]:
+    render_manage_storage_tab()
+
+with tabs[3]:
+    render_bulk_move_tab()
