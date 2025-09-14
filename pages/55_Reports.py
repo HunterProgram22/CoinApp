@@ -1,5 +1,11 @@
 # pages/55_Reports.py
 import streamlit as st
+from auth_utils import require_auth
+
+# Check authentication first
+require_auth()
+# pages/55_Reports.py
+import streamlit as st
 import pandas as pd
 from typing import List, Dict, Any, Optional
 from datetime import date, timedelta
