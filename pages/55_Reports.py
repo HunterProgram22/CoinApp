@@ -67,7 +67,7 @@ if selected_report == "Collection Value Report":
             st.markdown("### Value by Asset Category")
             category_data = rl.get_value_by_category()
             if category_data:
-                df = pd.DataFrame(category_data)
+                df = pd.DataFrame(category_data).copy()
                 
                 # Format for display
                 for col in ['cost', 'melt_value', 'estimated_value', 'unrealized_gl']:
@@ -79,7 +79,7 @@ if selected_report == "Collection Value Report":
             st.markdown("### Value by Metal Type")
             metal_data = rl.get_value_by_metal()
             if metal_data:
-                df = pd.DataFrame(metal_data)
+                df = pd.DataFrame(metal_data).copy()
                 
                 # Format for display
                 for col in ['cost', 'melt_value', 'estimated_value', 'unrealized_gl']:
@@ -108,7 +108,7 @@ if selected_report == "Collection Value Report":
                 
                 # Select and format columns
                 display_df = df[['coin', 'qty_remaining', 'grade', 'unit_cost', 
-                                 'unit_value', 'total_value', 'unrealized_gl']]
+                                 'unit_value', 'total_value', 'unrealized_gl']].copy()
                 
                 for col in ['unit_cost', 'unit_value', 'total_value', 'unrealized_gl']:
                     display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
@@ -375,7 +375,7 @@ elif selected_report == "Storage Report":
         # Show summary of all locations
         st.markdown("### All Storage Locations")
         if storage_summary:
-            df = pd.DataFrame(storage_summary)
+            df = pd.DataFrame(storage_summary).copy()
             
             # Format currency columns
             for col in ['cost', 'value']:
@@ -521,7 +521,7 @@ elif selected_report == "Bullion Holdings Report":
             st.markdown("### Detailed Holdings")
             details = rl.get_bullion_details()
             if details:
-                df = pd.DataFrame(details)
+                df = pd.DataFrame(details).copy()
                 
                 # Format for display
                 display_cols = ['series', 'year', 'metal', 'qty_remaining', 
