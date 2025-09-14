@@ -96,7 +96,7 @@ if selected_report == "Collection Value Report":
             
             top_coins = rl.get_top_valued_coins(limit)
             if top_coins:
-                df = pd.DataFrame(top_coins)
+                df = pd.DataFrame(top_coins).copy()
                 
                 # Create display name
                 df['coin'] = df.apply(
