@@ -388,13 +388,21 @@ def render_seller_report():
     # Create seller options with transaction counts
     seller_options = {}
     for seller in sellers:
-        label = f"{seller['name']} ({seller['transaction_count']} transactions, {seller['total_coins']} coins)"
+        logical_count = seller['logical_transaction_count']
+        db_count = seller['db_transaction_count']
+        
+        # Show both counts if they differ
+        if logical_count != db_count:
+            label = f"{seller['name']} ({logical_count} purchase dates from {db_count} entries, {seller['total_coins']} coins)"
+        else:
+            label = f"{seller['name']} ({logical_count} transactions, {seller['total_coins']} coins)"
+        
         seller_options[label] = (seller['id'], seller['name'])
     
     selected_label = st.selectbox(
         "Select Seller",
         [""] + list(seller_options.keys()),
-        help="Choose a seller to generate report"
+        help="Choose a seller to generate report. Numbers show logical transactions (by date) vs database entries."
     )
     
     if selected_label and selected_label != "":
