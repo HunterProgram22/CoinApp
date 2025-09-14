@@ -6,7 +6,7 @@ from auth_utils import require_auth
 require_auth()
 
 import pandas as pd
-from datetime import date, datetime, timedelta
+from datetime import datetime
 import report_logic as rl
 
 st.header("📊 Reports")
@@ -15,12 +15,7 @@ st.caption("Generate comprehensive reports from your coin collection data")
 # Report selector
 report_types = [
     "Collection Value Report",
-    "Seller Report", 
-    "Gain/Loss Report",
-    "Tax Report",
-    "Storage Report",
-    "Type Set Progress Report",
-    "Bullion Holdings Report"
+    "Seller Report"
 ]
 
 selected_report = st.selectbox(
@@ -194,395 +189,157 @@ elif selected_report == "Seller Report":
                 col3.metric("Still Held", int(summary.get('coins_still_held', 0)))
                 col4.metric("Total Cost", f"${summary.get('total_cost_usd', 0):,.2f}")
                 
+                # Additional metrics row
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Unique Coin Types", int(summary.get('unique_coin_types', 0)))
+                col2.metric("Current Value", f"${summary.get('total_current_value_usd', 0):,.2f}")
+                
+                gain_loss = summary.get('unrealized_gain_loss', 0)
+                gain_loss_pct = summary.get('gain_loss_percent', 0)
+                
+                if gain_loss >= 0:
+                    col3.metric("Unrealized G/L", f"${gain_loss:,.2f}", 
+                               f"{gain_loss_pct:.1f}%", delta_color="normal")
+                else:
+                    col3.metric("Unrealized G/L", f"${gain_loss:,.2f}", 
+                               f"{gain_loss_pct:.1f}%", delta_color="inverse")
+                
+                col4.metric("Coins Sold", int(summary.get('coins_sold', 0)))
+                
                 # Tabs for details
-                tab1, tab2 = st.tabs(["By Coin Type", "Transactions"])
+                tab1, tab2, tab3 = st.tabs(["By Coin Type", "Transactions", "Export"])
                 
                 with tab1:
+                    st.markdown("### Purchases by Coin Type")
                     detail_data = rl.get_seller_detail_by_coin_type(party_id)
                     if detail_data:
-                        df = pd.DataFrame(detail_data)
-                        st.dataframe(df, hide_index=True, width='stretch')
+                        df = pd.DataFrame(detail_data).copy()
+                        
+                        # Format the dataframe for display
+                        df['coin'] = df.apply(
+                            lambda r: f"{r['series']} {r['year']}" + 
+                                     (f" {r['mint_mark']}" if r['mint_mark'] else "") +
+                                     (f" • {r['variety']}" if r['variety'] else ""),
+                            axis=1
+                        )
+                        
+                        # Calculate gain/loss percentage for each coin type
+                        df['gl_percent'] = df.apply(
+                            lambda r: ((r['unrealized_gl'] / r['cost_of_remaining'] * 100) 
+                                      if r['cost_of_remaining'] and r['cost_of_remaining'] > 0 else 0),
+                            axis=1
+                        )
+                        
+                        # Select and rename columns for display
+                        display_df = df[[
+                            'coin', 'metal', 'asset_category', 'total_purchased', 'qty_remaining',
+                            'avg_purchase_price', 'total_spent', 'cost_of_remaining', 
+                            'current_value', 'unrealized_gl', 'gl_percent', 'best_grade',
+                            'first_purchase', 'last_purchase'
+                        ]].copy()
+                        
+                        display_df = display_df.rename(columns={
+                            'coin': 'Coin',
+                            'metal': 'Metal',
+                            'asset_category': 'Category',
+                            'total_purchased': 'Purchased',
+                            'qty_remaining': 'On Hand',
+                            'avg_purchase_price': 'Avg Price',
+                            'total_spent': 'Total Spent',
+                            'cost_of_remaining': 'Cost (On Hand)',
+                            'current_value': 'Current Value',
+                            'unrealized_gl': 'Unrealized G/L',
+                            'gl_percent': 'G/L %',
+                            'best_grade': 'Grade',
+                            'first_purchase': 'First Purchase',
+                            'last_purchase': 'Last Purchase'
+                        })
+                        
+                        # Format money columns
+                        money_cols = ['Avg Price', 'Total Spent', 'Cost (On Hand)', 'Current Value', 'Unrealized G/L']
+                        for col in money_cols:
+                            display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
+                        
+                        display_df['G/L %'] = display_df['G/L %'].apply(lambda x: f"{x:.1f}%")
+                        
+                        st.dataframe(display_df, hide_index=True, width='stretch')
                 
                 with tab2:
+                    st.markdown("### Transaction History")
+                    
+                    if group_by_date:
+                        st.info("📊 Transactions on the same date are grouped together as one logical transaction")
+                    
                     transactions = rl.get_seller_transactions(party_id, group_by_date)
                     if transactions:
-                        df = pd.DataFrame(transactions)
-                        st.dataframe(df, hide_index=True, width='stretch')
-
-# =============================================================================
-# GAIN/LOSS REPORT
-# =============================================================================
-elif selected_report == "Gain/Loss Report":
-    st.subheader("📈 Gain/Loss Report")
-    
-    # Date range filter
-    col1, col2 = st.columns(2)
-    with col1:
-        date_from = st.date_input("From Date", value=date.today() - timedelta(days=365))
-    with col2:
-        date_to = st.date_input("To Date", value=date.today())
-    
-    # Get realized gains/losses
-    realized = rl.get_realized_gains_losses(
-        date_from.strftime('%Y-%m-%d'),
-        date_to.strftime('%Y-%m-%d')
-    )
-    
-    # Get unrealized gains/losses
-    unrealized = rl.get_unrealized_gains_losses()
-    
-    # Display summary
-    st.markdown("### Summary")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### Realized Gains/Losses")
-        if realized and realized.get('total_sales', 0) > 0:
-            st.metric("Total Sales", realized.get('total_sales', 0))
-            st.metric("Proceeds", f"${realized.get('total_proceeds', 0):,.2f}")
-            
-            # Check if cost basis is available
-            if 'note' in realized:
-                st.warning("⚠️ Cost basis tracking not available")
-                st.caption("Sales are shown but gains/losses cannot be calculated")
-            else:
-                st.metric("Cost Basis", f"${realized.get('total_cost_basis', 0):,.2f}")
-                realized_gl = realized.get('realized_gain_loss', 0)
-                if realized_gl >= 0:
-                    st.metric("Realized G/L", f"${realized_gl:,.2f}", delta_color="normal")
-                else:
-                    st.metric("Realized G/L", f"${realized_gl:,.2f}", delta_color="inverse")
-        else:
-            st.info("No sales in selected period")
-    
-    with col2:
-        st.markdown("#### Unrealized Gains/Losses")
-        if unrealized and unrealized.get('coins_held', 0) > 0:
-            st.metric("Coins Held", unrealized.get('coins_held', 0))
-            st.metric("Cost Basis", f"${unrealized.get('total_cost_basis', 0):,.2f}")
-            st.metric("Current Value", f"${unrealized.get('current_value', 0):,.2f}")
-            
-            unrealized_gl = unrealized.get('unrealized_gain_loss', 0)
-            gl_pct = unrealized.get('gain_loss_percent', 0)
-            if unrealized_gl >= 0:
-                st.metric("Unrealized G/L", f"${unrealized_gl:,.2f}", 
-                         f"{gl_pct:.1f}%", delta_color="normal")
-            else:
-                st.metric("Unrealized G/L", f"${unrealized_gl:,.2f}", 
-                         f"{gl_pct:.1f}%", delta_color="inverse")
-        else:
-            st.info("No inventory on hand")
-    
-    # Monthly breakdown
-    st.markdown("### Monthly Breakdown")
-    monthly_data = rl.get_gain_loss_by_year()
-    if monthly_data:
-        df = pd.DataFrame(monthly_data)
-        st.dataframe(df, hide_index=True, width='stretch')
-
-# =============================================================================
-# TAX REPORT
-# =============================================================================
-elif selected_report == "Tax Report":
-    st.subheader("📋 Tax Report (Capital Gains)")
-    
-    # Year selector
-    current_year = datetime.now().year
-    tax_year = st.selectbox(
-        "Tax Year",
-        range(current_year, current_year - 10, -1),
-        help="Select the tax year for capital gains reporting"
-    )
-    
-    # Get tax year summary
-    summary = rl.get_tax_year_summary(tax_year)
-    
-    if summary and summary.get('total_sales', 0) > 0:
-        # Check if cost basis tracking is available
-        if 'note' in summary:
-            st.warning("⚠️ Cost basis tracking not available - lot_disposal table not found")
-            st.info("Sales information is shown but capital gains cannot be calculated accurately")
-        
-        # Display summary metrics
-        st.markdown("### Summary")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        col1.metric("Total Sales", summary.get('total_sales', 0))
-        col2.metric("Total Proceeds", f"${summary.get('total_proceeds', 0):,.2f}")
-        
-        if 'note' not in summary:
-            col3.metric("Total Cost Basis", f"${summary.get('total_cost_basis', 0):,.2f}")
-            col4.metric("Net Gain/Loss", f"${summary.get('total_gain_loss', 0):,.2f}")
-            
-            # Short-term vs Long-term
-            st.markdown("### Holding Period Breakdown")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("#### Short-term (≤ 1 year)")
-                st.metric("Sales", summary.get('short_term_sales', 0))
-                st_gl = summary.get('short_term_gain_loss', 0)
-                if st_gl >= 0:
-                    st.metric("Gain/Loss", f"${st_gl:,.2f}", delta_color="normal")
-                else:
-                    st.metric("Gain/Loss", f"${st_gl:,.2f}", delta_color="inverse")
-            
-            with col2:
-                st.markdown("#### Long-term (> 1 year)")
-                st.metric("Sales", summary.get('long_term_sales', 0))
-                lt_gl = summary.get('long_term_gain_loss', 0)
-                if lt_gl >= 0:
-                    st.metric("Gain/Loss", f"${lt_gl:,.2f}", delta_color="normal")
-                else:
-                    st.metric("Gain/Loss", f"${lt_gl:,.2f}", delta_color="inverse")
-        
-        # Detailed transactions
-        st.markdown("### Transaction Details")
-        details = rl.get_tax_year_details(tax_year)
-        if details:
-            df = pd.DataFrame(details)
-            st.dataframe(df, hide_index=True, width='stretch')
-            
-            # Export for tax software
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                "📥 Download Tax Report (CSV)",
-                data=csv,
-                file_name=f"tax_report_{tax_year}.csv",
-                mime="text/csv"
-            )
-        
-        # Tax disclaimer
-        st.warning("⚠️ This report is for informational purposes only. Please consult with a tax professional for actual tax filing.")
-    else:
-        st.info(f"No sales found for tax year {tax_year}")
-
-# =============================================================================
-# STORAGE REPORT
-# =============================================================================
-elif selected_report == "Storage Report":
-    st.subheader("📦 Storage Report")
-    
-    # Get storage summary
-    storage_summary = rl.get_storage_summary()
-    unassigned = rl.get_unassigned_inventory_summary()
-    
-    # Display unassigned warning if any
-    if unassigned and unassigned.get('coins', 0) > 0:
-        st.warning(f"⚠️ {unassigned['coins']} coins (${unassigned['value']:,.2f} value) not assigned to any storage location")
-    
-    # Storage location selector
-    storage_options = {"Unassigned": None}
-    for storage in storage_summary:
-        label = f"{storage['name']} ({storage['category']}) - {storage['coins']} coins"
-        storage_options[label] = storage['id']
-    
-    selected_storage_label = st.selectbox(
-        "Select Storage Location",
-        ["All Locations"] + list(storage_options.keys()),
-        help="Choose a storage location to view details"
-    )
-    
-    if selected_storage_label == "All Locations":
-        # Show summary of all locations
-        st.markdown("### All Storage Locations")
-        if storage_summary:
-            df = pd.DataFrame(storage_summary).copy()
-            
-            # Format currency columns
-            for col in ['cost', 'value']:
-                df[col] = df[col].apply(lambda x: f"${x:,.2f}")
-            
-            st.dataframe(df, hide_index=True, width='stretch')
-    else:
-        # Show details for selected location
-        storage_id = storage_options[selected_storage_label]
-        st.markdown(f"### {selected_storage_label}")
-        
-        details = rl.get_storage_details(storage_id)
-        if details:
-            df = pd.DataFrame(details)
-            
-            # Format for display
-            display_cols = ['series', 'year', 'mint_mark', 'variety', 'metal', 
-                          'qty_remaining', 'grade', 'unit_cost', 'unit_value', 
-                          'total_value', 'acquired_from']
-            
-            df_display = df[display_cols].copy()
-            
-            # Format currency columns
-            for col in ['unit_cost', 'unit_value', 'total_value']:
-                if col in df_display.columns:
-                    df_display[col] = df_display[col].apply(lambda x: f"${x:,.2f}")
-            
-            st.dataframe(df_display, hide_index=True, width='stretch')
-            
-            # Summary metrics for this location
-            if storage_id is None:
-                metrics = unassigned
-            else:
-                metrics = next((s for s in storage_summary if s['id'] == storage_id), {})
-            
-            if metrics:
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Total Coins", metrics.get('coins', 0))
-                col2.metric("Total Cost", f"${metrics.get('cost', 0):,.2f}")
-                col3.metric("Total Value", f"${metrics.get('value', 0):,.2f}")
-
-# =============================================================================
-# TYPE SET PROGRESS REPORT
-# =============================================================================
-elif selected_report == "Type Set Progress Report":
-    st.subheader("🎯 Type Set Progress Report")
-    
-    # Get available type sets
-    type_sets = rl.get_type_set_definitions()
-    
-    if type_sets:
-        # Select type set
-        set_options = {ts['name']: ts for ts in type_sets}
-        selected_set_name = st.selectbox(
-            "Select Type Set",
-            list(set_options.keys()),
-            help="Choose a type set to view progress"
-        )
-        
-        if selected_set_name:
-            selected_set = set_options[selected_set_name]
-            st.markdown(f"**{selected_set['description']}**")
-            
-            # Get progress
-            progress = rl.get_type_set_progress(selected_set_name)
-            
-            if progress:
-                # Display progress bar
-                percent = progress.get('percent_complete', 0)
-                st.progress(percent / 100.0)
-                st.markdown(f"**{percent:.1f}% Complete** ({progress['total_owned']} of {progress['total_required']} coins)")
-                
-                # Get details
-                details = rl.get_type_set_details(selected_set_name)
-                if details:
-                    df = pd.DataFrame(details)
-                    
-                    # Color code owned vs needed
-                    def highlight_owned(row):
-                        if row['owned'] == 'Yes':
-                            return ['background-color: #d4edda'] * len(row)
+                        df = pd.DataFrame(transactions).copy()
+                        
+                        # Modify column names based on grouping
+                        if group_by_date:
+                            rename_dict = {
+                                'tx_ids': 'TX IDs',
+                                'db_transaction_count': 'DB Entries',
+                                'tx_date': 'Date',
+                                'line_items': 'Items',
+                                'total_quantity': 'Qty',
+                                'subtotal': 'Subtotal',
+                                'shipping': 'Shipping',
+                                'tax': 'Tax',
+                                'fees': 'Fees',
+                                'total': 'Total',
+                                'notes': 'Notes'
+                            }
                         else:
-                            return ['background-color: #f8d7da'] * len(row)
+                            rename_dict = {
+                                'tx_ids': 'TX#',
+                                'tx_date': 'Date',
+                                'line_items': 'Items',
+                                'total_quantity': 'Qty',
+                                'subtotal': 'Subtotal',
+                                'shipping': 'Shipping',
+                                'tax': 'Tax',
+                                'fees': 'Fees',
+                                'total': 'Total',
+                                'notes': 'Notes'
+                            }
+                        
+                        # Format for display
+                        display_tx = df.rename(columns=rename_dict)
+                        
+                        # Remove the db_transaction_count column if not grouping
+                        if not group_by_date and 'DB Entries' in display_tx.columns:
+                            display_tx = display_tx.drop(columns=['DB Entries'])
+                        
+                        # Format money columns
+                        money_cols = ['Subtotal', 'Shipping', 'Tax', 'Fees', 'Total']
+                        for col in money_cols:
+                            if col in display_tx.columns:
+                                display_tx[col] = display_tx[col].apply(lambda x: f"${x:,.2f}" if x else "$0.00")
+                        
+                        st.dataframe(display_tx, hide_index=True, width='stretch')
+                
+                with tab3:
+                    st.markdown("### Export Data")
                     
-                    styled_df = df.style.apply(highlight_owned, axis=1)
-                    st.dataframe(styled_df, hide_index=True, width='stretch')
+                    # Prepare all data for export
+                    export_summary = pd.DataFrame([summary])
+                    export_details = pd.DataFrame(rl.get_seller_detail_by_coin_type(party_id))
+                    export_transactions = pd.DataFrame(rl.get_seller_transactions(party_id, False))
                     
-                    # Export needed list
-                    needed_df = df[df['owned'] == 'No']
-                    if not needed_df.empty:
-                        csv = needed_df.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            "📥 Download Needed Coins List (CSV)",
-                            data=csv,
-                            file_name=f"type_set_needed_{selected_set_name.replace(' ', '_')}.csv",
-                            mime="text/csv"
-                        )
-    else:
-        st.info("Type set definitions not configured. This feature requires additional setup.")
-
-# =============================================================================
-# BULLION HOLDINGS REPORT
-# =============================================================================
-elif selected_report == "Bullion Holdings Report":
-    st.subheader("🥇 Bullion Holdings Report")
-    
-    # Get summary
-    summary = rl.get_bullion_summary()
-    
-    if summary and summary.get('total_coins', 0) > 0:
-        # Display summary metrics
-        col1, col2, col3, col4, col5 = st.columns(5)
-        
-        col1.metric("Total Coins", f"{int(summary.get('total_coins', 0)):,}")
-        col2.metric("Fine Ounces", f"{summary.get('total_fine_oz', 0):.4f}")
-        col3.metric("Total Cost", f"${summary.get('total_cost', 0):,.2f}")
-        col4.metric("Melt Value", f"${summary.get('total_melt_value', 0):,.2f}")
-        
-        # Calculate premium/discount
-        if summary.get('total_melt_value', 0) > 0:
-            premium = ((summary.get('total_cost', 0) / summary.get('total_melt_value', 0)) - 1) * 100
-            col5.metric("Avg Premium", f"{premium:.1f}%")
-        
-        # Tabs for different views
-        tab1, tab2, tab3 = st.tabs(["By Metal", "Detailed Holdings", "Analysis"])
-        
-        with tab1:
-            st.markdown("### Holdings by Metal")
-            metal_data = rl.get_bullion_by_metal()
-            if metal_data:
-                df = pd.DataFrame(metal_data).copy()
-                
-                # Format columns
-                for col in ['cost', 'melt_value', 'market_value']:
-                    df[col] = df[col].apply(lambda x: f"${x:,.2f}")
-                df['gross_oz'] = df['gross_oz'].apply(lambda x: f"{x:.4f}")
-                df['fine_oz'] = df['fine_oz'].apply(lambda x: f"{x:.4f}")
-                df['avg_premium'] = df['avg_premium'].apply(lambda x: f"{x:.2%}" if x else "N/A")
-                
-                st.dataframe(df, hide_index=True, width='stretch')
-        
-        with tab2:
-            st.markdown("### Detailed Holdings")
-            details = rl.get_bullion_details()
-            if details:
-                df = pd.DataFrame(details).copy()
-                
-                # Format for display
-                display_cols = ['series', 'year', 'metal', 'qty_remaining', 
-                               'fine_oz_per_coin', 'total_fine_oz', 'unit_cost',
-                               'melt_value_per_coin', 'total_melt_value', 
-                               'premium_to_spot', 'storage_location']
-                
-                df_display = df[display_cols].copy()
-                
-                # Format columns
-                for col in ['unit_cost', 'melt_value_per_coin', 'total_melt_value']:
-                    df_display[col] = df_display[col].apply(lambda x: f"${x:,.2f}")
-                df_display['premium_to_spot'] = df_display['premium_to_spot'].apply(
-                    lambda x: f"{x:.1%}" if x else "Spot"
-                )
-                
-                st.dataframe(df_display, hide_index=True, width='stretch')
-        
-        with tab3:
-            st.markdown("### Analysis")
-            
-            # Premium analysis
-            st.markdown("#### Premium/Discount to Spot")
-            
-            by_metal = rl.get_bullion_by_metal()
-            if by_metal:
-                for metal in by_metal:
-                    cost = metal['cost']
-                    melt = metal['melt_value']
-                    if melt > 0:
-                        premium = ((cost / melt) - 1) * 100
-                        st.metric(
-                            f"{metal['metal']} Premium",
-                            f"{premium:.1f}%",
-                            delta_color="inverse" if premium > 0 else "normal"
-                        )
-            
-            # Export all bullion data
-            all_details = rl.get_bullion_details()
-            if all_details:
-                csv = pd.DataFrame(all_details).to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "📥 Download Bullion Holdings (CSV)",
-                    data=csv,
-                    file_name=f"bullion_holdings_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
-    else:
-        st.info("No bullion holdings found. Bullion items should have asset_category set to 'BULLION' or 'JUNK_SILVER'")
+                    # Create combined export
+                    export_data = pd.concat(
+                        [export_summary, export_details, export_transactions],
+                        keys=['Summary', 'Coin Details', 'Transactions'],
+                        names=['Report Section', 'Row']
+                    )
+                    
+                    csv = export_data.to_csv().encode('utf-8')
+                    st.download_button(
+                        "📥 Download Seller Report (CSV)",
+                        data=csv,
+                        file_name=f"seller_report_{party_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
 
 # =============================================================================
 # FOOTER
@@ -592,17 +349,13 @@ with st.expander("ℹ️ About Reports"):
     st.markdown("""
     **Available Reports:**
     
-    - **Collection Value Report**: Overall collection valuation and breakdown by category/metal
-    - **Seller Report**: Detailed purchase history and performance by seller/dealer
-    - **Gain/Loss Report**: Realized and unrealized gains/losses
-    - **Tax Report**: Capital gains report for tax purposes (consult tax professional)
-    - **Storage Report**: Inventory breakdown by storage location
-    - **Type Set Progress**: Track completion of type sets
-    - **Bullion Holdings**: Precious metals summary with spot price analysis
+    - **Collection Value Report**: Overall collection valuation with breakdown by category, metal type, and top valued coins. Shows unrealized gains/losses based on current market values.
+    
+    - **Seller Report**: Detailed purchase history and performance analysis for each seller/dealer. Track what you bought, when, and how your purchases are performing.
     
     **Tips:**
-    - Reports use current market values from metal prices and guide prices
-    - Export any report to CSV for further analysis
-    - Tax reports are for informational purposes only
-    - Unrealized gains/losses update with market prices
+    - Reports use current market values from your metal prices and guide prices
+    - Unrealized gains/losses are based on your chosen valuation method for each lot
+    - Export any report to CSV for further analysis in Excel
+    - Group transactions by date in the Seller Report to see logical purchase sessions
     """)
