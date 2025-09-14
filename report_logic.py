@@ -481,6 +481,41 @@ def get_tax_year_summary(tax_year: int) -> Dict[str, Any]:
 
 def get_tax_year_details(tax_year: int) -> List[Dict[str, Any]]:
     """Get detailed transaction list for tax reporting."""
+    # Check if lot_disposal table exists
+    check_query = """
+        SELECT name FROM sqlite_master 
+        WHERE type='table' AND name='lot_disposal'
+    """
+    table_exists = execute_query_single(check_query)
+    
+    if not table_exists:
+        # Simplified version without cost basis
+        query = """
+            SELECT 
+                t.tx_date as sale_date,
+                p.name as buyer,
+                cm.series || ' ' || ct.year || 
+                    CASE WHEN ct.mint_mark IS NOT NULL THEN ' ' || ct.mint_mark ELSE '' END ||
+                    CASE WHEN ct.variety IS NOT NULL THEN ' • ' || ct.variety ELSE '' END as description,
+                ABS(tl.quantity) as quantity_sold,
+                ROUND(tl.unit_price, 2) as sale_price,
+                ROUND(ABS(tl.quantity) * tl.unit_price, 2) as proceeds,
+                NULL as acquisition_date,
+                0.0 as cost_basis,
+                0.0 as gain_loss,
+                'Unknown' as holding_period
+            FROM tx t
+            JOIN tx_line tl ON tl.tx_id = t.id
+            JOIN coin_type ct ON ct.id = tl.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            LEFT JOIN party p ON p.id = t.party_id
+            WHERE t.tx_type = 'SELL' 
+            AND strftime('%Y', t.tx_date) = ?
+            ORDER BY t.tx_date, cm.series, ct.year
+        """
+        return execute_query_all(query, (str(tax_year),))
+    
+    # Original query with lot_disposal
     query = """
         WITH sales AS (
             SELECT 
@@ -508,7 +543,7 @@ def get_tax_year_details(tax_year: int) -> List[Dict[str, Any]]:
                 ld.disposal_line_id,
                 MIN(l.acquired_date) as acquisition_date,
                 SUM(ld.quantity * l.unit_cost) as total_cost_basis,
-                STRING_AGG(DISTINCT t_buy.tx_date, ', ') as purchase_dates
+                GROUP_CONCAT(DISTINCT t_buy.tx_date, ', ') as purchase_dates
             FROM lot_disposal ld
             JOIN lot l ON l.id = ld.lot_id
             JOIN tx_line tl_buy ON tl_buy.id = l.acquisition_line_id

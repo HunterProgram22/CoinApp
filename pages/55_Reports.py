@@ -240,13 +240,18 @@ elif selected_report == "Gain/Loss Report":
         if realized and realized.get('total_sales', 0) > 0:
             st.metric("Total Sales", realized.get('total_sales', 0))
             st.metric("Proceeds", f"${realized.get('total_proceeds', 0):,.2f}")
-            st.metric("Cost Basis", f"${realized.get('total_cost_basis', 0):,.2f}")
             
-            realized_gl = realized.get('realized_gain_loss', 0)
-            if realized_gl >= 0:
-                st.metric("Realized G/L", f"${realized_gl:,.2f}", delta_color="normal")
+            # Check if cost basis is available
+            if 'note' in realized:
+                st.warning("⚠️ Cost basis tracking not available")
+                st.caption("Sales are shown but gains/losses cannot be calculated")
             else:
-                st.metric("Realized G/L", f"${realized_gl:,.2f}", delta_color="inverse")
+                st.metric("Cost Basis", f"${realized.get('total_cost_basis', 0):,.2f}")
+                realized_gl = realized.get('realized_gain_loss', 0)
+                if realized_gl >= 0:
+                    st.metric("Realized G/L", f"${realized_gl:,.2f}", delta_color="normal")
+                else:
+                    st.metric("Realized G/L", f"${realized_gl:,.2f}", delta_color="inverse")
         else:
             st.info("No sales in selected period")
     
@@ -293,36 +298,43 @@ elif selected_report == "Tax Report":
     summary = rl.get_tax_year_summary(tax_year)
     
     if summary and summary.get('total_sales', 0) > 0:
+        # Check if cost basis tracking is available
+        if 'note' in summary:
+            st.warning("⚠️ Cost basis tracking not available - lot_disposal table not found")
+            st.info("Sales information is shown but capital gains cannot be calculated accurately")
+        
         # Display summary metrics
         st.markdown("### Summary")
         col1, col2, col3, col4 = st.columns(4)
         
         col1.metric("Total Sales", summary.get('total_sales', 0))
         col2.metric("Total Proceeds", f"${summary.get('total_proceeds', 0):,.2f}")
-        col3.metric("Total Cost Basis", f"${summary.get('total_cost_basis', 0):,.2f}")
-        col4.metric("Net Gain/Loss", f"${summary.get('total_gain_loss', 0):,.2f}")
         
-        # Short-term vs Long-term
-        st.markdown("### Holding Period Breakdown")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("#### Short-term (≤ 1 year)")
-            st.metric("Sales", summary.get('short_term_sales', 0))
-            st_gl = summary.get('short_term_gain_loss', 0)
-            if st_gl >= 0:
-                st.metric("Gain/Loss", f"${st_gl:,.2f}", delta_color="normal")
-            else:
-                st.metric("Gain/Loss", f"${st_gl:,.2f}", delta_color="inverse")
-        
-        with col2:
-            st.markdown("#### Long-term (> 1 year)")
-            st.metric("Sales", summary.get('long_term_sales', 0))
-            lt_gl = summary.get('long_term_gain_loss', 0)
-            if lt_gl >= 0:
-                st.metric("Gain/Loss", f"${lt_gl:,.2f}", delta_color="normal")
-            else:
-                st.metric("Gain/Loss", f"${lt_gl:,.2f}", delta_color="inverse")
+        if 'note' not in summary:
+            col3.metric("Total Cost Basis", f"${summary.get('total_cost_basis', 0):,.2f}")
+            col4.metric("Net Gain/Loss", f"${summary.get('total_gain_loss', 0):,.2f}")
+            
+            # Short-term vs Long-term
+            st.markdown("### Holding Period Breakdown")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### Short-term (≤ 1 year)")
+                st.metric("Sales", summary.get('short_term_sales', 0))
+                st_gl = summary.get('short_term_gain_loss', 0)
+                if st_gl >= 0:
+                    st.metric("Gain/Loss", f"${st_gl:,.2f}", delta_color="normal")
+                else:
+                    st.metric("Gain/Loss", f"${st_gl:,.2f}", delta_color="inverse")
+            
+            with col2:
+                st.markdown("#### Long-term (> 1 year)")
+                st.metric("Sales", summary.get('long_term_sales', 0))
+                lt_gl = summary.get('long_term_gain_loss', 0)
+                if lt_gl >= 0:
+                    st.metric("Gain/Loss", f"${lt_gl:,.2f}", delta_color="normal")
+                else:
+                    st.metric("Gain/Loss", f"${lt_gl:,.2f}", delta_color="inverse")
         
         # Detailed transactions
         st.markdown("### Transaction Details")
@@ -396,7 +408,7 @@ elif selected_report == "Storage Report":
                           'qty_remaining', 'grade', 'unit_cost', 'unit_value', 
                           'total_value', 'acquired_from']
             
-            df_display = df[display_cols]
+            df_display = df[display_cols].copy()
             
             # Format currency columns
             for col in ['unit_cost', 'unit_value', 'total_value']:
@@ -506,7 +518,7 @@ elif selected_report == "Bullion Holdings Report":
             st.markdown("### Holdings by Metal")
             metal_data = rl.get_bullion_by_metal()
             if metal_data:
-                df = pd.DataFrame(metal_data)
+                df = pd.DataFrame(metal_data).copy()
                 
                 # Format columns
                 for col in ['cost', 'melt_value', 'market_value']:
