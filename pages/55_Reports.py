@@ -6,573 +6,591 @@ from auth_utils import require_auth
 require_auth()
 
 import pandas as pd
-from typing import List, Dict, Any, Optional
-from datetime import date, timedelta
-from db_operations import execute_query_all, execute_query_single
+from datetime import date, datetime, timedelta
+import report_logic as rl
 
 st.header("📊 Reports")
-
-# ---------------------------------
-# Data Access Functions for Seller Report
-# ---------------------------------
-def get_sellers_with_transactions() -> List[Dict[str, Any]]:
-    """Get all parties who have sold coins (BUY transactions)."""
-    query = """
-        SELECT 
-            p.id,
-            p.name,
-            COUNT(DISTINCT t.id) as transaction_count,
-            COUNT(DISTINCT DATE(t.tx_date)) as logical_transaction_count,
-            MIN(t.tx_date) as first_transaction,
-            MAX(t.tx_date) as last_transaction,
-            SUM(ABS(tl.quantity)) as total_coins
-        FROM tx t
-        JOIN party p ON p.id = t.party_id
-        JOIN tx_line tl ON tl.tx_id = t.id
-        WHERE t.tx_type = 'BUY' AND p.name IS NOT NULL
-        GROUP BY p.id, p.name
-        ORDER BY p.name
-    """
-    results = execute_query_all(query)
-    
-    # Ensure compatibility - add db_transaction_count as alias for transaction_count
-    for result in results:
-        if 'transaction_count' in result and 'db_transaction_count' not in result:
-            result['db_transaction_count'] = result['transaction_count']
-        if 'logical_transaction_count' not in result:
-            # If the query didn't return this field, use transaction_count as fallback
-            result['logical_transaction_count'] = result.get('transaction_count', 0)
-    
-    return results
-
-
-def get_seller_summary(party_id: int, group_by_date: bool = True) -> Dict[str, Any]:
-    """Get summary statistics for a specific seller."""
-    # Modify the counting logic based on grouping preference
-    if group_by_date:
-        transaction_count_sql = "COUNT(DISTINCT DATE(tx_date)) as unique_transactions"
-    else:
-        transaction_count_sql = "COUNT(DISTINCT tx_id) as unique_transactions"
-    
-    query = f"""
-        WITH purchase_data AS (
-            SELECT 
-                t.id as tx_id,
-                t.tx_date,
-                tl.id as line_id,
-                tl.coin_type_id,
-                ABS(tl.quantity) as quantity,
-                tl.unit_price,
-                l.id as lot_id,
-                l.qty_remaining,
-                l.unit_cost,
-                -- Add allocated shipping/tax/fees to unit cost
-                l.unit_cost * l.qty_remaining as lot_cost,
-                v.chosen_unit_value,
-                v.chosen_unit_value * l.qty_remaining as current_value
-            FROM tx t
-            JOIN tx_line tl ON tl.tx_id = t.id
-            JOIN lot l ON l.acquisition_line_id = tl.id
-            LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
-            WHERE t.party_id = ? AND t.tx_type = 'BUY'
-        )
-        SELECT 
-            {transaction_count_sql},
-            COUNT(DISTINCT tx_id) as database_transactions,
-            COALESCE(SUM(quantity), 0) as total_coins_purchased,
-            COUNT(DISTINCT coin_type_id) as unique_coin_types,
-            COALESCE(SUM(lot_cost), 0) as total_cost_usd,
-            COALESCE(SUM(current_value), 0) as total_current_value_usd,
-            COALESCE(SUM(current_value) - SUM(lot_cost), 0) as unrealized_gain_loss,
-            CASE 
-                WHEN SUM(lot_cost) > 0 THEN 
-                    ((SUM(current_value) - SUM(lot_cost)) / SUM(lot_cost)) * 100
-                ELSE 0 
-            END as gain_loss_percent,
-            COALESCE(SUM(qty_remaining), 0) as coins_still_held,
-            COALESCE(SUM(quantity) - SUM(qty_remaining), 0) as coins_sold
-        FROM purchase_data
-    """
-    result = execute_query_single(query, (party_id,))
-    
-    # Ensure all fields have default values
-    if result:
-        for key in ['unique_transactions', 'database_transactions', 'total_coins_purchased', 
-                    'unique_coin_types', 'total_cost_usd', 'total_current_value_usd',
-                    'unrealized_gain_loss', 'gain_loss_percent', 'coins_still_held', 'coins_sold']:
-            if key not in result or result[key] is None:
-                result[key] = 0
-    
-    return result if result else {}
-
-
-def get_seller_detail_by_coin_type(party_id: int) -> List[Dict[str, Any]]:
-    """Get detailed purchases by coin type from a specific seller."""
-    query = """
-        SELECT 
-            cm.series,
-            ct.year,
-            ct.mint_mark,
-            COALESCE(ct.variety, '') as variety,
-            cm.metal,
-            cm.asset_category,
-            COUNT(DISTINCT t.id) as purchase_transactions,
-            SUM(ABS(tl.quantity)) as total_purchased,
-            ROUND(AVG(tl.unit_price), 2) as avg_purchase_price,
-            ROUND(SUM(ABS(tl.quantity) * tl.unit_price), 2) as total_spent,
-            SUM(l.qty_remaining) as qty_remaining,
-            ROUND(SUM(l.qty_remaining * l.unit_cost), 2) as cost_of_remaining,
-            ROUND(SUM(l.qty_remaining * v.chosen_unit_value), 2) as current_value,
-            ROUND(SUM(l.qty_remaining * v.chosen_unit_value) - SUM(l.qty_remaining * l.unit_cost), 2) as unrealized_gl,
-            MIN(t.tx_date) as first_purchase,
-            MAX(t.tx_date) as last_purchase,
-            COALESCE(MAX(l.estimated_grade_text), MAX(l.purchase_grade_text)) as best_grade
-        FROM tx t
-        JOIN tx_line tl ON tl.tx_id = t.id
-        JOIN coin_type ct ON ct.id = tl.coin_type_id
-        JOIN coin_master cm ON cm.id = ct.master_id
-        JOIN lot l ON l.acquisition_line_id = tl.id
-        LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
-        WHERE t.party_id = ? AND t.tx_type = 'BUY'
-        GROUP BY cm.series, ct.year, ct.mint_mark, ct.variety, cm.metal, cm.asset_category
-        ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety
-    """
-    return execute_query_all(query, (party_id,))
-
-
-def get_seller_transactions(party_id: int, group_by_date: bool = True) -> List[Dict[str, Any]]:
-    """Get all transactions from a specific seller, optionally grouped by date."""
-    
-    if group_by_date:
-        # Group multiple transactions on the same date into one logical transaction
-        query = """
-            SELECT 
-                GROUP_CONCAT(t.id, ', ') as tx_ids,
-                COUNT(DISTINCT t.id) as db_transaction_count,
-                t.tx_date,
-                SUM(line_counts.line_items) as line_items,
-                SUM(line_counts.total_quantity) as total_quantity,
-                ROUND(SUM(line_counts.subtotal), 2) as subtotal,
-                ROUND(SUM(t.shipping), 2) as shipping,
-                ROUND(SUM(t.tax), 2) as tax,
-                ROUND(SUM(t.fees), 2) as fees,
-                ROUND(SUM(line_counts.subtotal) + 
-                      SUM(COALESCE(t.shipping, 0)) + 
-                      SUM(COALESCE(t.tax, 0)) + 
-                      SUM(COALESCE(t.fees, 0)), 2) as total,
-                GROUP_CONCAT(NULLIF(t.notes, ''), '; ') as notes
-            FROM tx t
-            JOIN (
-                SELECT 
-                    tl.tx_id,
-                    COUNT(tl.id) as line_items,
-                    SUM(ABS(tl.quantity)) as total_quantity,
-                    SUM(ABS(tl.quantity) * tl.unit_price) as subtotal
-                FROM tx_line tl
-                GROUP BY tl.tx_id
-            ) line_counts ON line_counts.tx_id = t.id
-            WHERE t.party_id = ? AND t.tx_type = 'BUY'
-            GROUP BY t.tx_date
-            ORDER BY t.tx_date DESC
-        """
-    else:
-        # Original query - each database transaction separately
-        query = """
-            SELECT 
-                t.id as tx_ids,
-                1 as db_transaction_count,
-                t.tx_date,
-                COUNT(tl.id) as line_items,
-                SUM(ABS(tl.quantity)) as total_quantity,
-                ROUND(SUM(ABS(tl.quantity) * tl.unit_price), 2) as subtotal,
-                t.shipping,
-                t.tax,
-                t.fees,
-                ROUND(SUM(ABS(tl.quantity) * tl.unit_price) + 
-                      COALESCE(t.shipping, 0) + COALESCE(t.tax, 0) + COALESCE(t.fees, 0), 2) as total,
-                t.notes
-            FROM tx t
-            JOIN tx_line tl ON tl.tx_id = t.id
-            WHERE t.party_id = ? AND t.tx_type = 'BUY'
-            GROUP BY t.id, t.tx_date, t.shipping, t.tax, t.fees, t.notes
-            ORDER BY t.tx_date DESC
-        """
-    
-    return execute_query_all(query, (party_id,))
-
-
-# ---------------------------------
-# Report Generation Functions
-# ---------------------------------
-def generate_seller_report(party_id: int, party_name: str):
-    """Generate the seller report display."""
-    
-    # Add toggle for transaction grouping
-    col1, col2 = st.columns([3, 1])
-    with col2:
-        group_by_date = st.checkbox(
-            "Group by date", 
-            value=True,
-            help="Group multiple transactions on the same date as one logical transaction"
-        )
-    
-    # Get summary data
-    summary = get_seller_summary(party_id, group_by_date)
-    
-    if not summary or summary.get('unique_transactions', 0) == 0:
-        st.warning(f"No purchase transactions found for {party_name}")
-        return
-    
-    # Display party info
-    st.subheader(f"Seller Report: {party_name}")
-    
-    # Summary metrics
-    st.markdown("### Summary")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    # Show both logical and database transactions if grouped
-    if group_by_date and summary.get('database_transactions', 0) != summary.get('unique_transactions', 0):
-        col1.metric(
-            "Logical Transactions", 
-            int(summary.get('unique_transactions', 0)),
-            f"({int(summary.get('database_transactions', 0))} database entries)"
-        )
-    else:
-        col1.metric("Transactions", int(summary.get('unique_transactions', 0)))
-    
-    col2.metric("Total Coins Purchased", int(summary.get('total_coins_purchased', 0)))
-    col3.metric("Unique Coin Types", int(summary.get('unique_coin_types', 0)))
-    col4.metric("Coins Still Held", int(summary.get('coins_still_held', 0)))
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    total_cost = float(summary.get('total_cost_usd', 0))
-    col1.metric("Total Cost", f"${total_cost:,.2f}")
-    
-    current_value = float(summary.get('total_current_value_usd', 0))
-    col2.metric("Current Est. Value", f"${current_value:,.2f}")
-    
-    gain_loss = float(summary.get('unrealized_gain_loss', 0))
-    gain_loss_pct = float(summary.get('gain_loss_percent', 0))
-    
-    # Color the gain/loss based on positive/negative
-    if gain_loss > 0:
-        col3.metric("Unrealized Gain/Loss", f"${gain_loss:,.2f}", 
-                   f"{gain_loss_pct:.1f}%", delta_color="normal")
-    elif gain_loss < 0:
-        col3.metric("Unrealized Gain/Loss", f"${gain_loss:,.2f}", 
-                   f"{gain_loss_pct:.1f}%", delta_color="inverse")
-    else:
-        col3.metric("Unrealized Gain/Loss", f"${gain_loss:,.2f}")
-    
-    coins_sold = int(summary.get('coins_sold', 0))
-    col4.metric("Coins Sold", coins_sold)
-    
-    # Add tabs for different views
-    tab1, tab2, tab3 = st.tabs(["By Coin Type", "By Transaction", "Analysis"])
-    
-    with tab1:
-        st.markdown("### Purchases by Coin Type")
-        
-        # Get detailed data
-        detail_data = get_seller_detail_by_coin_type(party_id)
-        
-        if detail_data:
-            df = pd.DataFrame(detail_data)
-            
-            # Format the dataframe for display
-            df['coin'] = df.apply(
-                lambda r: f"{r['series']} {r['year']}" + 
-                         (f" {r['mint_mark']}" if r['mint_mark'] else "") +
-                         (f" • {r['variety']}" if r['variety'] else ""),
-                axis=1
-            )
-            
-            # Calculate gain/loss percentage for each coin type
-            df['gl_percent'] = df.apply(
-                lambda r: ((r['unrealized_gl'] / r['cost_of_remaining'] * 100) 
-                          if r['cost_of_remaining'] and r['cost_of_remaining'] > 0 else 0),
-                axis=1
-            )
-            
-            # Select and rename columns for display
-            display_df = df[[
-                'coin', 'metal', 'asset_category', 'total_purchased', 'qty_remaining',
-                'avg_purchase_price', 'total_spent', 'cost_of_remaining', 
-                'current_value', 'unrealized_gl', 'gl_percent', 'best_grade',
-                'first_purchase', 'last_purchase'
-            ]].rename(columns={
-                'coin': 'Coin',
-                'metal': 'Metal',
-                'asset_category': 'Category',
-                'total_purchased': 'Purchased',
-                'qty_remaining': 'On Hand',
-                'avg_purchase_price': 'Avg Price',
-                'total_spent': 'Total Spent',
-                'cost_of_remaining': 'Cost (On Hand)',
-                'current_value': 'Current Value',
-                'unrealized_gl': 'Unrealized G/L',
-                'gl_percent': 'G/L %',
-                'best_grade': 'Grade',
-                'first_purchase': 'First Purchase',
-                'last_purchase': 'Last Purchase'
-            })
-            
-            # Format money columns
-            money_cols = ['Avg Price', 'Total Spent', 'Cost (On Hand)', 'Current Value', 'Unrealized G/L']
-            for col in money_cols:
-                display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
-            
-            display_df['G/L %'] = display_df['G/L %'].apply(lambda x: f"{x:.1f}%")
-            
-            # Display the dataframe
-            st.dataframe(display_df, width='stretch', hide_index=True)
-            
-            # Download button
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                "📥 Download Coin Type Details (CSV)",
-                data=csv,
-                file_name=f"seller_report_{party_name.replace(' ', '_')}_by_coin.csv",
-                mime="text/csv"
-            )
-    
-    with tab2:
-        st.markdown("### Transaction History")
-        
-        transactions = get_seller_transactions(party_id, group_by_date)
-        
-        if transactions:
-            tx_df = pd.DataFrame(transactions)
-            
-            # Modify column names based on grouping
-            if group_by_date:
-                rename_dict = {
-                    'tx_ids': 'TX IDs',
-                    'db_transaction_count': 'DB Entries',
-                    'tx_date': 'Date',
-                    'line_items': 'Items',
-                    'total_quantity': 'Qty',
-                    'subtotal': 'Subtotal',
-                    'shipping': 'Shipping',
-                    'tax': 'Tax',
-                    'fees': 'Fees',
-                    'total': 'Total',
-                    'notes': 'Notes'
-                }
-            else:
-                rename_dict = {
-                    'tx_ids': 'TX#',
-                    'tx_date': 'Date',
-                    'line_items': 'Items',
-                    'total_quantity': 'Qty',
-                    'subtotal': 'Subtotal',
-                    'shipping': 'Shipping',
-                    'tax': 'Tax',
-                    'fees': 'Fees',
-                    'total': 'Total',
-                    'notes': 'Notes'
-                }
-            
-            # Format for display
-            display_tx = tx_df.rename(columns=rename_dict)
-            
-            # Remove the db_transaction_count column if not grouping
-            if not group_by_date and 'DB Entries' in display_tx.columns:
-                display_tx = display_tx.drop(columns=['DB Entries'])
-            
-            # Format money columns
-            money_cols = ['Subtotal', 'Shipping', 'Tax', 'Fees', 'Total']
-            for col in money_cols:
-                if col in display_tx.columns:
-                    display_tx[col] = display_tx[col].apply(lambda x: f"${x:,.2f}" if x else "$0.00")
-            
-            # Add info about grouping
-            if group_by_date:
-                st.info("📊 Transactions on the same date are grouped together as one logical transaction")
-            
-            st.dataframe(display_tx, width='stretch', hide_index=True)
-            
-            # Download button
-            csv = tx_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                "📥 Download Transaction History (CSV)",
-                data=csv,
-                file_name=f"seller_report_{party_name.replace(' ', '_')}_transactions.csv",
-                mime="text/csv"
-            )
-    
-    with tab3:
-        st.markdown("### Analysis")
-        
-        # Performance by metal
-        if detail_data:
-            metal_df = pd.DataFrame(detail_data)
-            metal_summary = metal_df.groupby('metal').agg({
-                'total_purchased': 'sum',
-                'qty_remaining': 'sum',
-                'cost_of_remaining': 'sum',
-                'current_value': 'sum',
-                'unrealized_gl': 'sum'
-            }).round(2)
-            
-            if not metal_summary.empty:
-                st.markdown("#### Performance by Metal")
-                metal_summary['gl_percent'] = (metal_summary['unrealized_gl'] / metal_summary['cost_of_remaining'] * 100).round(1)
-                
-                display_metal = metal_summary.rename(columns={
-                    'total_purchased': 'Purchased',
-                    'qty_remaining': 'On Hand',
-                    'cost_of_remaining': 'Cost',
-                    'current_value': 'Value',
-                    'unrealized_gl': 'G/L',
-                    'gl_percent': 'G/L %'
-                })
-                
-                # Format for display
-                for col in ['Cost', 'Value', 'G/L']:
-                    display_metal[col] = display_metal[col].apply(lambda x: f"${x:,.2f}")
-                display_metal['G/L %'] = display_metal['G/L %'].apply(lambda x: f"{x:.1f}%")
-                
-                st.dataframe(display_metal, width='stretch')
-        
-        # Timeline analysis
-        if transactions:
-            st.markdown("#### Purchase Timeline")
-            timeline_df = pd.DataFrame(transactions)
-            timeline_df['tx_date'] = pd.to_datetime(timeline_df['tx_date'])
-            timeline_df['year_month'] = timeline_df['tx_date'].dt.to_period('M')
-            
-            monthly_summary = timeline_df.groupby('year_month').agg({
-                'tx_date': 'count',
-                'total_quantity': 'sum',
-                'total': 'sum'
-            }).rename(columns={
-                'tx_date': 'Transaction Days',
-                'total_quantity': 'Coins',
-                'total': 'Amount'
-            })
-            
-            monthly_summary.index = monthly_summary.index.astype(str)
-            monthly_summary['Amount'] = monthly_summary['Amount'].apply(lambda x: f"${x:,.2f}")
-            
-            st.dataframe(monthly_summary, width='stretch')
-
-
-# ---------------------------------
-# UI Components
-# ---------------------------------
-def render_report_selector():
-    """Render the report type selector."""
-    report_types = [
-        "Seller Report",
-        # Future reports can be added here
-        # "Collection Value Report",
-        # "Gain/Loss Report",
-        # "Storage Location Report",
-        # "Type Set Progress Report",
-        # "Bullion Holdings Report",
-        # "Tax Report"
-    ]
-    
-    selected_report = st.selectbox(
-        "Select Report Type",
-        report_types,
-        help="Choose the type of report to generate"
-    )
-    
-    return selected_report
-
-
-def render_seller_report():
-    """Render the seller report interface."""
-    sellers = get_sellers_with_transactions()
-    
-    if not sellers:
-        st.info("No sellers found. Add some BUY transactions first.")
-        return
-    
-    # Create seller options with transaction counts
-    seller_options = {}
-    for seller in sellers:
-        # Safely get the counts with fallbacks
-        logical_count = seller.get('logical_transaction_count', seller.get('transaction_count', 0))
-        db_count = seller.get('db_transaction_count', seller.get('transaction_count', 0))
-        total_coins = seller.get('total_coins', 0)
-        
-        # Show both counts if they differ
-        if logical_count != db_count and logical_count > 0:
-            label = f"{seller['name']} ({logical_count} purchase dates from {db_count} entries, {total_coins} coins)"
-        else:
-            label = f"{seller['name']} ({db_count} transactions, {total_coins} coins)"
-        
-        seller_options[label] = (seller['id'], seller['name'])
-    
-    selected_label = st.selectbox(
-        "Select Seller",
-        [""] + list(seller_options.keys()),
-        help="Choose a seller to generate report. Numbers show logical transactions (by date) vs database entries."
-    )
-    
-    if selected_label and selected_label != "":
-        party_id, party_name = seller_options[selected_label]
-        
-        # Date range filter (optional)
-        with st.expander("Filter Options", expanded=False):
-            col1, col2 = st.columns(2)
-            filter_dates = col1.checkbox("Filter by date range", value=False)
-            
-            if filter_dates:
-                date_from = col1.date_input("From date", value=date.today() - timedelta(days=365))
-                date_to = col2.date_input("To date", value=date.today())
-                st.info("Date filtering not yet implemented in this version")
-        
-        # Generate the report
-        generate_seller_report(party_id, party_name)
-
-
-# ---------------------------------
-# Main UI
-# ---------------------------------
 st.caption("Generate comprehensive reports from your coin collection data")
 
 # Report selector
-report_type = render_report_selector()
+report_types = [
+    "Collection Value Report",
+    "Seller Report", 
+    "Gain/Loss Report",
+    "Tax Report",
+    "Storage Report",
+    "Type Set Progress Report",
+    "Bullion Holdings Report"
+]
+
+selected_report = st.selectbox(
+    "Select Report Type",
+    report_types,
+    help="Choose the type of report to generate"
+)
 
 st.divider()
 
-# Render the selected report
-if report_type == "Seller Report":
-    render_seller_report()
-# Add more report types here as they are developed
-# elif report_type == "Collection Value Report":
-#     render_collection_value_report()
-# elif report_type == "Gain/Loss Report":
-#     render_gain_loss_report()
+# =============================================================================
+# COLLECTION VALUE REPORT
+# =============================================================================
+if selected_report == "Collection Value Report":
+    st.subheader("💰 Collection Value Report")
+    
+    # Get summary data
+    summary = rl.get_collection_value_summary()
+    
+    if not summary or summary.get('total_coins', 0) == 0:
+        st.info("No inventory found. Add some coins to see collection value.")
+    else:
+        # Display summary metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        col1.metric("Total Coins", f"{int(summary.get('total_coins', 0)):,}")
+        col2.metric("Total Cost", f"${summary.get('total_cost', 0):,.2f}")
+        col3.metric("Est. Value", f"${summary.get('total_estimated_value', 0):,.2f}")
+        
+        gain_loss = summary.get('unrealized_gain_loss', 0)
+        gain_loss_pct = summary.get('gain_loss_percent', 0)
+        
+        if gain_loss >= 0:
+            col4.metric("Unrealized G/L", f"${gain_loss:,.2f}", 
+                       f"{gain_loss_pct:.1f}%", delta_color="normal")
+        else:
+            col4.metric("Unrealized G/L", f"${gain_loss:,.2f}", 
+                       f"{gain_loss_pct:.1f}%", delta_color="inverse")
+        
+        # Tabs for different views
+        tab1, tab2, tab3, tab4 = st.tabs(["By Category", "By Metal", "Top Valued", "Export"])
+        
+        with tab1:
+            st.markdown("### Value by Asset Category")
+            category_data = rl.get_value_by_category()
+            if category_data:
+                df = pd.DataFrame(category_data)
+                
+                # Format for display
+                for col in ['cost', 'melt_value', 'estimated_value', 'unrealized_gl']:
+                    df[col] = df[col].apply(lambda x: f"${x:,.2f}")
+                
+                st.dataframe(df, hide_index=True, width='stretch')
+        
+        with tab2:
+            st.markdown("### Value by Metal Type")
+            metal_data = rl.get_value_by_metal()
+            if metal_data:
+                df = pd.DataFrame(metal_data)
+                
+                # Format for display
+                for col in ['cost', 'melt_value', 'estimated_value', 'unrealized_gl']:
+                    df[col] = df[col].apply(lambda x: f"${x:,.2f}")
+                df['troy_oz_fine'] = df['troy_oz_fine'].apply(lambda x: f"{x:.4f}")
+                
+                st.dataframe(df, hide_index=True, width='stretch')
+        
+        with tab3:
+            st.markdown("### Top Valued Coins")
+            
+            # Add slider for number of coins to show
+            limit = st.slider("Number of coins to show", 10, 100, 20)
+            
+            top_coins = rl.get_top_valued_coins(limit)
+            if top_coins:
+                df = pd.DataFrame(top_coins)
+                
+                # Create display name
+                df['coin'] = df.apply(
+                    lambda r: f"{r['series']} {r['year']}" + 
+                             (f" {r['mint_mark']}" if r.get('mint_mark') else "") +
+                             (f" • {r['variety']}" if r.get('variety') else ""),
+                    axis=1
+                )
+                
+                # Select and format columns
+                display_df = df[['coin', 'qty_remaining', 'grade', 'unit_cost', 
+                                 'unit_value', 'total_value', 'unrealized_gl']]
+                
+                for col in ['unit_cost', 'unit_value', 'total_value', 'unrealized_gl']:
+                    display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
+                
+                st.dataframe(display_df, hide_index=True, width='stretch')
+        
+        with tab4:
+            st.markdown("### Export Data")
+            
+            # Get all data for export
+            all_data = {
+                'summary': [summary],
+                'by_category': rl.get_value_by_category(),
+                'by_metal': rl.get_value_by_metal(),
+                'top_100_coins': rl.get_top_valued_coins(100)
+            }
+            
+            # Create export button
+            export_data = pd.concat(
+                [pd.DataFrame(data) for data in all_data.values() if data],
+                keys=all_data.keys(),
+                names=['Report Section', 'Row']
+            )
+            
+            csv = export_data.to_csv().encode('utf-8')
+            st.download_button(
+                "📥 Download Complete Value Report (CSV)",
+                data=csv,
+                file_name=f"collection_value_report_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
 
-# Footer with help information
+# =============================================================================
+# SELLER REPORT
+# =============================================================================
+elif selected_report == "Seller Report":
+    st.subheader("🏪 Seller Report")
+    
+    sellers = rl.get_sellers_with_transactions()
+    
+    if not sellers:
+        st.info("No sellers found. Add some BUY transactions first.")
+    else:
+        # Create seller selector
+        seller_options = {}
+        for seller in sellers:
+            logical_count = seller.get('logical_transaction_count', 0)
+            db_count = seller.get('db_transaction_count', 0)
+            total_coins = seller.get('total_coins', 0)
+            
+            if logical_count != db_count:
+                label = f"{seller['name']} ({logical_count} dates, {total_coins} coins)"
+            else:
+                label = f"{seller['name']} ({db_count} transactions, {total_coins} coins)"
+            
+            seller_options[label] = (seller['id'], seller['name'])
+        
+        selected_label = st.selectbox(
+            "Select Seller",
+            [""] + list(seller_options.keys()),
+            help="Choose a seller to generate report"
+        )
+        
+        if selected_label and selected_label != "":
+            party_id, party_name = seller_options[selected_label]
+            
+            # Group by date toggle
+            group_by_date = st.checkbox(
+                "Group transactions by date", 
+                value=True,
+                help="Group multiple transactions on the same date"
+            )
+            
+            # Get summary
+            summary = rl.get_seller_summary(party_id, group_by_date)
+            
+            if summary:
+                # Display metrics
+                col1, col2, col3, col4 = st.columns(4)
+                
+                col1.metric("Transactions", int(summary.get('unique_transactions', 0)))
+                col2.metric("Total Purchased", int(summary.get('total_coins_purchased', 0)))
+                col3.metric("Still Held", int(summary.get('coins_still_held', 0)))
+                col4.metric("Total Cost", f"${summary.get('total_cost_usd', 0):,.2f}")
+                
+                # Tabs for details
+                tab1, tab2 = st.tabs(["By Coin Type", "Transactions"])
+                
+                with tab1:
+                    detail_data = rl.get_seller_detail_by_coin_type(party_id)
+                    if detail_data:
+                        df = pd.DataFrame(detail_data)
+                        st.dataframe(df, hide_index=True, width='stretch')
+                
+                with tab2:
+                    transactions = rl.get_seller_transactions(party_id, group_by_date)
+                    if transactions:
+                        df = pd.DataFrame(transactions)
+                        st.dataframe(df, hide_index=True, width='stretch')
+
+# =============================================================================
+# GAIN/LOSS REPORT
+# =============================================================================
+elif selected_report == "Gain/Loss Report":
+    st.subheader("📈 Gain/Loss Report")
+    
+    # Date range filter
+    col1, col2 = st.columns(2)
+    with col1:
+        date_from = st.date_input("From Date", value=date.today() - timedelta(days=365))
+    with col2:
+        date_to = st.date_input("To Date", value=date.today())
+    
+    # Get realized gains/losses
+    realized = rl.get_realized_gains_losses(
+        date_from.strftime('%Y-%m-%d'),
+        date_to.strftime('%Y-%m-%d')
+    )
+    
+    # Get unrealized gains/losses
+    unrealized = rl.get_unrealized_gains_losses()
+    
+    # Display summary
+    st.markdown("### Summary")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### Realized Gains/Losses")
+        if realized and realized.get('total_sales', 0) > 0:
+            st.metric("Total Sales", realized.get('total_sales', 0))
+            st.metric("Proceeds", f"${realized.get('total_proceeds', 0):,.2f}")
+            st.metric("Cost Basis", f"${realized.get('total_cost_basis', 0):,.2f}")
+            
+            realized_gl = realized.get('realized_gain_loss', 0)
+            if realized_gl >= 0:
+                st.metric("Realized G/L", f"${realized_gl:,.2f}", delta_color="normal")
+            else:
+                st.metric("Realized G/L", f"${realized_gl:,.2f}", delta_color="inverse")
+        else:
+            st.info("No sales in selected period")
+    
+    with col2:
+        st.markdown("#### Unrealized Gains/Losses")
+        if unrealized and unrealized.get('coins_held', 0) > 0:
+            st.metric("Coins Held", unrealized.get('coins_held', 0))
+            st.metric("Cost Basis", f"${unrealized.get('total_cost_basis', 0):,.2f}")
+            st.metric("Current Value", f"${unrealized.get('current_value', 0):,.2f}")
+            
+            unrealized_gl = unrealized.get('unrealized_gain_loss', 0)
+            gl_pct = unrealized.get('gain_loss_percent', 0)
+            if unrealized_gl >= 0:
+                st.metric("Unrealized G/L", f"${unrealized_gl:,.2f}", 
+                         f"{gl_pct:.1f}%", delta_color="normal")
+            else:
+                st.metric("Unrealized G/L", f"${unrealized_gl:,.2f}", 
+                         f"{gl_pct:.1f}%", delta_color="inverse")
+        else:
+            st.info("No inventory on hand")
+    
+    # Monthly breakdown
+    st.markdown("### Monthly Breakdown")
+    monthly_data = rl.get_gain_loss_by_year()
+    if monthly_data:
+        df = pd.DataFrame(monthly_data)
+        st.dataframe(df, hide_index=True, width='stretch')
+
+# =============================================================================
+# TAX REPORT
+# =============================================================================
+elif selected_report == "Tax Report":
+    st.subheader("📋 Tax Report (Capital Gains)")
+    
+    # Year selector
+    current_year = datetime.now().year
+    tax_year = st.selectbox(
+        "Tax Year",
+        range(current_year, current_year - 10, -1),
+        help="Select the tax year for capital gains reporting"
+    )
+    
+    # Get tax year summary
+    summary = rl.get_tax_year_summary(tax_year)
+    
+    if summary and summary.get('total_sales', 0) > 0:
+        # Display summary metrics
+        st.markdown("### Summary")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        col1.metric("Total Sales", summary.get('total_sales', 0))
+        col2.metric("Total Proceeds", f"${summary.get('total_proceeds', 0):,.2f}")
+        col3.metric("Total Cost Basis", f"${summary.get('total_cost_basis', 0):,.2f}")
+        col4.metric("Net Gain/Loss", f"${summary.get('total_gain_loss', 0):,.2f}")
+        
+        # Short-term vs Long-term
+        st.markdown("### Holding Period Breakdown")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### Short-term (≤ 1 year)")
+            st.metric("Sales", summary.get('short_term_sales', 0))
+            st_gl = summary.get('short_term_gain_loss', 0)
+            if st_gl >= 0:
+                st.metric("Gain/Loss", f"${st_gl:,.2f}", delta_color="normal")
+            else:
+                st.metric("Gain/Loss", f"${st_gl:,.2f}", delta_color="inverse")
+        
+        with col2:
+            st.markdown("#### Long-term (> 1 year)")
+            st.metric("Sales", summary.get('long_term_sales', 0))
+            lt_gl = summary.get('long_term_gain_loss', 0)
+            if lt_gl >= 0:
+                st.metric("Gain/Loss", f"${lt_gl:,.2f}", delta_color="normal")
+            else:
+                st.metric("Gain/Loss", f"${lt_gl:,.2f}", delta_color="inverse")
+        
+        # Detailed transactions
+        st.markdown("### Transaction Details")
+        details = rl.get_tax_year_details(tax_year)
+        if details:
+            df = pd.DataFrame(details)
+            st.dataframe(df, hide_index=True, width='stretch')
+            
+            # Export for tax software
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                "📥 Download Tax Report (CSV)",
+                data=csv,
+                file_name=f"tax_report_{tax_year}.csv",
+                mime="text/csv"
+            )
+        
+        # Tax disclaimer
+        st.warning("⚠️ This report is for informational purposes only. Please consult with a tax professional for actual tax filing.")
+    else:
+        st.info(f"No sales found for tax year {tax_year}")
+
+# =============================================================================
+# STORAGE REPORT
+# =============================================================================
+elif selected_report == "Storage Report":
+    st.subheader("📦 Storage Report")
+    
+    # Get storage summary
+    storage_summary = rl.get_storage_summary()
+    unassigned = rl.get_unassigned_inventory_summary()
+    
+    # Display unassigned warning if any
+    if unassigned and unassigned.get('coins', 0) > 0:
+        st.warning(f"⚠️ {unassigned['coins']} coins (${unassigned['value']:,.2f} value) not assigned to any storage location")
+    
+    # Storage location selector
+    storage_options = {"Unassigned": None}
+    for storage in storage_summary:
+        label = f"{storage['name']} ({storage['category']}) - {storage['coins']} coins"
+        storage_options[label] = storage['id']
+    
+    selected_storage_label = st.selectbox(
+        "Select Storage Location",
+        ["All Locations"] + list(storage_options.keys()),
+        help="Choose a storage location to view details"
+    )
+    
+    if selected_storage_label == "All Locations":
+        # Show summary of all locations
+        st.markdown("### All Storage Locations")
+        if storage_summary:
+            df = pd.DataFrame(storage_summary)
+            
+            # Format currency columns
+            for col in ['cost', 'value']:
+                df[col] = df[col].apply(lambda x: f"${x:,.2f}")
+            
+            st.dataframe(df, hide_index=True, width='stretch')
+    else:
+        # Show details for selected location
+        storage_id = storage_options[selected_storage_label]
+        st.markdown(f"### {selected_storage_label}")
+        
+        details = rl.get_storage_details(storage_id)
+        if details:
+            df = pd.DataFrame(details)
+            
+            # Format for display
+            display_cols = ['series', 'year', 'mint_mark', 'variety', 'metal', 
+                          'qty_remaining', 'grade', 'unit_cost', 'unit_value', 
+                          'total_value', 'acquired_from']
+            
+            df_display = df[display_cols]
+            
+            # Format currency columns
+            for col in ['unit_cost', 'unit_value', 'total_value']:
+                if col in df_display.columns:
+                    df_display[col] = df_display[col].apply(lambda x: f"${x:,.2f}")
+            
+            st.dataframe(df_display, hide_index=True, width='stretch')
+            
+            # Summary metrics for this location
+            if storage_id is None:
+                metrics = unassigned
+            else:
+                metrics = next((s for s in storage_summary if s['id'] == storage_id), {})
+            
+            if metrics:
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Total Coins", metrics.get('coins', 0))
+                col2.metric("Total Cost", f"${metrics.get('cost', 0):,.2f}")
+                col3.metric("Total Value", f"${metrics.get('value', 0):,.2f}")
+
+# =============================================================================
+# TYPE SET PROGRESS REPORT
+# =============================================================================
+elif selected_report == "Type Set Progress Report":
+    st.subheader("🎯 Type Set Progress Report")
+    
+    # Get available type sets
+    type_sets = rl.get_type_set_definitions()
+    
+    if type_sets:
+        # Select type set
+        set_options = {ts['name']: ts for ts in type_sets}
+        selected_set_name = st.selectbox(
+            "Select Type Set",
+            list(set_options.keys()),
+            help="Choose a type set to view progress"
+        )
+        
+        if selected_set_name:
+            selected_set = set_options[selected_set_name]
+            st.markdown(f"**{selected_set['description']}**")
+            
+            # Get progress
+            progress = rl.get_type_set_progress(selected_set_name)
+            
+            if progress:
+                # Display progress bar
+                percent = progress.get('percent_complete', 0)
+                st.progress(percent / 100.0)
+                st.markdown(f"**{percent:.1f}% Complete** ({progress['total_owned']} of {progress['total_required']} coins)")
+                
+                # Get details
+                details = rl.get_type_set_details(selected_set_name)
+                if details:
+                    df = pd.DataFrame(details)
+                    
+                    # Color code owned vs needed
+                    def highlight_owned(row):
+                        if row['owned'] == 'Yes':
+                            return ['background-color: #d4edda'] * len(row)
+                        else:
+                            return ['background-color: #f8d7da'] * len(row)
+                    
+                    styled_df = df.style.apply(highlight_owned, axis=1)
+                    st.dataframe(styled_df, hide_index=True, width='stretch')
+                    
+                    # Export needed list
+                    needed_df = df[df['owned'] == 'No']
+                    if not needed_df.empty:
+                        csv = needed_df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            "📥 Download Needed Coins List (CSV)",
+                            data=csv,
+                            file_name=f"type_set_needed_{selected_set_name.replace(' ', '_')}.csv",
+                            mime="text/csv"
+                        )
+    else:
+        st.info("Type set definitions not configured. This feature requires additional setup.")
+
+# =============================================================================
+# BULLION HOLDINGS REPORT
+# =============================================================================
+elif selected_report == "Bullion Holdings Report":
+    st.subheader("🥇 Bullion Holdings Report")
+    
+    # Get summary
+    summary = rl.get_bullion_summary()
+    
+    if summary and summary.get('total_coins', 0) > 0:
+        # Display summary metrics
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        col1.metric("Total Coins", f"{int(summary.get('total_coins', 0)):,}")
+        col2.metric("Fine Ounces", f"{summary.get('total_fine_oz', 0):.4f}")
+        col3.metric("Total Cost", f"${summary.get('total_cost', 0):,.2f}")
+        col4.metric("Melt Value", f"${summary.get('total_melt_value', 0):,.2f}")
+        
+        # Calculate premium/discount
+        if summary.get('total_melt_value', 0) > 0:
+            premium = ((summary.get('total_cost', 0) / summary.get('total_melt_value', 0)) - 1) * 100
+            col5.metric("Avg Premium", f"{premium:.1f}%")
+        
+        # Tabs for different views
+        tab1, tab2, tab3 = st.tabs(["By Metal", "Detailed Holdings", "Analysis"])
+        
+        with tab1:
+            st.markdown("### Holdings by Metal")
+            metal_data = rl.get_bullion_by_metal()
+            if metal_data:
+                df = pd.DataFrame(metal_data)
+                
+                # Format columns
+                for col in ['cost', 'melt_value', 'market_value']:
+                    df[col] = df[col].apply(lambda x: f"${x:,.2f}")
+                df['gross_oz'] = df['gross_oz'].apply(lambda x: f"{x:.4f}")
+                df['fine_oz'] = df['fine_oz'].apply(lambda x: f"{x:.4f}")
+                df['avg_premium'] = df['avg_premium'].apply(lambda x: f"{x:.2%}" if x else "N/A")
+                
+                st.dataframe(df, hide_index=True, width='stretch')
+        
+        with tab2:
+            st.markdown("### Detailed Holdings")
+            details = rl.get_bullion_details()
+            if details:
+                df = pd.DataFrame(details)
+                
+                # Format for display
+                display_cols = ['series', 'year', 'metal', 'qty_remaining', 
+                               'fine_oz_per_coin', 'total_fine_oz', 'unit_cost',
+                               'melt_value_per_coin', 'total_melt_value', 
+                               'premium_to_spot', 'storage_location']
+                
+                df_display = df[display_cols]
+                
+                # Format columns
+                for col in ['unit_cost', 'melt_value_per_coin', 'total_melt_value']:
+                    df_display[col] = df_display[col].apply(lambda x: f"${x:,.2f}")
+                df_display['premium_to_spot'] = df_display['premium_to_spot'].apply(
+                    lambda x: f"{x:.1%}" if x else "Spot"
+                )
+                
+                st.dataframe(df_display, hide_index=True, width='stretch')
+        
+        with tab3:
+            st.markdown("### Analysis")
+            
+            # Premium analysis
+            st.markdown("#### Premium/Discount to Spot")
+            
+            by_metal = rl.get_bullion_by_metal()
+            if by_metal:
+                for metal in by_metal:
+                    cost = metal['cost']
+                    melt = metal['melt_value']
+                    if melt > 0:
+                        premium = ((cost / melt) - 1) * 100
+                        st.metric(
+                            f"{metal['metal']} Premium",
+                            f"{premium:.1f}%",
+                            delta_color="inverse" if premium > 0 else "normal"
+                        )
+            
+            # Export all bullion data
+            all_details = rl.get_bullion_details()
+            if all_details:
+                csv = pd.DataFrame(all_details).to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "📥 Download Bullion Holdings (CSV)",
+                    data=csv,
+                    file_name=f"bullion_holdings_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+    else:
+        st.info("No bullion holdings found. Bullion items should have asset_category set to 'BULLION' or 'JUNK_SILVER'")
+
+# =============================================================================
+# FOOTER
+# =============================================================================
 st.markdown("---")
 with st.expander("ℹ️ About Reports"):
     st.markdown("""
     **Available Reports:**
     
-    **Seller Report**
-    - View all purchases from a specific seller/dealer
-    - Track performance and unrealized gains/losses
-    - Analyze purchases by coin type
-    - Review transaction history
-    - See performance by metal type
-    
-    **Coming Soon:**
-    - Collection Value Report - Overall collection valuation
-    - Gain/Loss Report - Realized and unrealized P&L
-    - Tax Report - Capital gains for tax purposes
-    - Storage Report - Detailed inventory by location
-    - Type Set Progress - Completion status of type sets
-    - Bullion Holdings - Precious metals summary
+    - **Collection Value Report**: Overall collection valuation and breakdown by category/metal
+    - **Seller Report**: Detailed purchase history and performance by seller/dealer
+    - **Gain/Loss Report**: Realized and unrealized gains/losses
+    - **Tax Report**: Capital gains report for tax purposes (consult tax professional)
+    - **Storage Report**: Inventory breakdown by storage location
+    - **Type Set Progress**: Track completion of type sets
+    - **Bullion Holdings**: Precious metals summary with spot price analysis
     
     **Tips:**
-    - Reports use current market values from your metal prices and guide prices
-    - Unrealized gains/losses are based on your chosen valuation method
-    - Export any report to CSV for further analysis in Excel
+    - Reports use current market values from metal prices and guide prices
+    - Export any report to CSV for further analysis
+    - Tax reports are for informational purposes only
+    - Unrealized gains/losses update with market prices
     """)
