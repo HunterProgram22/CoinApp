@@ -529,7 +529,7 @@ elif selected_report == "Bullion Holdings Report":
                                'melt_value_per_coin', 'total_melt_value', 
                                'premium_to_spot', 'storage_location']
                 
-                df_display = df[display_cols]
+                df_display = df[display_cols].copy()
                 
                 # Format columns
                 for col in ['unit_cost', 'melt_value_per_coin', 'total_melt_value']:
