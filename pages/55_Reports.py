@@ -4,8 +4,7 @@ from auth_utils import require_auth
 
 # Check authentication first
 require_auth()
-# pages/55_Reports.py
-import streamlit as st
+
 import pandas as pd
 from typing import List, Dict, Any, Optional
 from datetime import date, timedelta
@@ -19,10 +18,11 @@ st.header("📊 Reports")
 def get_sellers_with_transactions() -> List[Dict[str, Any]]:
     """Get all parties who have sold coins (BUY transactions)."""
     query = """
-        SELECT DISTINCT 
+        SELECT 
             p.id,
             p.name,
             COUNT(DISTINCT t.id) as transaction_count,
+            COUNT(DISTINCT DATE(t.tx_date)) as logical_transaction_count,
             MIN(t.tx_date) as first_transaction,
             MAX(t.tx_date) as last_transaction,
             SUM(ABS(tl.quantity)) as total_coins
@@ -33,12 +33,28 @@ def get_sellers_with_transactions() -> List[Dict[str, Any]]:
         GROUP BY p.id, p.name
         ORDER BY p.name
     """
-    return execute_query_all(query)
+    results = execute_query_all(query)
+    
+    # Ensure compatibility - add db_transaction_count as alias for transaction_count
+    for result in results:
+        if 'transaction_count' in result and 'db_transaction_count' not in result:
+            result['db_transaction_count'] = result['transaction_count']
+        if 'logical_transaction_count' not in result:
+            # If the query didn't return this field, use transaction_count as fallback
+            result['logical_transaction_count'] = result.get('transaction_count', 0)
+    
+    return results
 
 
-def get_seller_summary(party_id: int) -> Dict[str, Any]:
+def get_seller_summary(party_id: int, group_by_date: bool = True) -> Dict[str, Any]:
     """Get summary statistics for a specific seller."""
-    query = """
+    # Modify the counting logic based on grouping preference
+    if group_by_date:
+        transaction_count_sql = "COUNT(DISTINCT DATE(tx_date)) as unique_transactions"
+    else:
+        transaction_count_sql = "COUNT(DISTINCT tx_id) as unique_transactions"
+    
+    query = f"""
         WITH purchase_data AS (
             SELECT 
                 t.id as tx_id,
@@ -61,22 +77,32 @@ def get_seller_summary(party_id: int) -> Dict[str, Any]:
             WHERE t.party_id = ? AND t.tx_type = 'BUY'
         )
         SELECT 
-            COUNT(DISTINCT tx_id) as unique_transactions,
-            SUM(quantity) as total_coins_purchased,
+            {transaction_count_sql},
+            COUNT(DISTINCT tx_id) as database_transactions,
+            COALESCE(SUM(quantity), 0) as total_coins_purchased,
             COUNT(DISTINCT coin_type_id) as unique_coin_types,
-            SUM(lot_cost) as total_cost_usd,
-            SUM(current_value) as total_current_value_usd,
-            SUM(current_value) - SUM(lot_cost) as unrealized_gain_loss,
+            COALESCE(SUM(lot_cost), 0) as total_cost_usd,
+            COALESCE(SUM(current_value), 0) as total_current_value_usd,
+            COALESCE(SUM(current_value) - SUM(lot_cost), 0) as unrealized_gain_loss,
             CASE 
                 WHEN SUM(lot_cost) > 0 THEN 
                     ((SUM(current_value) - SUM(lot_cost)) / SUM(lot_cost)) * 100
                 ELSE 0 
             END as gain_loss_percent,
-            SUM(qty_remaining) as coins_still_held,
-            SUM(quantity) - SUM(qty_remaining) as coins_sold
+            COALESCE(SUM(qty_remaining), 0) as coins_still_held,
+            COALESCE(SUM(quantity) - SUM(qty_remaining), 0) as coins_sold
         FROM purchase_data
     """
     result = execute_query_single(query, (party_id,))
+    
+    # Ensure all fields have default values
+    if result:
+        for key in ['unique_transactions', 'database_transactions', 'total_coins_purchased', 
+                    'unique_coin_types', 'total_cost_usd', 'total_current_value_usd',
+                    'unrealized_gain_loss', 'gain_loss_percent', 'coins_still_held', 'coins_sold']:
+            if key not in result or result[key] is None:
+                result[key] = 0
+    
     return result if result else {}
 
 
@@ -114,27 +140,64 @@ def get_seller_detail_by_coin_type(party_id: int) -> List[Dict[str, Any]]:
     return execute_query_all(query, (party_id,))
 
 
-def get_seller_transactions(party_id: int) -> List[Dict[str, Any]]:
-    """Get all transactions from a specific seller."""
-    query = """
-        SELECT 
-            t.id,
-            t.tx_date,
-            COUNT(tl.id) as line_items,
-            SUM(ABS(tl.quantity)) as total_quantity,
-            ROUND(SUM(ABS(tl.quantity) * tl.unit_price), 2) as subtotal,
-            t.shipping,
-            t.tax,
-            t.fees,
-            ROUND(SUM(ABS(tl.quantity) * tl.unit_price) + 
-                  COALESCE(t.shipping, 0) + COALESCE(t.tax, 0) + COALESCE(t.fees, 0), 2) as total,
-            t.notes
-        FROM tx t
-        JOIN tx_line tl ON tl.tx_id = t.id
-        WHERE t.party_id = ? AND t.tx_type = 'BUY'
-        GROUP BY t.id, t.tx_date, t.shipping, t.tax, t.fees, t.notes
-        ORDER BY t.tx_date DESC
-    """
+def get_seller_transactions(party_id: int, group_by_date: bool = True) -> List[Dict[str, Any]]:
+    """Get all transactions from a specific seller, optionally grouped by date."""
+    
+    if group_by_date:
+        # Group multiple transactions on the same date into one logical transaction
+        query = """
+            SELECT 
+                GROUP_CONCAT(t.id, ', ') as tx_ids,
+                COUNT(DISTINCT t.id) as db_transaction_count,
+                t.tx_date,
+                SUM(line_counts.line_items) as line_items,
+                SUM(line_counts.total_quantity) as total_quantity,
+                ROUND(SUM(line_counts.subtotal), 2) as subtotal,
+                ROUND(SUM(t.shipping), 2) as shipping,
+                ROUND(SUM(t.tax), 2) as tax,
+                ROUND(SUM(t.fees), 2) as fees,
+                ROUND(SUM(line_counts.subtotal) + 
+                      SUM(COALESCE(t.shipping, 0)) + 
+                      SUM(COALESCE(t.tax, 0)) + 
+                      SUM(COALESCE(t.fees, 0)), 2) as total,
+                GROUP_CONCAT(NULLIF(t.notes, ''), '; ') as notes
+            FROM tx t
+            JOIN (
+                SELECT 
+                    tl.tx_id,
+                    COUNT(tl.id) as line_items,
+                    SUM(ABS(tl.quantity)) as total_quantity,
+                    SUM(ABS(tl.quantity) * tl.unit_price) as subtotal
+                FROM tx_line tl
+                GROUP BY tl.tx_id
+            ) line_counts ON line_counts.tx_id = t.id
+            WHERE t.party_id = ? AND t.tx_type = 'BUY'
+            GROUP BY t.tx_date
+            ORDER BY t.tx_date DESC
+        """
+    else:
+        # Original query - each database transaction separately
+        query = """
+            SELECT 
+                t.id as tx_ids,
+                1 as db_transaction_count,
+                t.tx_date,
+                COUNT(tl.id) as line_items,
+                SUM(ABS(tl.quantity)) as total_quantity,
+                ROUND(SUM(ABS(tl.quantity) * tl.unit_price), 2) as subtotal,
+                t.shipping,
+                t.tax,
+                t.fees,
+                ROUND(SUM(ABS(tl.quantity) * tl.unit_price) + 
+                      COALESCE(t.shipping, 0) + COALESCE(t.tax, 0) + COALESCE(t.fees, 0), 2) as total,
+                t.notes
+            FROM tx t
+            JOIN tx_line tl ON tl.tx_id = t.id
+            WHERE t.party_id = ? AND t.tx_type = 'BUY'
+            GROUP BY t.id, t.tx_date, t.shipping, t.tax, t.fees, t.notes
+            ORDER BY t.tx_date DESC
+        """
+    
     return execute_query_all(query, (party_id,))
 
 
@@ -144,8 +207,17 @@ def get_seller_transactions(party_id: int) -> List[Dict[str, Any]]:
 def generate_seller_report(party_id: int, party_name: str):
     """Generate the seller report display."""
     
+    # Add toggle for transaction grouping
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        group_by_date = st.checkbox(
+            "Group by date", 
+            value=True,
+            help="Group multiple transactions on the same date as one logical transaction"
+        )
+    
     # Get summary data
-    summary = get_seller_summary(party_id)
+    summary = get_seller_summary(party_id, group_by_date)
     
     if not summary or summary.get('unique_transactions', 0) == 0:
         st.warning(f"No purchase transactions found for {party_name}")
@@ -158,7 +230,16 @@ def generate_seller_report(party_id: int, party_name: str):
     st.markdown("### Summary")
     col1, col2, col3, col4 = st.columns(4)
     
-    col1.metric("Transactions", int(summary.get('unique_transactions', 0)))
+    # Show both logical and database transactions if grouped
+    if group_by_date and summary.get('database_transactions', 0) != summary.get('unique_transactions', 0):
+        col1.metric(
+            "Logical Transactions", 
+            int(summary.get('unique_transactions', 0)),
+            f"({int(summary.get('database_transactions', 0))} database entries)"
+        )
+    else:
+        col1.metric("Transactions", int(summary.get('unique_transactions', 0)))
+    
     col2.metric("Total Coins Purchased", int(summary.get('total_coins_purchased', 0)))
     col3.metric("Unique Coin Types", int(summary.get('unique_coin_types', 0)))
     col4.metric("Coins Still Held", int(summary.get('coins_still_held', 0)))
@@ -259,30 +340,56 @@ def generate_seller_report(party_id: int, party_name: str):
     with tab2:
         st.markdown("### Transaction History")
         
-        transactions = get_seller_transactions(party_id)
+        transactions = get_seller_transactions(party_id, group_by_date)
         
         if transactions:
             tx_df = pd.DataFrame(transactions)
             
+            # Modify column names based on grouping
+            if group_by_date:
+                rename_dict = {
+                    'tx_ids': 'TX IDs',
+                    'db_transaction_count': 'DB Entries',
+                    'tx_date': 'Date',
+                    'line_items': 'Items',
+                    'total_quantity': 'Qty',
+                    'subtotal': 'Subtotal',
+                    'shipping': 'Shipping',
+                    'tax': 'Tax',
+                    'fees': 'Fees',
+                    'total': 'Total',
+                    'notes': 'Notes'
+                }
+            else:
+                rename_dict = {
+                    'tx_ids': 'TX#',
+                    'tx_date': 'Date',
+                    'line_items': 'Items',
+                    'total_quantity': 'Qty',
+                    'subtotal': 'Subtotal',
+                    'shipping': 'Shipping',
+                    'tax': 'Tax',
+                    'fees': 'Fees',
+                    'total': 'Total',
+                    'notes': 'Notes'
+                }
+            
             # Format for display
-            display_tx = tx_df.rename(columns={
-                'id': 'TX#',
-                'tx_date': 'Date',
-                'line_items': 'Items',
-                'total_quantity': 'Qty',
-                'subtotal': 'Subtotal',
-                'shipping': 'Shipping',
-                'tax': 'Tax',
-                'fees': 'Fees',
-                'total': 'Total',
-                'notes': 'Notes'
-            })
+            display_tx = tx_df.rename(columns=rename_dict)
+            
+            # Remove the db_transaction_count column if not grouping
+            if not group_by_date and 'DB Entries' in display_tx.columns:
+                display_tx = display_tx.drop(columns=['DB Entries'])
             
             # Format money columns
             money_cols = ['Subtotal', 'Shipping', 'Tax', 'Fees', 'Total']
             for col in money_cols:
                 if col in display_tx.columns:
                     display_tx[col] = display_tx[col].apply(lambda x: f"${x:,.2f}" if x else "$0.00")
+            
+            # Add info about grouping
+            if group_by_date:
+                st.info("📊 Transactions on the same date are grouped together as one logical transaction")
             
             st.dataframe(display_tx, width='stretch', hide_index=True)
             
@@ -337,11 +444,11 @@ def generate_seller_report(party_id: int, party_name: str):
             timeline_df['year_month'] = timeline_df['tx_date'].dt.to_period('M')
             
             monthly_summary = timeline_df.groupby('year_month').agg({
-                'id': 'count',
+                'tx_date': 'count',
                 'total_quantity': 'sum',
                 'total': 'sum'
             }).rename(columns={
-                'id': 'Transactions',
+                'tx_date': 'Transaction Days',
                 'total_quantity': 'Coins',
                 'total': 'Amount'
             })
@@ -388,14 +495,16 @@ def render_seller_report():
     # Create seller options with transaction counts
     seller_options = {}
     for seller in sellers:
-        logical_count = seller['logical_transaction_count']
-        db_count = seller['db_transaction_count']
+        # Safely get the counts with fallbacks
+        logical_count = seller.get('logical_transaction_count', seller.get('transaction_count', 0))
+        db_count = seller.get('db_transaction_count', seller.get('transaction_count', 0))
+        total_coins = seller.get('total_coins', 0)
         
         # Show both counts if they differ
-        if logical_count != db_count:
-            label = f"{seller['name']} ({logical_count} purchase dates from {db_count} entries, {seller['total_coins']} coins)"
+        if logical_count != db_count and logical_count > 0:
+            label = f"{seller['name']} ({logical_count} purchase dates from {db_count} entries, {total_coins} coins)"
         else:
-            label = f"{seller['name']} ({logical_count} transactions, {seller['total_coins']} coins)"
+            label = f"{seller['name']} ({db_count} transactions, {total_coins} coins)"
         
         seller_options[label] = (seller['id'], seller['name'])
     
