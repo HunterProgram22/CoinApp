@@ -4,18 +4,12 @@ from infrastructure.auth.auth_utils import require_auth
 
 # Check authentication first
 require_auth()
-# pages/43_Transactions.py
-import streamlit as st
-from auth_utils import require_auth
-
-# Check authentication first
-require_auth()
 import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 from typing import Optional, List, Tuple, Dict, Any
-from db_operations import execute_query_all, execute_query_single
-from queries import (
+from infrastructure.database.db_operations import execute_query_all, execute_query_single
+from core.queries import (
     get_all_coin_types,
     get_storage_locations,
     create_buy_transaction,

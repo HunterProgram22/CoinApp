@@ -7,7 +7,7 @@ require_auth()
 # pages/35_Type_Sets.py
 import streamlit as st
 import pandas as pd
-from type_sets_helpers import (
+from presentation.components.helpers.type_sets_helpers import (
     get_all_type_sets,
     create_type_set,
     update_type_set,
@@ -25,8 +25,8 @@ from type_sets_helpers import (
     format_coin_type_label,
     search_coin_types_catalog
 )
-from constants import GRADE_COMPANIES, GRADE_TEXT_VALUES
-from db_operations import execute_query_all
+from core.constants import GRADE_COMPANIES, GRADE_TEXT_VALUES
+from infrastructure.database.db_operations import execute_query_all
 
 st.header("Type Sets")
 

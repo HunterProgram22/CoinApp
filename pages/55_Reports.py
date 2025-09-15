@@ -7,7 +7,7 @@ require_auth()
 
 import pandas as pd
 from datetime import datetime
-import report_logic as rl
+import services.report_logic as rl
 
 st.header("📊 Reports")
 st.caption("Generate comprehensive reports from your coin collection data")

@@ -2,7 +2,7 @@
 """Helper functions for admin operations."""
 import streamlit as st
 from typing import List, Dict, Any, Optional
-from CoinApp.infrastructure.database.db_operations import execute_query_all, execute_update
+from infrastructure.database.db_operations import execute_query_all, execute_update
 
 
 # ---------------------------------

@@ -6,7 +6,7 @@ from infrastructure.auth.auth_utils import require_auth
 require_auth()
 import streamlit as st
 import pandas as pd
-from db_operations import execute_query_all, execute_query_single
+from infrastructure.database.db_operations import execute_query_all, execute_query_single
 
 st.header("World Coins")
 

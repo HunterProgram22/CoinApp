@@ -6,7 +6,7 @@ from infrastructure.auth.auth_utils import require_auth
 require_auth()
 import streamlit as st
 import pandas as pd
-from import_helpers import (
+from presentation.components.helpers.import_helpers import (
     TransactionImporter,
     read_uploaded_file,
     normalize_text,
@@ -14,8 +14,8 @@ from import_helpers import (
     safe_float,
     safe_int
 )
-from queries import upsert_coin_master, upsert_coin_type
-from db import get_conn
+from core.queries import upsert_coin_master, upsert_coin_type
+from infrastructure.database.db import get_conn
 
 st.header("📥 Data Import")
 tabs = st.tabs(

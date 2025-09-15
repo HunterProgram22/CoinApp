@@ -2,8 +2,9 @@
 """Business logic helpers for transactions and inventory operations."""
 from typing import List, Dict, Any, Optional
 
-from db import get_conn
-from db_operations import execute_insert, execute_query_all, execute_query_single, execute_update
+from infrastructure.database.db import get_conn
+from infrastructure.database.db_operations import execute_insert, execute_query_all, \
+    execute_query_single, execute_update
 
 
 class CostAllocationCalculator:

@@ -8,7 +8,7 @@ require_auth()
 import streamlit as st
 import pandas as pd
 from typing import List, Optional, Dict, Any
-from db_operations import execute_query_all
+from infrastructure.database.db_operations import execute_query_all
 
 st.title("📚 Coin Catalog")
 st.caption("Browse Master Coins and Coin Types with reference links.")

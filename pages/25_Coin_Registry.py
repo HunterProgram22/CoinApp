@@ -8,9 +8,9 @@ require_auth()
 import streamlit as st
 import pandas as pd
 from typing import List, Dict, Any, Optional, Tuple
-from db_operations import execute_query_all, execute_query_single, execute_insert, execute_update, \
-    execute_delete
-from queries import (
+from infrastructure.database.db_operations import execute_query_all, execute_query_single, \
+    execute_insert, execute_update, execute_delete
+from core.queries import (
     get_specimen_by_code,
     get_specimens_on_hand,
     create_specimens_for_lot,

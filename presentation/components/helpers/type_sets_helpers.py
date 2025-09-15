@@ -3,8 +3,8 @@
 import pandas as pd
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
-from CoinApp.infrastructure.database.db_operations import execute_query_all, execute_query_single, execute_insert, execute_update, \
-    execute_delete
+from infrastructure.database.db_operations import execute_query_all, execute_query_single, \
+    execute_insert, execute_update, execute_delete
 
 
 # ---------------------------------

@@ -9,9 +9,9 @@ from datetime import datetime, UTC
 import pandas as pd
 import streamlit as st
 
-from db import init_db, create_backup_data, get_backup_filename, DB_PATH
-from db_operations import execute_query_all, execute_insert, execute_delete
-from admin_helpers import (
+from infrastructure.database.db import init_db, create_backup_data, get_backup_filename, DB_PATH
+from infrastructure.database.db_operations import execute_query_all, execute_insert, execute_delete
+from presentation.components.helpers.admin_helpers import (
     get_coin_masters,
     get_all_coin_types,
     update_coin_master,
@@ -22,8 +22,8 @@ from admin_helpers import (
     render_weight_helper,
     WEIGHT_PRESETS
 )
-from queries import create_or_update_coin_master, create_or_update_coin_type
-from constants import ASSET_CATEGORIES
+from core.queries import create_or_update_coin_master, create_or_update_coin_type
+from core.constants import ASSET_CATEGORIES
 
 st.set_page_config(page_title="Admin", page_icon="🛠️", layout="wide")
 st.title("🛠️ Admin")

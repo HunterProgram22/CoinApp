@@ -2,11 +2,11 @@
 """Database query functions for the coin tracker application."""
 
 from typing import List, Optional, Dict, Any
-from db_operations import (
+from infrastructure.database.db_operations import (
     execute_query_single, execute_query_all, execute_insert, upsert_record,
     find_or_create_party, find_or_create_storage, normalize_text_field, normalize_for_upsert
 )
-from business_logic import TransactionBuilder
+from core.business_logic import TransactionBuilder
 
 
 # ------------------------------------------------------------------
