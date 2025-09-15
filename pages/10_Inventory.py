@@ -1,13 +1,12 @@
 # pages/10_Inventory.py
 import streamlit as st
-from auth_utils import require_auth
+from infrastructure.auth.auth_utils import require_auth
 
 # Check authentication first
 require_auth()
-
 import pandas as pd
-from db_operations import execute_query_all, execute_query_single
-from inventory_helpers import (
+from infrastructure.database.db_operations import execute_query_all, execute_query_single
+from presentation.components.helpers.inventory_helpers import (
     get_inventory_by_series_detail,
     get_inventory_by_flags,
     format_year_columns_for_display,

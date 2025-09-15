@@ -1,6 +1,6 @@
 # pages/43_Transactions.py
 import streamlit as st
-from auth_utils import require_auth
+from infrastructure.auth.auth_utils import require_auth
 
 # Check authentication first
 require_auth()
