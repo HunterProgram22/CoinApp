@@ -4,7 +4,7 @@
 import os
 import sqlite3
 from pathlib import Path
-from schema_sql import SCHEMA_SQL
+from .schema_sql import SCHEMA_SQL
 
 try:
     import streamlit as st

@@ -1,7 +1,6 @@
 # ========== app_coordinator.py ==========
 """Application Coordinator - Orchestrates the application flow"""
 import streamlit as st
-from typing import Optional
 
 
 class AppCoordinator:
@@ -28,8 +27,8 @@ class AppCoordinator:
 
     def _handle_authenticated_user(self):
         """Handle authenticated user flow"""
-        from db import init_db
-        from constants import NAVIGATION_ITEMS, APP_TITLE, APP_SUBTITLE
+        from infastructure.database.db import init_db
+        from core.constants import NAVIGATION_ITEMS, APP_TITLE, APP_SUBTITLE
 
         # Logout button and welcome message
         self.auth_service.logout(location='sidebar')

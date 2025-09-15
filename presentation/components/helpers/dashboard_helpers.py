@@ -4,7 +4,7 @@
 import numpy as np
 import pandas as pd
 import streamlit as st
-from constants import METAL_DISPLAY_ORDER, SILVER_COIN_SPECS, DASHBOARD_COLUMN_RENAMES
+from core.constants import METAL_DISPLAY_ORDER, SILVER_COIN_SPECS, DASHBOARD_COLUMN_RENAMES
 
 
 def format_metal_prices_dataframe(spots_data):

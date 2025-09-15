@@ -1,8 +1,8 @@
 # report_logic.py
 """Business logic for Seller Report and Collection Value Report."""
 
-from typing import List, Dict, Any, Optional
-from db_operations import execute_query_all, execute_query_single
+from typing import List, Dict, Any
+from CoinApp.infastructure.database.db_operations import execute_query_all, execute_query_single
 import pandas as pd
 
 

@@ -1,10 +1,10 @@
 # ========== Home.py (Refactored) ==========
 """Main entry point - Minimal responsibility: Wire up dependencies"""
 import streamlit as st
-from authentication import StreamlitSecretsAuthConfig, AuthenticationService
-from ui_components import AuthenticationUI, NavigationUI
-from app_coordinator import AppCoordinator
-from constants import APP_TITLE
+from infastructure.auth.authentication import StreamlitSecretsAuthConfig, AuthenticationService
+from presentation.ui_components import AuthenticationUI, NavigationUI
+from presentation.app_coordinator import AppCoordinator
+from core.constants import APP_TITLE
 
 # Page configuration
 st.set_page_config(page_title=APP_TITLE, page_icon="🪙", layout="wide")
