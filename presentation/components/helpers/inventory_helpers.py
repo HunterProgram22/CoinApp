@@ -37,26 +37,26 @@ def get_inventory_by_series_detail(series_name):
                 )
             """
             flip_join = "LEFT JOIN flip f ON f.lot_id = l.id"
-            flip_select = "COALESCE(f.flip_ids, '') AS \"Flip IDs\","
+            flip_select = "COALESCE(f.flip_ids, '') AS 'Flip IDs',"
 
     query = f"""
         {flip_cte}
         SELECT
             cm.series AS Series,
             ct.year AS Year,
-            ct.mint_mark AS "Mint Mark",
+            ct.mint_mark AS 'Mint Mark',
             COALESCE(ct.variety, '') AS Variety,
             l.id AS lot_id,
             t.tx_date AS Acquired,
             COALESCE(p.name, '') AS Party,
             l.qty_remaining AS Qty,
-            ROUND(l.unit_cost, 2) AS "Unit Cost (USD)",
-            ROUND(v.melt_unit_value, 4) AS "Melt Unit Value",
-            ROUND(v.chosen_unit_value, 2) AS "Chosen Unit Value",
-            ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value, 0), 2) AS "Lot Est. Value",
+            ROUND(l.unit_cost, 2) AS 'Unit Cost (USD)',
+            ROUND(v.melt_unit_value, 4) AS 'Melt Unit Value',
+            ROUND(v.chosen_unit_value, 2) AS 'Chosen Unit Value',
+            ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value, 0), 2) AS 'Lot Est. Value',
             COALESCE(l.estimated_grade_text, l.purchase_grade_text, '') AS Grade,
-            {flip_select if flip_select else "'' AS \"Flip IDs\","}
-            COALESCE(l.slab_cert, '') AS "Cert #"
+            {flip_select if flip_select else "'' AS 'Flip IDs',"}
+            COALESCE(l.slab_cert, '') AS 'Cert #'
         FROM lot l
         JOIN tx_line tl ON tl.id = l.acquisition_line_id
         JOIN tx t ON t.id = tl.tx_id
