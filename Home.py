@@ -1,7 +1,7 @@
 # ========== Home.py (Refactored) ==========
 """Main entry point - Minimal responsibility: Wire up dependencies"""
 import streamlit as st
-from infastructure.auth.authentication import StreamlitSecretsAuthConfig, AuthenticationService
+from infrastructure.auth.authentication import StreamlitSecretsAuthConfig, AuthenticationService
 from presentation.ui_components import AuthenticationUI, NavigationUI
 from presentation.app_coordinator import AppCoordinator
 from core.constants import APP_TITLE

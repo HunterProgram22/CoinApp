@@ -2,7 +2,7 @@
 """Business logic for Seller Report and Collection Value Report."""
 
 from typing import List, Dict, Any
-from CoinApp.infastructure.database.db_operations import execute_query_all, execute_query_single
+from CoinApp.infrastructure.database.db_operations import execute_query_all, execute_query_single
 import pandas as pd
 
 

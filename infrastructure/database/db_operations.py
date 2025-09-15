@@ -2,7 +2,7 @@
 """Simplified database operation helpers for SQLite."""
 from typing import List, Dict, Any, Optional
 
-from db import get_conn
+from infrastructure.database.db import get_conn
 
 
 def execute_query_single(query: str, params=()) -> Optional[Dict[str, Any]]:

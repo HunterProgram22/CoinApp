@@ -2,7 +2,7 @@
 """Helper functions for inventory operations."""
 import pandas as pd
 import streamlit as st
-from CoinApp.infastructure.database.db_operations import execute_query_all, execute_query_single
+from CoinApp.infrastructure.database.db_operations import execute_query_all, execute_query_single
 
 
 def get_inventory_by_series_detail(series_name):

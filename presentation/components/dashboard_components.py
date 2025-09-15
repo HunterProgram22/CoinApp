@@ -3,7 +3,7 @@
 import streamlit as st
 import pandas as pd
 from typing import Dict, List
-from dashboard_helpers import (
+from presentation.components.helpers.dashboard_helpers import (
     format_metal_prices_dataframe,
     calculate_silver_melt_values,
     calculate_series_unrealized_gl,

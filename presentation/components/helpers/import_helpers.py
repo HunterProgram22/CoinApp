@@ -3,7 +3,7 @@
 import pandas as pd
 import streamlit as st
 from typing import Dict, Any, Optional, Tuple
-from CoinApp.infastructure.database.db import get_conn
+from CoinApp.infrastructure.database.db import get_conn
 from CoinApp.core.queries import (
     upsert_coin_master,
     upsert_coin_type,

@@ -27,7 +27,7 @@ class AppCoordinator:
 
     def _handle_authenticated_user(self):
         """Handle authenticated user flow"""
-        from infastructure.database.db import init_db
+        from infrastructure.database.db import init_db
         from core.constants import NAVIGATION_ITEMS, APP_TITLE, APP_SUBTITLE
 
         # Logout button and welcome message

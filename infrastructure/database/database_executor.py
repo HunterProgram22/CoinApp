@@ -1,6 +1,6 @@
 # ========== database_executor.py ==========
 """Database executor wrapper - Adapter pattern for existing db_operations"""
-from db_operations import execute_query_all, execute_query_single
+from infrastructure.database.db_operations import execute_query_all, execute_query_single
 
 
 class DatabaseExecutor:
