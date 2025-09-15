@@ -112,72 +112,6 @@ def search_transactions(
     return pd.DataFrame(results) if results else pd.DataFrame()
 
 
-def get_spending_summary(
-        date_from: Optional[date] = None,
-        date_to: Optional[date] = None
-) -> pd.DataFrame:
-    """Get spending summary for BUY transactions."""
-    df = search_transactions(date_from, date_to, tx_types=["BUY"])
-
-    if df.empty:
-        return pd.DataFrame()
-
-    # Calculate line totals
-    df["line_total"] = (
-            pd.to_numeric(df["unit_price"], errors="coerce").fillna(0.0) *
-            pd.to_numeric(df["quantity"], errors="coerce").fillna(0.0)
-    )
-
-    # Add shipping, tax, fees to get true totals
-    df["total_with_fees"] = (
-            df["line_total"] +
-            pd.to_numeric(df["shipping"], errors="coerce").fillna(0.0) +
-            pd.to_numeric(df["tax"], errors="coerce").fillna(0.0) +
-            pd.to_numeric(df["fees"], errors="coerce").fillna(0.0)
-    )
-
-    # Group by date and party
-    df["Date"] = pd.to_datetime(df["tx_date"]).dt.date
-    df["Series"] = df["series"].fillna("")
-
-    agg = df.groupby(["Date", "party"], dropna=False).agg(
-        Total_Spent_USD=("total_with_fees", "sum"),
-        Items=("Series", lambda s: ", ".join(f"{n}×{k}" for k, n in s.value_counts().items())),
-        Lines=("series", "count")
-    ).reset_index().rename(columns={"party": "Party"})
-
-    return agg.sort_values(["Date", "Party"], ascending=[False, True])
-
-
-def get_spending_total(
-        date_from: Optional[date] = None,
-        date_to: Optional[date] = None
-) -> float:
-    """Get total spending for a date range."""
-    conditions = ["t.tx_type = 'BUY'"]
-    params = []
-
-    if date_from and date_to:
-        conditions.append("DATE(t.tx_date) BETWEEN DATE(?) AND DATE(?)")
-        params.extend([date_from.isoformat(), date_to.isoformat()])
-
-    where_clause = f"WHERE {' AND '.join(conditions)}"
-
-    query = f"""
-        SELECT 
-            COALESCE(SUM(ABS(tl.quantity) * COALESCE(tl.unit_price, 0)), 0) +
-            COALESCE(SUM(DISTINCT t.shipping), 0) +
-            COALESCE(SUM(DISTINCT t.tax), 0) +
-            COALESCE(SUM(DISTINCT t.fees), 0) as total
-        FROM tx t
-        JOIN tx_line tl ON tl.tx_id = t.id
-        {where_clause}
-    """
-
-    result = execute_query_single(query, tuple(params))
-    return float(result['total']) if result and result['total'] else 0.0
-
-
 def check_inventory_availability(coin_type_id: int, quantity: int) -> Tuple[bool, str, List[Dict]]:
     """Check if enough inventory is available for sale and return lot details."""
     query = """
@@ -213,6 +147,91 @@ def check_inventory_availability(coin_type_id: int, quantity: int) -> Tuple[bool
         return False, f"Insufficient inventory: Only {total_available} available for {coin_desc}, but trying to sell {quantity}", results
 
     return True, "", results
+
+
+def get_spending_summary(
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None
+) -> pd.DataFrame:
+    """Get spending summary for BUY transactions."""
+    df = search_transactions(date_from, date_to, tx_types=["BUY"])
+
+    if df.empty:
+        return pd.DataFrame()
+
+    # Calculate line totals (without fees)
+    df["line_total"] = (
+            pd.to_numeric(df["unit_price"], errors="coerce").fillna(0.0) *
+            pd.to_numeric(df["quantity"], errors="coerce").fillna(0.0)
+    )
+
+    # Group by transaction first to handle fees properly
+    df["Date"] = pd.to_datetime(df["tx_date"]).dt.date
+    df["Series"] = df["series"].fillna("")
+
+    # First, calculate totals per transaction
+    tx_totals = df.groupby(["tx_id", "Date", "party"], dropna=False).agg(
+        line_subtotal=("line_total", "sum"),
+        shipping=("shipping", "first"),  # Get once per transaction
+        tax=("tax", "first"),  # Get once per transaction
+        fees=("fees", "first"),  # Get once per transaction
+        items_list=("Series", lambda s: ", ".join(f"{n}×{k}" for k, n in s.value_counts().items())),
+        line_count=("series", "count")
+    ).reset_index()
+
+    # Calculate true total with fees added once per transaction
+    tx_totals["Total_Spent_USD"] = (
+            tx_totals["line_subtotal"] +
+            pd.to_numeric(tx_totals["shipping"], errors="coerce").fillna(0.0) +
+            pd.to_numeric(tx_totals["tax"], errors="coerce").fillna(0.0) +
+            pd.to_numeric(tx_totals["fees"], errors="coerce").fillna(0.0)
+    )
+
+    # Now aggregate by Date and Party for final summary
+    agg = tx_totals.groupby(["Date", "party"], dropna=False).agg(
+        Total_Spent_USD=("Total_Spent_USD", "sum"),
+        Items=("items_list", lambda x: ", ".join(x)),
+        Lines=("line_count", "sum")
+    ).reset_index().rename(columns={"party": "Party"})
+
+    return agg.sort_values(["Date", "Party"], ascending=[False, True])
+
+
+def get_spending_total(
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None
+) -> float:
+    """Get total spending for a date range."""
+    conditions = ["t.tx_type = 'BUY'"]
+    params = []
+
+    if date_from and date_to:
+        conditions.append("DATE(t.tx_date) BETWEEN DATE(?) AND DATE(?)")
+        params.extend([date_from.isoformat(), date_to.isoformat()])
+
+    where_clause = f"WHERE {' AND '.join(conditions)}"
+
+    # Fixed query: Calculate fees per transaction, not per line
+    query = f"""
+        WITH tx_totals AS (
+            SELECT 
+                t.id,
+                SUM(ABS(tl.quantity) * COALESCE(tl.unit_price, 0)) as line_total,
+                MAX(COALESCE(t.shipping, 0)) as shipping,
+                MAX(COALESCE(t.tax, 0)) as tax,
+                MAX(COALESCE(t.fees, 0)) as fees
+            FROM tx t
+            JOIN tx_line tl ON tl.tx_id = t.id
+            {where_clause}
+            GROUP BY t.id
+        )
+        SELECT 
+            COALESCE(SUM(line_total + shipping + tax + fees), 0) as total
+        FROM tx_totals
+    """
+
+    result = execute_query_single(query, tuple(params))
+    return float(result['total']) if result and result['total'] else 0.0
 
 
 # ---------------------------------
