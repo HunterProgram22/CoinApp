@@ -1,10 +1,11 @@
 # ========== pages/05_Dashboard.py (Refactored) ==========
 """Dashboard page - Minimal responsibility: Wire up components and define layout"""
 import streamlit as st
+
 from infrastructure.auth.auth_utils import require_auth
 from infrastructure.database.repositories.dashboard_repository import SQLDashboardRepository
-from presentation.components.dashboard_components import DashboardRenderer
 from infrastructure.database.database_executor import DatabaseExecutor
+from presentation.components.dashboard_components import DashboardRenderer
 
 # Check authentication first
 require_auth()
