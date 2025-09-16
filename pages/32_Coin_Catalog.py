@@ -23,8 +23,7 @@ def get_coin_catalog_dependencies():
 
 renderer = get_coin_catalog_dependencies()
 
-# Create tabs
-tab_masters, tab_types = st.tabs(["📖 Coin Masters", "🪙 Coin Types"])
+tab_masters, tab_types = st.tabs(["📖 Coin Masters", "💵 Coin Types"])
 
 # ========================
 # TAB: COIN MASTERS

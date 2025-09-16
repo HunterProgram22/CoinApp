@@ -27,7 +27,7 @@ class BullionRenderer:
             st.info("No spot prices found. Update them in Admin → Metal Prices.")
             return
 
-        st.caption("Latest spot prices from your metal_price table:")
+        st.caption("Latest Precious Metal spot prices.")
 
         # Convert to DataFrame for display
         spot_data = [{'metal': s.metal, 'price_per_oz_usd': s.price_per_oz_usd} for s in spots]

@@ -23,7 +23,6 @@ def get_inventory_dependencies():
 
 renderer = get_inventory_dependencies()
 
-# Create tabs
 tab_summary, tab_details, tab_flags = st.tabs(
     ["📋 Series Summary", " 🔎 Series Detail", "🚩 Filter by Flags"]
 )

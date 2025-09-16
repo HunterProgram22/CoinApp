@@ -22,7 +22,6 @@ def get_dashboard_dependencies():
 
 renderer = get_dashboard_dependencies()
 
-# Create tabs
 tab_overview, tab_series = st.tabs(["📊 Overview", "📚 Series Summary"])
 
 # ========================
