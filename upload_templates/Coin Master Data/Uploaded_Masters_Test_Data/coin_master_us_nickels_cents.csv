@@ -1,9 +1,0 @@
-country,denomination,series,metal,fineness,weight_grams,diameter_mm,thickness_mm,edge,years_start,years_end,asset_category,numista_url,notes
-USA,Nickel,Buffalo Flat Ground (1913-1938),Cu-Ni,1,5,21.2,1.95,Smooth,1913,1938,COIN,https://en.numista.com/catalogue/pieces1109.html,
-USA,Nickel,War (1942-1945),Ag,0.35,5,21.2,1.95,Smooth,1942,1945,COIN,https://en.numista.com/catalogue/pieces45.html,
-USA,Nickel,Liberty Head (1883-1913),Cu-Ni,1,5,21.2,1.95,Smooth,1883,1913,COIN,https://en.numista.com/catalogue/pieces3683.html,
-USA,Three Cent,Nickel (1865-1889),Cu-Ni,1,1.94,17.9,1.15,Reeded,1865,1889,COIN,https://en.numista.com/catalogue/pieces5336.html,
-USA,Large One Cent,Liberty Head Braided Hair (1839-1857),Cu,1,10.89,27.5,2.39,Smooth,1839,1857,COIN,https://en.numista.com/catalogue/pieces982.html,
-USA,One Cent,Indian Head (1864-1909),Cu-Sn-Zn,1,3.11,19,1.47,Smooth,1864,1909,COIN,https://en.numista.com/catalogue/pieces2356.html,
-USA,One Cent,Wheat (1909-1958),Cu-Sn-Zn,1,3.11,19,1.4,Smooth,1909,1958,COIN,https://en.numista.com/catalogue/pieces908.html,
-USA,Half Cent,Classic Head (1809-1836),Cu,1,5.44,23.5,0,Smooth,1809,1836,COIN,https://en.numista.com/catalogue/pieces30704.html,
