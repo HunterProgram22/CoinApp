@@ -320,13 +320,15 @@ def test_refactored_repository():
         from infrastructure.database.repositories.coin_catalog_repository import (
             CoinCatalogRepository
         )
-        from unittest.mock import patch
+        from unittest.mock import patch, Mock
 
-        # Create repository
-        repository = CoinCatalogRepository()
+        # Create repository with mocked database executor (following the pattern)
+        mock_db_executor = Mock()
+        repository = CoinCatalogRepository(mock_db_executor)
 
-        # Test get_distinct_values
-        with patch('infrastructure.database.db_operations.execute_query_all') as mock_execute:
+        # Test get_distinct_values - need to patch the execute_query_all at the repository level
+        with patch(
+                'infrastructure.database.repositories.coin_catalog_repository.execute_query_all') as mock_execute:
             mock_execute.return_value = [
                 {'value': 'United States'},
                 {'value': 'Canada'},
@@ -340,7 +342,8 @@ def test_refactored_repository():
             assert None not in result
 
         # Test search_coin_masters
-        with patch('infrastructure.database.db_operations.execute_query_all') as mock_execute:
+        with patch(
+                'infrastructure.database.repositories.coin_catalog_repository.execute_query_all') as mock_execute:
             mock_execute.return_value = [
                 {
                     'id': 1,
@@ -368,7 +371,8 @@ def test_refactored_repository():
             assert result == []
 
         # Test search_coin_types
-        with patch('infrastructure.database.db_operations.execute_query_all') as mock_execute:
+        with patch(
+                'infrastructure.database.repositories.coin_catalog_repository.execute_query_all') as mock_execute:
             mock_execute.return_value = [
                 {
                     'id': 1,
@@ -428,7 +432,8 @@ def test_components():
         assert hasattr(renderer, 'render_master_results')
         assert hasattr(renderer, 'render_types_filters')
         assert hasattr(renderer, 'render_types_results')
-        assert hasattr(renderer, 'render_coin_catalog_page')
+        assert hasattr(renderer, 'render_masters_tab')
+        assert hasattr(renderer, 'render_types_tab')
 
         print("✅ UI components work correctly")
         return True
