@@ -30,7 +30,7 @@ class InventoryRenderer:
             "Filter by:",
             ["All", "US Only", "World Only"],
             horizontal=True,
-            key="series_country_filter"
+            key="inventory_series_country_filter"  # Made more unique
         )
 
         # Get data from repository
@@ -79,9 +79,9 @@ class InventoryRenderer:
         """Render the flags filtering tab."""
         # Flag selection
         col1, col2 = st.columns(2)
-        want_proofs = col1.checkbox("Proofs only", value=False, key="inv_flag_proofs")
+        want_proofs = col1.checkbox("Proofs only", value=False, key="inventory_flag_proofs")
         want_slabbed = col2.checkbox("Slabbed only (has cert or PCGS/NGC/ANACS/ICG)", 
-                                   value=False, key="inv_flag_slabbed")
+                                   value=False, key="inventory_flag_slabbed")
 
         # Get filtered data
         flagged_data = self.repo.get_inventory_by_flags(want_proofs, want_slabbed)
@@ -132,12 +132,12 @@ class InventoryRenderer:
         """Render country and series selection dropdowns."""
         col1, col2 = st.columns(2)
 
-        # Country dropdown (starts blank)
+        # Country dropdown (starts blank) - add unique key to prevent conflicts
         selected_country = col1.selectbox(
             "Country",
             [""] + countries,
             index=0,
-            key="inv_detail_country",
+            key="inventory_detail_country",  # Made more unique
             help="Select a country to filter series"
         )
 
@@ -148,14 +148,14 @@ class InventoryRenderer:
                 "Series",
                 [""] + series_list,
                 index=0,
-                key="inv_series_pick"
+                key="inventory_series_pick"  # Made more unique
             )
         else:
             col2.selectbox(
                 "Series",
                 ["Select a country first"],
                 index=0,
-                key="inv_series_pick",
+                key="inventory_series_pick",
                 disabled=True
             )
             selected_series = None
@@ -183,16 +183,15 @@ class InventoryRenderer:
         for item in detail_data:
             data.append({
                 'lot_id': item.lot_id,
-                'series': item.series,
-                'year': item.year,
-                'mint_mark': item.mint_mark,
-                'variety': item.variety,
-                'qty_remaining': item.qty_remaining,
-                'unit_cost_usd': item.unit_cost_usd,
-                'melt_unit_value': item.melt_unit_value,
-                'chosen_unit_value': item.chosen_unit_value,
-                'lot_est_value': item.lot_est_value
-                # Add other fields as needed
+                'Series': item.series,                    # Keep original column names for consistency
+                'Year': item.year,
+                'Mint Mark': item.mint_mark,
+                'Variety': item.variety,
+                'Qty': item.qty_remaining,                # Use 'Qty' to match original
+                'Unit Cost (USD)': item.unit_cost_usd,
+                'Melt Unit Value': item.melt_unit_value,
+                'Chosen Unit Value': item.chosen_unit_value,
+                'Lot Est. Value': item.lot_est_value
             })
         return pd.DataFrame(data)
     
@@ -202,18 +201,17 @@ class InventoryRenderer:
         for item in flagged_data:
             data.append({
                 'lot_id': item.lot_id,
-                'series': item.series,
-                'year': item.year,
-                'mint_mark': item.mint_mark,
-                'variety': item.variety,
-                'qty_remaining': item.qty_remaining,
-                'unit_cost_usd': item.unit_cost_usd,
-                'melt_unit_value': item.melt_unit_value,
-                'chosen_unit_value': item.chosen_unit_value,
-                'lot_est_value': item.lot_est_value,
-                'is_proof': item.is_proof,
-                'cert_number': item.cert_number
-                # Add other fields as needed
+                'Series': item.series,                    # Keep original column names for consistency
+                'Year': item.year,
+                'Mint Mark': item.mint_mark,
+                'Variety': item.variety,
+                'Qty': item.qty_remaining,                # Use 'Qty' to match original
+                'Unit Cost (USD)': item.unit_cost_usd,
+                'Melt Unit Value': item.melt_unit_value,
+                'Chosen Unit Value': item.chosen_unit_value,
+                'Lot Est. Value': item.lot_est_value,
+                'Proof': 'Yes' if item.is_proof else 'No',  # Convert back to original format
+                'Slabbed': item.cert_number               # This will be 'Yes'/'No' string
             })
         return pd.DataFrame(data)
     
@@ -229,7 +227,7 @@ class InventoryRenderer:
         # Format year columns
         display_df = format_year_columns_for_display(df)
 
-        # Format money columns with proper precision
+        # Format money columns with proper precision - using CORRECT column names
         money_columns = ["Unit Cost (USD)", "Melt Unit Value", "Chosen Unit Value", "Lot Est. Value"]
         display_df, _ = format_money_columns(display_df, money_columns, keep_melt_precision=True)
 

@@ -81,7 +81,7 @@ class InventoryDataRepository(ABC):
     @abstractmethod
     def get_series_list_for_country(self, country: Optional[str] = None) -> List[str]:
         pass
-    
+
     @abstractmethod
     def get_inventory_by_series_detail(self, series: str) -> List[SeriesDetail]:
         pass
@@ -202,47 +202,48 @@ class SQLInventoryRepository(InventoryDataRepository):
             query = "SELECT DISTINCT series FROM coin_master ORDER BY series"
             results = self.db.execute_query_all(query)
         return [r['series'] for r in results]
-    
+
+    # Replace these two methods in your inventory_repository.py
+
     def get_inventory_by_series_detail(self, series: str) -> List[SeriesDetail]:
         """Get detailed inventory for a specific series."""
-        # This delegates to the helper function that has the complex query
-        # We'll import it to maintain the existing behavior
-        from presentation.components.helpers.inventory_helpers import get_inventory_by_series_detail as helper_detail
+        from presentation.components.helpers.inventory_helpers import \
+            get_inventory_by_series_detail as helper_detail
         results = helper_detail(series)
-        
-        # Convert dict results to dataclass instances
+
+        # Convert dict results to dataclass instances using CORRECT column names
         return [SeriesDetail(
             lot_id=r.get('lot_id', 0),
-            series=r.get('series', ''),
-            year=r.get('year', 0),
-            mint_mark=r.get('mint_mark', ''),
-            variety=r.get('variety', ''),
-            qty_remaining=r.get('qty_remaining', 0),
-            unit_cost_usd=r.get('unit_cost_usd', 0.0),
-            melt_unit_value=r.get('melt_unit_value', 0.0),
-            chosen_unit_value=r.get('chosen_unit_value', 0.0),
-            lot_est_value=r.get('lot_est_value', 0.0)
+            series=r.get('Series', ''),  # Note: Capital 'S'
+            year=r.get('Year', 0),  # Note: Capital 'Y'
+            mint_mark=r.get('Mint Mark', ''),  # Note: Spaces and capitals
+            variety=r.get('Variety', ''),  # Note: Capital 'V'
+            qty_remaining=r.get('Qty', 0),  # Note: 'Qty' not 'qty_remaining'
+            unit_cost_usd=r.get('Unit Cost (USD)', 0.0),  # Note: Full name with spaces
+            melt_unit_value=r.get('Melt Unit Value', 0.0),  # Note: Spaces
+            chosen_unit_value=r.get('Chosen Unit Value', 0.0),  # Note: Spaces
+            lot_est_value=r.get('Lot Est. Value', 0.0)  # Note: Spaces and period
         ) for r in results]
-    
-    def get_inventory_by_flags(self, want_proofs: bool, want_slabbed: bool) -> List[FlaggedInventory]:
+
+    def get_inventory_by_flags(self, want_proofs: bool, want_slabbed: bool) -> List[
+        FlaggedInventory]:
         """Get inventory filtered by flags."""
-        # This delegates to the helper function that has the complex query
-        # We'll import it to maintain the existing behavior
-        from presentation.components.helpers.inventory_helpers import get_inventory_by_flags as helper_flags
+        from presentation.components.helpers.inventory_helpers import \
+            get_inventory_by_flags as helper_flags
         results = helper_flags(want_proofs, want_slabbed)
-        
-        # Convert dict results to dataclass instances
+
+        # Convert dict results to dataclass instances using CORRECT column names
         return [FlaggedInventory(
             lot_id=r.get('lot_id', 0),
-            series=r.get('series', ''),
-            year=r.get('year', 0),
-            mint_mark=r.get('mint_mark', ''),
-            variety=r.get('variety', ''),
-            qty_remaining=r.get('qty_remaining', 0),
-            unit_cost_usd=r.get('unit_cost_usd', 0.0),
-            melt_unit_value=r.get('melt_unit_value', 0.0),
-            chosen_unit_value=r.get('chosen_unit_value', 0.0),
-            lot_est_value=r.get('lot_est_value', 0.0),
-            is_proof=r.get('is_proof', False),
-            cert_number=r.get('cert_number')
+            series=r.get('Series', ''),  # Note: Capital 'S'
+            year=r.get('Year', 0),  # Note: Capital 'Y'
+            mint_mark=r.get('Mint Mark', ''),  # Note: Spaces and capitals
+            variety=r.get('Variety', ''),  # Note: Capital 'V'
+            qty_remaining=r.get('Qty', 0),  # Note: 'Qty' not 'qty_remaining'
+            unit_cost_usd=r.get('Unit Cost (USD)', 0.0),  # Note: Full name with spaces
+            melt_unit_value=r.get('Melt Unit Value', 0.0),  # Note: Spaces
+            chosen_unit_value=r.get('Chosen Unit Value', 0.0),  # Note: Spaces
+            lot_est_value=r.get('Lot Est. Value', 0.0),  # Note: Spaces and period
+            is_proof=r.get('Proof', 'No') == 'Yes',  # Convert 'Yes'/'No' to boolean
+            cert_number=r.get('Slabbed', 'No')  # Note: using 'Slabbed' field
         ) for r in results]

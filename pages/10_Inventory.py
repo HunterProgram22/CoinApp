@@ -27,16 +27,33 @@ def get_inventory_dependencies():
 # Get dependencies
 renderer = get_inventory_dependencies()
 
+# === Session State for Tab Persistence ===
+if 'inventory_tab_index' not in st.session_state:
+    st.session_state.inventory_tab_index = 0
+
 # === UI Orchestration (thin layer, just wiring up components) ===
-tab_series, tab_series_detail, tab_flags = st.tabs(
-    ["Series Summary", "Series Detail", "Filter by Flags"]
+tab_labels = ["Series Summary", "Series Detail", "Filter by Flags"]
+
+# Create tabs but track the selected one
+selected_tab = st.radio(
+    "Select View:",
+    tab_labels,
+    index=st.session_state.inventory_tab_index,
+    horizontal=True,
+    key="inventory_tab_selector"
 )
 
-with tab_series:
+# Update session state when tab changes
+if selected_tab != tab_labels[st.session_state.inventory_tab_index]:
+    st.session_state.inventory_tab_index = tab_labels.index(selected_tab)
+
+# Render content based on selected tab
+st.markdown("---")  # Visual separator
+
+if selected_tab == "Series Summary":
     renderer.render_series_summary_tab()
-
-with tab_series_detail:
+elif selected_tab == "Series Detail":
     renderer.render_series_detail_tab()
-
-with tab_flags:
+elif selected_tab == "Filter by Flags":
     renderer.render_flags_tab()
+
