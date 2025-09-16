@@ -7,7 +7,7 @@ from presentation.app_coordinator import AppCoordinator
 from core.constants import APP_TITLE
 
 # Page configuration
-st.set_page_config(page_title=APP_TITLE, page_icon="🪙", layout="wide")
+st.set_page_config(page_title=APP_TITLE, page_icon="💰", layout="wide")
 
 # Dependency injection - components are loosely coupled
 auth_config = StreamlitSecretsAuthConfig()

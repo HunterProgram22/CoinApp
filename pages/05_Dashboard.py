@@ -1,24 +1,29 @@
-# ========== pages/05_Dashboard.py (Refactored) ==========
+# ========== pages/05_Dashboard.py ==========
 """Dashboard page - Minimal responsibility: Wire up components and define layout"""
 import streamlit as st
-
 from infrastructure.auth.auth_utils import require_auth
+
+require_auth()
 from infrastructure.database.repositories.dashboard_repository import SQLDashboardRepository
 from infrastructure.database.database_executor import DatabaseExecutor
 from presentation.components.dashboard_components import DashboardRenderer
 
-# Check authentication first
-require_auth()
 
-st.header("Dashboard")
+st.header("📈 Dashboard")
+
+# === Dependency Injection  ===
+@st.cache_resource
+def get_dashboard_dependencies():
+    """Create and cache dashboard dependencies"""
+    db_executor = DatabaseExecutor()
+    data_repository = SQLDashboardRepository(db_executor)
+    renderer = DashboardRenderer(data_repository)
+    return renderer
+
+renderer = get_dashboard_dependencies()
 
 # Create tabs
 tab_overview, tab_series = st.tabs(["📊 Overview", "📚 Series Summary"])
-
-# Dependency injection - wire up components
-db_executor = DatabaseExecutor()
-data_repository = SQLDashboardRepository(db_executor)
-renderer = DashboardRenderer(data_repository)
 
 # ========================
 # TAB: OVERVIEW
