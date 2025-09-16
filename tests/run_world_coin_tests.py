@@ -134,7 +134,7 @@ def get_world_coins_detail(country, want_proofs=False, want_slabbed=False, asset
     
     flip_cte = ""
     flip_join = ""
-    flip_select = "'' AS \"Flip IDs\","
+    flip_select = "'' AS [Flip IDs],"  # Use square brackets to avoid quote issues
     
     if specimen_check:
         code_check = execute_query_single(
@@ -155,7 +155,7 @@ def get_world_coins_detail(country, want_proofs=False, want_slabbed=False, asset
                 )
             """
             flip_join = "LEFT JOIN flip f ON f.lot_id = l.id"
-            flip_select = "COALESCE(f.flip_ids, '') AS \"Flip IDs\","
+            flip_select = "COALESCE(f.flip_ids, '') AS [Flip IDs],"  # Use square brackets
     
     # Check if v_lot_value_details view exists
     view_check = execute_query_single(
@@ -164,16 +164,16 @@ def get_world_coins_detail(country, want_proofs=False, want_slabbed=False, asset
     
     if view_check:
         value_columns = """
-            ROUND(v.melt_unit_value, 4) AS "Melt Unit Value",
-            ROUND(v.chosen_unit_value, 2) AS "Chosen Unit Value",
-            ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value, 0), 2) AS "Lot Est. Value",
+            ROUND(v.melt_unit_value, 4) AS [Melt Unit Value],
+            ROUND(v.chosen_unit_value, 2) AS [Chosen Unit Value],
+            ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value, 0), 2) AS [Lot Est. Value],
         """
         value_join = "LEFT JOIN v_lot_value_details v ON v.lot_id = l.id"
     else:
         value_columns = """
-            NULL AS "Melt Unit Value",
-            NULL AS "Chosen Unit Value", 
-            NULL AS "Lot Est. Value",
+            NULL AS [Melt Unit Value],
+            NULL AS [Chosen Unit Value], 
+            NULL AS [Lot Est. Value],
         """
         value_join = ""
     
@@ -182,17 +182,17 @@ def get_world_coins_detail(country, want_proofs=False, want_slabbed=False, asset
         SELECT
             cm.series AS Series,
             ct.year AS Year,
-            ct.mint_mark AS "Mint Mark",
+            ct.mint_mark AS [Mint Mark],
             COALESCE(ct.variety, '') AS Variety,
             l.id AS lot_id,
             t.tx_date AS Acquired,
             COALESCE(p.name, '') AS Party,
             l.qty_remaining AS Qty,
-            ROUND(l.unit_cost, 2) AS "Unit Cost (USD)",
+            ROUND(l.unit_cost, 2) AS [Unit Cost (USD)],
             {value_columns}
             COALESCE(l.estimated_grade_text, l.purchase_grade_text, '') AS Grade,
             {flip_select}
-            COALESCE(l.slab_cert, '') AS "Cert #"
+            COALESCE(l.slab_cert, '') AS [Cert #]
         FROM lot l
         JOIN tx_line tl ON tl.id = l.acquisition_line_id
         JOIN tx t ON t.id = tl.tx_id
