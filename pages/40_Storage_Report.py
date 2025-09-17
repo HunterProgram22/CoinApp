@@ -10,7 +10,9 @@ from infrastructure.database.database_executor import DatabaseExecutor
 from infrastructure.database.repositories.storage_report_repository import StorageReportRepository
 from presentation.components.storage_report_components import StorageReportRenderer
 
-st.header("📦 Storage Location Report")
+st.title("📦 Storage Location Report")
+st.caption("Overview of Storage Content and Bulk Movement of Coins.")
+
 
 # === Dependency Injection ===
 @st.cache_resource
