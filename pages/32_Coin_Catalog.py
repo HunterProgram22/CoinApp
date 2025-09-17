@@ -12,6 +12,7 @@ from presentation.components.coin_catalog_components import CoinCatalogRenderer
 st.title("📚 Coin Catalog")
 st.caption("Browse Master Coins and Coin Types with reference links.")
 
+
 # === Dependency Injection ===
 @st.cache_resource
 def get_coin_catalog_dependencies():
@@ -23,16 +24,15 @@ def get_coin_catalog_dependencies():
 
 renderer = get_coin_catalog_dependencies()
 
-tab_masters, tab_types = st.tabs(["📖 Coin Masters", "💵 Coin Types"])
 
-# ========================
-# TAB: COIN MASTERS
-# ========================
-with tab_masters:
+# === Tab Navigation ===
+tabs = st.tabs([
+    "📖 Coin Masters",
+    "💵 Coin Types",
+])
+
+with tabs[0]:
     renderer.render_masters_tab()
 
-# ========================
-# TAB: COIN TYPES
-# ========================
-with tab_types:
+with tabs[1]:
     renderer.render_types_tab()
