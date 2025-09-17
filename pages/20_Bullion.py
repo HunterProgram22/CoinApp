@@ -12,6 +12,7 @@ from presentation.components.bullion_components import BullionRenderer
 st.title("🧱 Bullion Overview")
 st.caption("Summary of Precious Metal Bars, Rounds, Bullion Coins and Junk Silver")
 
+
 # === Dependency Injection ===
 @st.cache_resource
 def get_bullion_dependencies():
@@ -27,18 +28,17 @@ renderer.render_spot_prices()
 
 renderer.render_totals_summary()
 
-tab_category, tab_series = st.tabs(["🧿 By Category", "🗃 By Series"])
 
-# ========================
-# TAB: CATEGORY
-# ========================
-with tab_category:
+# === Tab Navigation ===
+tabs = st.tabs([
+    "🧿 By Category",
+    "🗃 By Series",
+])
+
+with tabs[0]:
     renderer.render_category_tab()
 
-# ========================
-# TAB: SERIES
-# ========================
-with tab_series:
+with tabs[1]:
     renderer.render_series_tab()
 
 # === Footer ===

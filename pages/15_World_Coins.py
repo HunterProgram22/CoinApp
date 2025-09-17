@@ -12,6 +12,7 @@ from presentation.components.world_coins_components import WorldCoinsRenderer
 st.title("🗺 World Coins")
 st.caption("Browse Coins based on Country of Origin.")
 
+
 # === Dependency Injection ===
 @st.cache_resource
 def get_world_coins_dependencies():
@@ -22,21 +23,19 @@ def get_world_coins_dependencies():
     return renderer
 
 renderer = get_world_coins_dependencies()
-
 country, filters = renderer.render_filters_and_get_selection()
 
-tab_summary, tab_details = st.tabs(["Summary", "Detail"])
 
-# ========================
-# TAB: SUMMARY
-# ========================
-with tab_summary:
+# === Tab Navigation ===
+tabs = st.tabs([
+    "📊 Summary",
+    "📋 Details",
+])
+
+with tabs[0]:
     renderer.render_summary_tab(country, filters)
 
-# ========================
-# TAB: DETAIL
-# ========================
-with tab_details:
+with tabs[1]:
     renderer.render_detail_tab(country, filters)
 
 # === Footer ===

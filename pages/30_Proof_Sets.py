@@ -3,14 +3,15 @@
 import streamlit as st
 from infrastructure.auth.auth_utils import require_auth
 
-# Check authentication first
 require_auth()
-
 from infrastructure.database.database_executor import DatabaseExecutor
 from infrastructure.database.repositories.proof_sets_repository import ProofSetsRepository
 from presentation.components.proof_sets_components import ProofSetsRenderer
 
-st.header("🎁 Proof Sets & Mint Sets")
+
+st.title("🎁 Proof Sets & Mint Sets")
+st.caption("A summary of Proof and Mint Sets not included in other summaries.")
+
 
 # === Dependency Injection ===
 @st.cache_resource
@@ -23,13 +24,14 @@ def get_proof_sets_dependencies():
 
 renderer = get_proof_sets_dependencies()
 
+
 # === Tab Navigation ===
 tabs = st.tabs([
     "📊 Overview",
     "➕ Add to Inventory",
     "📝 Manage Inventory",
     "🏷️ Define Set Types",
-    "📈 Market Values"
+    "📈 Market Values",
 ])
 
 with tabs[0]:
@@ -47,5 +49,5 @@ with tabs[3]:
 with tabs[4]:
     renderer.render_market_values_tab()
 
-# Footer info section
+# === Footer ===
 renderer.render_info_section()

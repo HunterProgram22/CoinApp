@@ -23,12 +23,13 @@ def get_storage_report_dependencies():
 
 renderer = get_storage_report_dependencies()
 
+
 # === Tab Navigation ===
 tabs = st.tabs([
     "📊 Storage Summary",
     "📋 Storage Details",
     "⚙️ Manage Storage",
-    "📦 Bulk Move Items"
+    "📦 Bulk Move Items",
 ])
 
 with tabs[0]:

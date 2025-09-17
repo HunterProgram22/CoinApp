@@ -12,6 +12,7 @@ from presentation.components.inventory_components import InventoryRenderer
 st.title("📦 Inventory")
 st.caption("Review Coin Series Summaries and Details.")
 
+
 # === Dependency Injection ===
 @st.cache_resource
 def get_inventory_dependencies():
@@ -23,24 +24,19 @@ def get_inventory_dependencies():
 
 renderer = get_inventory_dependencies()
 
-tab_summary, tab_details, tab_flags = st.tabs(
-    ["📋 Series Summary", " 🔎 Series Detail", "🚩 Filter by Flags"]
-)
 
-# ========================
-# TAB: SERIES SUMMARY
-# ========================
-with tab_summary:
+# === Tab Navigation ===
+tabs = st.tabs([
+    "📋 Series Summary",
+    "🔎 Series Detail",
+    "🚩 Filter by Flags"
+])
+
+with tabs[0]:
     renderer.render_series_summary_tab()
 
-# ========================
-# TAB: SERIES DETAIL
-# ========================
-with tab_details:
+with tabs[1]:
     renderer.render_series_detail_tab()
 
-# ========================
-# TAB: SERIES DETAIL
-# ========================
-with tab_flags:
+with tabs[2]:
     renderer.render_flags_tab()

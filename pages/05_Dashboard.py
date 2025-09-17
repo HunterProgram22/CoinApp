@@ -9,7 +9,9 @@ from infrastructure.database.database_executor import DatabaseExecutor
 from presentation.components.dashboard_components import DashboardRenderer
 
 
-st.header("📈 Dashboard")
+st.title("📈 Dashboard")
+st.caption("A Snapshot of Coin Values and Costs.")
+
 
 # === Dependency Injection  ===
 @st.cache_resource
@@ -22,12 +24,14 @@ def get_dashboard_dependencies():
 
 renderer = get_dashboard_dependencies()
 
-tab_overview, tab_series = st.tabs(["📊 Overview", "📚 Series Summary"])
 
-# ========================
-# TAB: OVERVIEW
-# ========================
-with tab_overview:
+# === Tab Navigation ===
+tabs = st.tabs([
+    "📊 Overview",
+    "📚 Series Summary"
+])
+
+with tabs[0]:
     renderer.render_portfolio_overview()
 
     # ---- Custom cards/widgets can be added here ----
@@ -35,8 +39,5 @@ with tab_overview:
     spot_prices = renderer.render_spot_prices()
     renderer.render_silver_melt_reference(spot_prices)
 
-# ========================
-# TAB: SERIES SUMMARY
-# ========================
-with tab_series:
+with tabs[1]:
     renderer.render_series_summary()
