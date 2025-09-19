@@ -42,7 +42,7 @@ class CoinRegistryRenderer:
                 company_data = self.repo.get_slabbed_by_grade_company()
                 if company_data:
                     company_df = prepare_grading_company_dataframe(company_data)
-                    st.dataframe(company_df, hide_index=True, use_container_width=True)
+                    st.dataframe(company_df, hide_index=True, width='stretch')
 
         st.divider()
 
@@ -85,7 +85,7 @@ class CoinRegistryRenderer:
                 # Display table
                 st.dataframe(
                     display_df,
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                     column_config={
                         'Cost': st.column_config.NumberColumn(format="$%.2f"),
@@ -148,7 +148,7 @@ class CoinRegistryRenderer:
 
                 # Convert to DataFrame and display
                 df = prepare_enhanced_specimens_dataframe(specimens)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                st.dataframe(df, width='stretch', hide_index=True)
 
                 # Download button
                 csv = df.to_csv(index=False).encode('utf-8')

@@ -445,7 +445,7 @@ def get_bullion_by_series() -> List[Dict[str, Any]]:
 
 def _ensure_specimen_tables():
     """Ensure specimen tables exist (for backward compatibility)."""
-    from db import get_conn
+    from infrastructure.database.db import get_conn
     with get_conn() as cx:
         cx.execute("""
         CREATE TABLE IF NOT EXISTS series_code (
@@ -489,7 +489,7 @@ def allocate_specimen_codes(series: str, qty: int) -> List[str]:
     start = sc["next_seq"]
     codes = [f"{sc['prefix']}{i}" for i in range(start, start + qty)]
     
-    from db_operations import execute_update
+    from infrastructure.database.db_operations import execute_update
     execute_update("UPDATE series_code SET next_seq = ? WHERE id=?", (start + qty, sc["id"]))
     return codes
 
