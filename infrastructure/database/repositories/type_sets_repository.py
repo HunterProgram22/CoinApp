@@ -188,7 +188,7 @@ class TypeSetsDataRepository(ABC):
         pass
 
 
-class TypeSetsRepository(TypeSetsDataRepository):
+class SQLTypeSetsRepository(TypeSetsDataRepository):
     """Concrete implementation of TypeSets data repository"""
 
     def __init__(self, db_executor):

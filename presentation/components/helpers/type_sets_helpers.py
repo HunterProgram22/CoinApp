@@ -208,7 +208,8 @@ def build_coin_label_options(coins: List[Dict[str, Any]], include_id: bool = Fal
     str, int]:
     """Build options dictionary for selectbox from coin data"""
     return {
-        format_coin_type_label(coin, include_id=include_id): coin['id']
+        format_coin_type_label(coin, include_id=include_id): coin.get('id',
+                                                                      coin.get('coin_type_id'))
         for coin in coins
     }
 
