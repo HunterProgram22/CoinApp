@@ -149,7 +149,7 @@ class TransactionBuilder:
         """Build and execute buy transaction with proper transaction handling."""
         self.validate()
         
-        from db_operations import find_or_create_party
+        from infrastructure.database.db_operations import find_or_create_party
         
         party_id = find_or_create_party(self.tx_data.get('party_name')) if self.tx_data.get('party_name') else None
         
@@ -263,7 +263,7 @@ class TransactionBuilder:
         
         self.validate()
         
-        from db_operations import find_or_create_party
+        from infrastructure.database.db_operations import find_or_create_party
         
         party_id = find_or_create_party(self.tx_data.get('party_name')) if self.tx_data.get('party_name') else None
         
