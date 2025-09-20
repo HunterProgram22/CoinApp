@@ -2,7 +2,7 @@
 """Helper functions and classes for data import operations."""
 import pandas as pd
 import streamlit as st
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 from infrastructure.database.db import get_conn
 from core.queries import (
     upsert_coin_master,
@@ -81,6 +81,123 @@ def read_uploaded_file(uploaded_file) -> pd.DataFrame:
             st.error(f"Unable to read Excel: {e}")
             st.stop()
     return pd.read_csv(uploaded_file)
+
+
+def prepare_master_data(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """Prepare master data for import"""
+    masters = []
+
+    # Add missing optional columns
+    optional_cols = [
+        "metal", "fineness", "weight_grams", "diameter_mm", "thickness_mm",
+        "edge", "years_start", "years_end", "notes", "asset_category",
+        "numista_url", "ngc_url", "pcgs_url"
+    ]
+    for c in optional_cols:
+        if c not in df.columns:
+            df[c] = None
+
+    # Normalize data types
+    for c in ["fineness", "weight_grams", "diameter_mm", "thickness_mm"]:
+        df[c] = pd.to_numeric(df[c], errors='coerce')
+    for c in ["years_start", "years_end"]:
+        df[c] = pd.to_numeric(df[c], errors='coerce').astype('Int64')
+
+    df["asset_category"] = df["asset_category"].apply(normalize_asset_category)
+
+    for _, row in df.iterrows():
+        masters.append({
+            'country': str(row["country"]),
+            'denomination': str(row["denomination"]),
+            'series': str(row["series"]),
+            'metal': normalize_text(row.get("metal")),
+            'fineness': safe_float(row.get("fineness")),
+            'weight_grams': safe_float(row.get("weight_grams")),
+            'diameter_mm': safe_float(row.get("diameter_mm")),
+            'thickness_mm': safe_float(row.get("thickness_mm")),
+            'edge': normalize_text(row.get("edge")),
+            'years_start': int(row["years_start"]) if pd.notna(row["years_start"]) else None,
+            'years_end': int(row["years_end"]) if pd.notna(row["years_end"]) else None,
+            'notes': normalize_text(row.get("notes")),
+            'asset_category': normalize_text(row.get("asset_category")) or 'COIN',
+            'numista_url': normalize_text(row.get("numista_url")),
+            'ngc_url': normalize_text(row.get("ngc_url")),
+            'pcgs_url': normalize_text(row.get("pcgs_url"))
+        })
+
+    return masters
+
+
+def prepare_type_data(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """Prepare type data for import"""
+    types = []
+
+    # Add missing optional columns
+    for c in ["mint_mark", "variety", "mintage", "is_proof", "designer", "obv_desc", "rev_desc"]:
+        if c not in df.columns:
+            df[c] = None
+
+    # Normalize data types
+    df["year"] = pd.to_numeric(df["year"], errors='coerce')
+    df["mintage"] = pd.to_numeric(df["mintage"], errors='coerce').astype('Int64')
+    df["is_proof"] = df["is_proof"].apply(to_bool_value)
+
+    for _, row in df.iterrows():
+        types.append({
+            'country': str(row["country"]),
+            'denomination': str(row["denomination"]),
+            'series': str(row["series"]),
+            'year': int(row["year"]),
+            'mint_mark': normalize_text(row.get("mint_mark")) or "",
+            'variety': normalize_text(row.get("variety")) or "",
+            'mintage': int(row["mintage"]) if pd.notna(row["mintage"]) else None,
+            'is_proof': int(row["is_proof"]) if pd.notna(row["is_proof"]) else 0,
+            'designer': normalize_text(row.get("designer")),
+            'obv_desc': normalize_text(row.get("obv_desc")),
+            'rev_desc': normalize_text(row.get("rev_desc"))
+        })
+
+    return types
+
+
+def to_bool_value(x) -> int:
+    """Convert various boolean representations to 0 or 1"""
+    s = str(x).strip().lower()
+    if s in {"1", "true", "yes", "y", "proof"}:
+        return 1
+    if s in {"0", "false", "no", "n", "business", "regular"}:
+        return 0
+    return 0
+
+
+def build_column_mapping(source_columns: List[str], maps: Dict[str, str]) -> pd.DataFrame:
+    """Build a mapped dataframe from source columns and mapping"""
+    from presentation.components.helpers.import_helpers import TransactionImporter
+
+    mapped_df = pd.DataFrame()
+    for tgt in TransactionImporter.REQUIRED_COLUMNS + TransactionImporter.OPTIONAL_COLUMNS:
+        src = maps.get(tgt)
+        if not src or src == "(none)":
+            mapped_df[tgt] = None
+        else:
+            mapped_df[tgt] = source_columns[src]
+
+    return mapped_df
+
+
+def get_template_info() -> Dict[str, Any]:
+    """Get template column information"""
+    from presentation.components.helpers.import_helpers import TransactionImporter
+
+    return {
+        'required': TransactionImporter.REQUIRED_COLUMNS,
+        'optional': TransactionImporter.OPTIONAL_COLUMNS,
+        'special_values': {
+            'asset_category': ['COIN', 'ROUND', 'BAR', 'BULLION COIN'],
+            'is_proof': ['true/false', '1/0', 'yes/no', 'y/n', 'proof/business'],
+            'valuation_method': ['AUTO', 'MELT_ONLY', 'GUIDE_ONLY', 'MANUAL']
+        }
+    }
 
 
 # ---------------------------------
