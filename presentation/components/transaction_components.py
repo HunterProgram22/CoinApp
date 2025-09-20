@@ -22,10 +22,10 @@ class TransactionRenderer:
         self.repository = repository
 
         # Initialize session state for line items if not exists
-        if 'buy_line_items' not in st.session_state:
-            st.session_state.buy_line_items = []
-        if 'sell_line_items' not in st.session_state:
-            st.session_state.sell_line_items = []
+        # if 'buy_line_items' not in st.session_state:
+        #     st.session_state.buy_line_items = []
+        # if 'sell_line_items' not in st.session_state:
+        #     st.session_state.sell_line_items = []
 
     def render_search_tab(self):
         """Render the Review/Search tab"""
@@ -123,6 +123,9 @@ class TransactionRenderer:
 
     def _render_buy_form(self):
         """Render the buy transaction form"""
+        # Ensure session state is initialized at the start of the method
+        if 'buy_line_items' not in st.session_state:
+            st.session_state.buy_line_items = []
         coin_types = self.repository.get_all_coin_types()
         storage_options = self.repository.get_storage_locations()
 
@@ -166,6 +169,9 @@ class TransactionRenderer:
 
     def _render_sell_form(self):
         """Render the sell transaction form"""
+        # Ensure session state is initialized at the start of the method
+        if 'sell_line_items' not in st.session_state:
+            st.session_state.sell_line_items = []
         coin_types = self.repository.get_all_coin_types()
 
         # Transaction Header
