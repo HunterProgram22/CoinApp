@@ -142,6 +142,12 @@ class AdminDataRepository(ABC):
         """Delete a lot if no relief records exist"""
         pass
 
+
+    @abstractmethod
+    def delete_coin_type(self, type_id: int) -> bool:
+        """Delete a coin type if no lots exist"""
+        pass
+
     # Database operations
     @abstractmethod
     def reset_database(self) -> bool:
@@ -308,6 +314,26 @@ class AdminRepository(AdminDataRepository):
             )
         except Exception as e:
             print(f"Error creating coin type: {e}")
+            raise
+
+    def delete_coin_type(self, type_id: int) -> bool:
+        """Delete a coin type if no lots exist"""
+        try:
+            from infrastructure.database.db_operations import execute_query_single, execute_delete
+
+            # Check if any lots exist for this coin type
+            lot_check = execute_query_single(
+                "SELECT COUNT(*) as count FROM lot WHERE coin_type_id=?",
+                (type_id,)
+            )
+
+            if lot_check and lot_check['count'] > 0:
+                return False  # Cannot delete - lots exist
+
+            execute_delete("DELETE FROM coin_type WHERE id=?", (type_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting coin type: {e}")
             raise
 
     def update_coin_type(self, coin_type: CoinType) -> int:

@@ -72,7 +72,7 @@ class AdminRenderer:
         prices = self.repository.get_latest_metal_prices()
         if prices:
             df = pd.DataFrame(format_price_display(prices))
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width='stretch', hide_index=True)
         else:
             st.info("No prices yet. Add some below.")
 
@@ -136,7 +136,7 @@ class AdminRenderer:
                         data=backup_data,
                         file_name=get_backup_filename(),
                         mime="application/octet-stream",
-                        use_container_width=True
+                        width='stretch'
                     )
                 except Exception as e:
                     st.error(f"Backup failed: {e}")
@@ -246,8 +246,17 @@ class AdminRenderer:
     def _render_edit_master_form(self, masters: List[CoinMaster]):
         """Render form to edit a coin master"""
         labels = [format_master_label(m) for m in masters]
-        selected = st.selectbox("Select a coin master", labels, key="cm_select")
-        master = masters[labels.index(selected)]
+
+        # Add placeholder option and default to it
+        options = ["-- Select a coin master to edit --"] + labels
+        selected = st.selectbox("Select a coin master", options, index=0, key="cm_select")
+
+        # Only show edit form if a master is selected
+        if selected == options[0]:
+            st.info("Select a coin master from the dropdown to edit its details.")
+            return
+
+        master = masters[options.index(selected) - 1]  # Adjust index for placeholder
         mid = master.id
 
         # Basic info
@@ -335,6 +344,76 @@ class AdminRenderer:
             except Exception as e:
                 st.error(f"Update failed: {e}")
 
+    def _render_edit_type_form(self, types: List[CoinType]):
+        """Render form to edit a coin type"""
+        type_labels = [format_type_label(t) for t in types]
+
+        # Add placeholder option and default to it
+        options = ["-- Select a coin type to edit --"] + type_labels
+        selected_type = st.selectbox("Select coin type", options, index=0)
+
+        # Only show edit form if a type is selected
+        if selected_type == options[0]:
+            st.info("Select a coin type from the dropdown to edit its details.")
+            return
+
+        type_data = types[options.index(selected_type) - 1]  # Adjust index for placeholder
+        tid = type_data.id
+
+        col1, col2, col3 = st.columns(3)
+        edit_year = col1.number_input("Year", value=type_data.year, key=f"type_year_{tid}")
+        edit_mint = col2.text_input("Mint Mark", value=type_data.mint_mark, key=f"type_mint_{tid}")
+        edit_variety = col3.text_input("Variety", value=type_data.variety,
+                                       key=f"type_variety_{tid}")
+
+        col1, col2 = st.columns(2)
+        edit_mintage = col1.number_input("Mintage", value=type_data.mintage or 0,
+                                         key=f"type_mintage_{tid}")
+        edit_proof = col2.checkbox("Is Proof?", value=type_data.is_proof, key=f"type_proof_{tid}")
+
+        # Add buttons in columns for better layout
+        col1, col2, col3 = st.columns([1, 1, 3])
+
+        with col1:
+            if st.button("Save Changes", type="primary", key=f"save_type_{tid}"):
+                try:
+                    updated_type = CoinType(
+                        id=tid,
+                        master_id=type_data.master_id,
+                        country=type_data.country,
+                        denomination=type_data.denomination,
+                        series=type_data.series,
+                        year=edit_year,
+                        mint_mark=edit_mint,
+                        variety=edit_variety,
+                        mintage=edit_mintage,
+                        is_proof=edit_proof
+                    )
+                    rows = self.repository.update_coin_type(updated_type)
+                    st.success(f"Updated successfully! Rows affected: {rows}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Update failed: {e}")
+
+        with col2:
+            if st.button("🗑️ Delete Type", type="secondary", key=f"delete_type_{tid}"):
+                st.warning(f"⚠️ Are you sure you want to delete this coin type?")
+                col_confirm, col_cancel = st.columns(2)
+                with col_confirm:
+                    if st.button("Yes, Delete", type="primary", key=f"confirm_delete_{tid}"):
+                        try:
+                            if self.repository.delete_coin_type(tid):
+                                st.success(f"Coin type deleted successfully!")
+                                st.rerun()
+                            else:
+                                st.error(
+                                    "Cannot delete coin type - inventory lots exist for this type.")
+                        except Exception as e:
+                            st.error(f"Delete failed: {e}")
+                with col_cancel:
+                    if st.button("Cancel", key=f"cancel_delete_{tid}"):
+                        st.rerun()
+
     def _render_add_type_form(self, masters: List[CoinMaster]):
         """Render form to add a coin type"""
         with st.form("add_type_form"):
@@ -371,44 +450,6 @@ class AdminRenderer:
                     st.rerun()
                 except Exception as e:
                     st.error(f"Creation failed: {e}")
-
-    def _render_edit_type_form(self, types: List[CoinType]):
-        """Render form to edit a coin type"""
-        type_labels = [format_type_label(t) for t in types]
-        selected_type = st.selectbox("Select coin type", type_labels)
-        type_data = types[type_labels.index(selected_type)]
-        tid = type_data.id
-
-        col1, col2, col3 = st.columns(3)
-        edit_year = col1.number_input("Year", value=type_data.year, key=f"type_year_{tid}")
-        edit_mint = col2.text_input("Mint Mark", value=type_data.mint_mark, key=f"type_mint_{tid}")
-        edit_variety = col3.text_input("Variety", value=type_data.variety,
-                                       key=f"type_variety_{tid}")
-
-        col1, col2 = st.columns(2)
-        edit_mintage = col1.number_input("Mintage", value=type_data.mintage or 0,
-                                         key=f"type_mintage_{tid}")
-        edit_proof = col2.checkbox("Is Proof?", value=type_data.is_proof, key=f"type_proof_{tid}")
-
-        if st.button("Save Type Changes", key=f"save_type_{tid}"):
-            try:
-                updated_type = CoinType(
-                    id=tid,
-                    master_id=type_data.master_id,
-                    country=type_data.country,
-                    denomination=type_data.denomination,
-                    series=type_data.series,
-                    year=edit_year,
-                    mint_mark=edit_mint,
-                    variety=edit_variety,
-                    mintage=edit_mintage,
-                    is_proof=edit_proof
-                )
-                rows = self.repository.update_coin_type(updated_type)
-                st.success(f"Updated successfully! Rows affected: {rows}")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Update failed: {e}")
 
     def _fetch_yahoo_prices(self):
         """Fetch and save prices from Yahoo Finance"""
