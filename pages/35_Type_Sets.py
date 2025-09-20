@@ -9,7 +9,7 @@ from infrastructure.database.repositories.type_sets_repository import SQLTypeSet
 from presentation.components.type_sets_components import TypeSetsRenderer
 
 
-st.title("📚 Type Sets")
+st.title("💼 Type Sets")
 
 
 # === Dependency Injection  ===
