@@ -306,7 +306,7 @@ with tabs[1]:
 # Tab 3: Metal Prices
 # =====================================================
 with tabs[2]:
-    from queries import get_latest_metal_prices, create_metal_price
+    from core.queries import get_latest_metal_prices, create_metal_price
 
     st.subheader("Metal Prices")
 
@@ -375,7 +375,7 @@ with tabs[2]:
 # Tab 4: Maintenance Tools
 # =====================================================
 with tabs[3]:
-    from queries import get_recent_transactions, get_open_lots
+    from core.queries import get_recent_transactions, get_open_lots
 
     st.subheader("Maintenance Tools")
 
