@@ -1,15 +1,127 @@
-# admin_helpers.py
+# presentation/components/helpers/admin_helpers.py
 """Helper functions for admin operations."""
-import streamlit as st
-from typing import List, Dict, Any, Optional
-from infrastructure.database.db_operations import execute_query_all, execute_update
+from typing import Dict, Any, Optional, List
+from datetime import datetime, UTC
+
+# Weight conversion constants
+WEIGHT_PRESETS = {
+    "1 troy oz": 31.1034768,
+    "1/2 troy oz": 15.5517384,
+    "1/4 troy oz": 7.7758692,
+    "1/10 troy oz": 3.11034768,
+    "1/20 troy oz": 1.55517384,
+    "5 grams": 5.0,
+    "10 grams": 10.0,
+    "100 grams": 100.0,
+    "1 kg": 1000.0,
+}
 
 
-# ---------------------------------
-# Data Access Functions
-# ---------------------------------
+def normalize_text(val: Any) -> Optional[str]:
+    """Clean string input, handling NaN-like values"""
+    if val is None:
+        return None
+    s = str(val).strip()
+    if s.lower() in {"nan", "none", "-", "—", ""}:
+        return ""
+    return s
+
+
+def format_master_label(master) -> str:
+    """Format coin master for display"""
+    # Use attribute access for dataclass objects
+    return f"{master.country} • {master.denomination} • {master.series}"
+
+
+def format_type_label(coin_type) -> str:
+    """Format coin type for display"""
+    # Use attribute access for dataclass objects
+    label = f"{coin_type.country} • {coin_type.denomination} • {coin_type.series} — {coin_type.year}"
+    if coin_type.mint_mark:
+        label += f" {coin_type.mint_mark}"
+    if coin_type.variety:
+        label += f" • {coin_type.variety}"
+    return label
+
+
+def format_transaction_label(tx) -> str:
+    """Format transaction for display in void selector"""
+    party = tx.party or 'Unknown'
+    return f"#{tx.id} - {tx.tx_date} - {tx.tx_type} - {party}"
+
+
+def format_lot_label(lot) -> str:
+    """Format lot for display in delete selector"""
+    return f"Lot #{lot.id} - {lot.series} {lot.year} - Remaining: {lot.qty_remaining}/{lot.qty_acquired}"
+
+
+def validate_master_fields(country: str, denomination: str, series: str) -> tuple[bool, str]:
+    """Validate required master fields"""
+    if not all([country, denomination, series]):
+        return False, "Country, Denomination, and Series are required."
+    return True, ""
+
+
+def validate_price(price_str: str) -> tuple[bool, float, str]:
+    """Validate and parse price string"""
+    try:
+        price_val = float(price_str)
+        if price_val <= 0:
+            return False, 0.0, "Price must be greater than 0"
+        return True, price_val, ""
+    except (ValueError, TypeError):
+        return False, 0.0, "Invalid price format"
+
+
+def get_current_timestamp() -> str:
+    """Get current UTC timestamp in ISO format"""
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def fetch_yahoo_prices() -> Dict[str, float]:
+    """Fetch current metal prices from Yahoo Finance"""
+    prices = {}
+    try:
+        import yfinance as yf
+
+        symbols = {"Ag": "SI=F", "Au": "GC=F", "Pt": "PL=F", "Pd": "PA=F"}
+
+        for metal, symbol in symbols.items():
+            try:
+                ticker = yf.Ticker(symbol)
+                data = ticker.history(period="3d")
+                if not data.empty:
+                    prices[metal] = float(data["Close"].iloc[-1])
+            except Exception as e:
+                print(f"Failed to fetch {metal}: {e}")
+                continue
+    except ImportError:
+        raise ImportError("yfinance not installed")
+
+    return prices
+
+
+def calculate_grams_from_troy_oz(troy_oz: float) -> float:
+    """Convert troy ounces to grams"""
+    return troy_oz * 31.1034768
+
+
+def format_price_display(prices: List) -> List[Dict[str, Any]]:
+    """Format metal prices for display"""
+    formatted = []
+    for price in prices:
+        formatted.append({
+            "Metal": price.metal,
+            "Price Per Oz (USD)": f"${price.price_per_oz_usd:,.2f}",
+            "Last Updated (UTC)": price.quoted_at_utc
+        })
+    return formatted
+
+
+# Keep the old versions for backward compatibility if needed
 def get_coin_masters() -> List[Dict[str, Any]]:
-    """Get all coin masters."""
+    """Legacy function - moved to repository"""
+    from infrastructure.database.db_operations import execute_query_all
     query = """
         SELECT id, country, denomination, series, metal, fineness, weight_grams,
             diameter_mm, thickness_mm, edge, 
@@ -22,7 +134,8 @@ def get_coin_masters() -> List[Dict[str, Any]]:
 
 
 def get_all_coin_types() -> List[Dict[str, Any]]:
-    """Get all coin types with master information."""
+    """Legacy function - moved to repository"""
+    from infrastructure.database.db_operations import execute_query_all
     query = """
         SELECT ct.id, cm.country, cm.denomination, cm.series, ct.year,
                COALESCE(ct.mint_mark,'') AS mint_mark, 
@@ -36,7 +149,8 @@ def get_all_coin_types() -> List[Dict[str, Any]]:
 
 
 def update_coin_master(master_id: int, **kwargs) -> int:
-    """Update a coin master record."""
+    """Legacy function - moved to repository"""
+    from infrastructure.database.db_operations import execute_update
     query = """
         UPDATE coin_master
         SET country=?, denomination=?, series=?, metal=?, fineness=?, 
@@ -68,7 +182,8 @@ def update_coin_master(master_id: int, **kwargs) -> int:
 
 
 def update_coin_type(type_id: int, **kwargs) -> int:
-    """Update a coin type record."""
+    """Legacy function - moved to repository"""
+    from infrastructure.database.db_operations import execute_update
     query = """
         UPDATE coin_type
         SET year=?, mint_mark=?, variety=?, mintage=?, is_proof=?
@@ -85,52 +200,9 @@ def update_coin_type(type_id: int, **kwargs) -> int:
     return execute_update(query, params)
 
 
-# ---------------------------------
-# Helper Functions
-# ---------------------------------
-def normalize_text(val: Any) -> Optional[str]:
-    """Clean string input, handling NaN-like values."""
-    if val is None:
-        return None
-    s = str(val).strip()
-    if s.lower() in {"nan", "none", "-", "–", ""}:
-        return ""
-    return s
-
-
-def format_master_label(master: Dict[str, Any]) -> str:
-    """Format coin master for display."""
-    return f"{master['country']} • {master['denomination']} • {master['series']}"
-
-
-def format_type_label(coin_type: Dict[str, Any]) -> str:
-    """Format coin type for display."""
-    label = f"{coin_type['country']} • {coin_type['denomination']} • {coin_type['series']} — {coin_type['year']}"
-    if coin_type['mint_mark']:
-        label += f" {coin_type['mint_mark']}"
-    if coin_type['variety']:
-        label += f" • {coin_type['variety']}"
-    return label
-
-
-# ---------------------------------
-# Common Weight Presets
-# ---------------------------------
-WEIGHT_PRESETS = {
-    "1 troy oz": 31.1034768,
-    "1/2 troy oz": 15.5517384,
-    "1/4 troy oz": 7.7758692,
-    "1/10 troy oz": 3.11034768,
-    "1/20 troy oz": 1.55517384,
-    "5 grams": 5.0,
-    "10 grams": 10.0,
-    "100 grams": 100.0,
-    "1 kg": 1000.0,
-}
-
-
 def render_weight_helper():
-    """Render weight conversion helper."""
+    """Legacy function - moved to component"""
+    import streamlit as st
     with st.expander("Weight Conversion Helper"):
         col1, col2 = st.columns(2)
         with col1:
