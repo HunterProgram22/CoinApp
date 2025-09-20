@@ -88,7 +88,7 @@ class TransactionRenderer:
                 st.info("No transactions matched your filters.")
             else:
                 display_df = format_transaction_dataframe(df)
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                st.dataframe(display_df, width='stretch', hide_index=True)
 
                 # Download button
                 st.download_button(
@@ -228,7 +228,7 @@ class TransactionRenderer:
             items_df.append(row)
 
         df = pd.DataFrame(items_df)
-        st.dataframe(df.drop(columns=['Index']), use_container_width=True, hide_index=True)
+        st.dataframe(df.drop(columns=['Index']), width='stretch', hide_index=True)
 
         # Calculate totals
         subtotal = sum(item['quantity'] * item['unit_price'] for item in items)
