@@ -200,14 +200,37 @@ class ReportsRepository(ReportsDataRepository):
         data = rl.get_value_by_category()
 
         if data:
-            return [CategoryValue(
-                asset_category=item['asset_category'],
-                count=int(item['count']),
-                cost=float(item['cost']),
-                melt_value=float(item['melt_value']),
-                estimated_value=float(item['estimated_value']),
-                unrealized_gl=float(item['unrealized_gl'])
-            ) for item in data]
+            result = []
+            for item in data:
+                try:
+                    # Handle potential key variations
+                    # Check for 'asset_category' or 'category' or 'Asset_Category'
+                    category_key = None
+                    for key in ['asset_category', 'category', 'Asset_Category', 'AssetCategory']:
+                        if key in item:
+                            category_key = key
+                            break
+
+                    if not category_key:
+                        # If no category key found, try to use first string key as category
+                        # or skip this item
+                        print(f"Warning: No asset_category field found in item: {item.keys()}")
+                        continue
+
+                    result.append(CategoryValue(
+                        asset_category=str(item[category_key]),
+                        count=int(item.get('count', 0)),
+                        cost=float(item.get('cost', 0)),
+                        melt_value=float(item.get('melt_value', 0)),
+                        estimated_value=float(item.get('estimated_value', 0)),
+                        unrealized_gl=float(item.get('unrealized_gl', 0))
+                    ))
+                except (KeyError, TypeError, ValueError) as e:
+                    print(f"Error processing category value item: {e}")
+                    print(f"Item data: {item}")
+                    continue
+
+            return result
         return []
 
     def get_value_by_metal(self) -> List[MetalValue]:
@@ -216,35 +239,70 @@ class ReportsRepository(ReportsDataRepository):
         data = rl.get_value_by_metal()
 
         if data:
-            return [MetalValue(
-                metal=item['metal'],
-                count=int(item['count']),
-                troy_oz_fine=float(item['troy_oz_fine']),
-                cost=float(item['cost']),
-                melt_value=float(item['melt_value']),
-                estimated_value=float(item['estimated_value']),
-                unrealized_gl=float(item['unrealized_gl'])
-            ) for item in data]
-        return []
+            result = []
+            for item in data:
+                try:
+                    # Handle potential key variations
+                    metal_key = None
+                    for key in ['metal', 'Metal', 'metal_type']:
+                        if key in item:
+                            metal_key = key
+                            break
 
+                    if not metal_key:
+                        print(f"Warning: No metal field found in item: {item.keys()}")
+                        continue
+
+                    # Handle 'coins' vs 'count' field
+                    count_value = item.get('count', item.get('coins', 0))
+
+                    result.append(MetalValue(
+                        metal=str(item[metal_key]),
+                        count=int(count_value),
+                        troy_oz_fine=float(item.get('troy_oz_fine', 0) if item.get(
+                            'troy_oz_fine') is not None else 0),
+                        cost=float(item.get('cost', 0) if item.get('cost') is not None else 0),
+                        melt_value=float(
+                            item.get('melt_value', 0) if item.get('melt_value') is not None else 0),
+                        estimated_value=float(item.get('estimated_value', 0) if item.get(
+                            'estimated_value') is not None else 0),
+                        unrealized_gl=float(item.get('unrealized_gl', 0) if item.get(
+                            'unrealized_gl') is not None else 0)
+                    ))
+                except (KeyError, TypeError, ValueError) as e:
+                    print(f"Error processing metal value item: {e}")
+                    print(f"Item data: {item}")
+                    continue
+
+            return result
+        return []
     def get_top_valued_coins(self, limit: int = 20) -> List[TopValuedCoin]:
         """Get top valued coins"""
         import services.report_logic as rl
         data = rl.get_top_valued_coins(limit)
 
         if data:
-            return [TopValuedCoin(
-                series=item['series'],
-                year=int(item['year']),
-                mint_mark=item.get('mint_mark'),
-                variety=item.get('variety'),
-                qty_remaining=int(item['qty_remaining']),
-                grade=item['grade'],
-                unit_cost=float(item['unit_cost']),
-                unit_value=float(item['unit_value']),
-                total_value=float(item['total_value']),
-                unrealized_gl=float(item['unrealized_gl'])
-            ) for item in data]
+            result = []
+            for item in data:
+                try:
+                    result.append(TopValuedCoin(
+                        series=str(item.get('series', '')),
+                        year=int(item.get('year', 0)),
+                        mint_mark=item.get('mint_mark'),
+                        variety=item.get('variety'),
+                        qty_remaining=int(item.get('qty_remaining', 0)),
+                        grade=str(item.get('grade', '')),
+                        unit_cost=float(item.get('unit_cost', 0)),
+                        unit_value=float(item.get('unit_value', 0)),
+                        total_value=float(item.get('total_value', 0)),
+                        unrealized_gl=float(item.get('unrealized_gl', 0))
+                    ))
+                except (KeyError, TypeError, ValueError) as e:
+                    print(f"Error processing top valued coin item: {e}")
+                    print(f"Item data: {item}")
+                    continue
+
+            return result
         return []
 
     def get_sellers_with_transactions(self) -> List[Seller]:
@@ -253,13 +311,22 @@ class ReportsRepository(ReportsDataRepository):
         data = rl.get_sellers_with_transactions()
 
         if data:
-            return [Seller(
-                id=int(item['id']),
-                name=item['name'],
-                logical_transaction_count=int(item.get('logical_transaction_count', 0)),
-                db_transaction_count=int(item.get('db_transaction_count', 0)),
-                total_coins=int(item.get('total_coins', 0))
-            ) for item in data]
+            result = []
+            for item in data:
+                try:
+                    result.append(Seller(
+                        id=int(item.get('id', 0)),
+                        name=str(item.get('name', '')),
+                        logical_transaction_count=int(item.get('logical_transaction_count', 0)),
+                        db_transaction_count=int(item.get('db_transaction_count', 0)),
+                        total_coins=int(item.get('total_coins', 0))
+                    ))
+                except (KeyError, TypeError, ValueError) as e:
+                    print(f"Error processing seller item: {e}")
+                    print(f"Item data: {item}")
+                    continue
+
+            return result
         return []
 
     def get_seller_summary(self, party_id: int, group_by_date: bool = True) -> Optional[
@@ -269,17 +336,22 @@ class ReportsRepository(ReportsDataRepository):
         summary = rl.get_seller_summary(party_id, group_by_date)
 
         if summary:
-            return SellerSummary(
-                unique_transactions=int(summary.get('unique_transactions', 0)),
-                total_coins_purchased=int(summary.get('total_coins_purchased', 0)),
-                coins_still_held=int(summary.get('coins_still_held', 0)),
-                total_cost_usd=float(summary.get('total_cost_usd', 0)),
-                unique_coin_types=int(summary.get('unique_coin_types', 0)),
-                total_current_value_usd=float(summary.get('total_current_value_usd', 0)),
-                unrealized_gain_loss=float(summary.get('unrealized_gain_loss', 0)),
-                gain_loss_percent=float(summary.get('gain_loss_percent', 0)),
-                coins_sold=int(summary.get('coins_sold', 0))
-            )
+            try:
+                return SellerSummary(
+                    unique_transactions=int(summary.get('unique_transactions', 0)),
+                    total_coins_purchased=int(summary.get('total_coins_purchased', 0)),
+                    coins_still_held=int(summary.get('coins_still_held', 0)),
+                    total_cost_usd=float(summary.get('total_cost_usd', 0)),
+                    unique_coin_types=int(summary.get('unique_coin_types', 0)),
+                    total_current_value_usd=float(summary.get('total_current_value_usd', 0)),
+                    unrealized_gain_loss=float(summary.get('unrealized_gain_loss', 0)),
+                    gain_loss_percent=float(summary.get('gain_loss_percent', 0)),
+                    coins_sold=int(summary.get('coins_sold', 0))
+                )
+            except (KeyError, TypeError, ValueError) as e:
+                print(f"Error processing seller summary: {e}")
+                print(f"Summary data: {summary}")
+                return None
         return None
 
     def get_seller_detail_by_coin_type(self, party_id: int) -> List[SellerCoinDetail]:
@@ -288,26 +360,41 @@ class ReportsRepository(ReportsDataRepository):
         data = rl.get_seller_detail_by_coin_type(party_id)
 
         if data:
-            return [SellerCoinDetail(
-                coin=f"{item['series']} {item['year']}" +
-                     (f" {item['mint_mark']}" if item.get('mint_mark') else "") +
-                     (f" • {item['variety']}" if item.get('variety') else ""),
-                metal=item['metal'],
-                asset_category=item['asset_category'],
-                total_purchased=int(item['total_purchased']),
-                qty_remaining=int(item['qty_remaining']),
-                avg_purchase_price=float(item['avg_purchase_price']),
-                total_spent=float(item['total_spent']),
-                cost_of_remaining=float(item['cost_of_remaining']),
-                current_value=float(item['current_value']),
-                unrealized_gl=float(item['unrealized_gl']),
-                gl_percent=float((item['unrealized_gl'] / item['cost_of_remaining'] * 100)
-                                 if item['cost_of_remaining'] and item[
-                    'cost_of_remaining'] > 0 else 0),
-                best_grade=item['best_grade'],
-                first_purchase=item['first_purchase'],
-                last_purchase=item['last_purchase']
-            ) for item in data]
+            result = []
+            for item in data:
+                try:
+                    coin_display = f"{item.get('series', '')} {item.get('year', '')}"
+                    if item.get('mint_mark'):
+                        coin_display += f" {item['mint_mark']}"
+                    if item.get('variety'):
+                        coin_display += f" • {item['variety']}"
+
+                    cost_remaining = float(item.get('cost_of_remaining', 0))
+                    unrealized_gl = float(item.get('unrealized_gl', 0))
+
+                    result.append(SellerCoinDetail(
+                        coin=coin_display,
+                        metal=str(item.get('metal', '')),
+                        asset_category=str(item.get('asset_category', '')),
+                        total_purchased=int(item.get('total_purchased', 0)),
+                        qty_remaining=int(item.get('qty_remaining', 0)),
+                        avg_purchase_price=float(item.get('avg_purchase_price', 0)),
+                        total_spent=float(item.get('total_spent', 0)),
+                        cost_of_remaining=cost_remaining,
+                        current_value=float(item.get('current_value', 0)),
+                        unrealized_gl=unrealized_gl,
+                        gl_percent=float((unrealized_gl / cost_remaining * 100)
+                                         if cost_remaining and cost_remaining > 0 else 0),
+                        best_grade=str(item.get('best_grade', '')),
+                        first_purchase=str(item.get('first_purchase', '')),
+                        last_purchase=str(item.get('last_purchase', ''))
+                    ))
+                except (KeyError, TypeError, ValueError) as e:
+                    print(f"Error processing seller detail item: {e}")
+                    print(f"Item data: {item}")
+                    continue
+
+            return result
         return []
 
     def get_seller_transactions(self, party_id: int, group_by_date: bool = True) -> List[
@@ -317,31 +404,73 @@ class ReportsRepository(ReportsDataRepository):
         data = rl.get_seller_transactions(party_id, group_by_date)
 
         if data:
-            return [SellerTransaction(
-                tx_ids=item['tx_ids'],
-                tx_date=item['tx_date'],
-                line_items=item['line_items'],
-                total_quantity=int(item['total_quantity']),
-                subtotal=float(item['subtotal']),
-                shipping=float(item['shipping']),
-                tax=float(item['tax']),
-                fees=float(item['fees']),
-                total=float(item['total']),
-                notes=item['notes'],
-                db_transaction_count=int(
-                    item.get('db_transaction_count', 1)) if group_by_date else None
-            ) for item in data]
+            result = []
+            for item in data:
+                try:
+                    result.append(SellerTransaction(
+                        tx_ids=str(item.get('tx_ids', '')),
+                        tx_date=str(item.get('tx_date', '')),
+                        line_items=str(item.get('line_items', '')),
+                        total_quantity=int(item.get('total_quantity', 0)),
+                        subtotal=float(item.get('subtotal', 0)),
+                        shipping=float(item.get('shipping', 0)),
+                        tax=float(item.get('tax', 0)),
+                        fees=float(item.get('fees', 0)),
+                        total=float(item.get('total', 0)),
+                        notes=str(item.get('notes', '') or ''),
+                        db_transaction_count=int(
+                            item.get('db_transaction_count', 1)) if group_by_date else None
+                    ))
+                except (KeyError, TypeError, ValueError) as e:
+                    print(f"Error processing seller transaction item: {e}")
+                    print(f"Item data: {item}")
+                    continue
+
+            return result
         return []
 
     def get_spending_summary(self, date_from: Optional[date] = None,
                              date_to: Optional[date] = None) -> pd.DataFrame:
         """Get spending summary (moved from Transactions)"""
-        # Import the search function from transactions logic
-        from infrastructure.database.repositories.transactions_repository import \
-            TransactionsRepository
-        tx_repo = TransactionsRepository(self.db)
+        # Build query conditions
+        conditions = ["t.tx_type = 'BUY'"]
+        params = []
 
-        df = tx_repo.search_transactions(date_from, date_to, tx_types=["BUY"])
+        if date_from and date_to:
+            conditions.append("DATE(t.tx_date) BETWEEN DATE(?) AND DATE(?)")
+            params.extend([date_from.isoformat(), date_to.isoformat()])
+
+        where_clause = f"WHERE {' AND '.join(conditions)}"
+
+        # Query to get all BUY transactions with their line items
+        # Join through coin_type and coin_master to get series
+        query = f"""
+            SELECT 
+                t.id as tx_id,
+                t.tx_date,
+                p.name as party,
+                t.shipping,
+                t.tax,
+                t.fees,
+                cm.series,
+                tl.quantity,
+                tl.unit_price
+            FROM tx t
+            LEFT JOIN party p ON t.party_id = p.id
+            JOIN tx_line tl ON tl.tx_id = t.id
+            JOIN coin_type ct ON ct.id = tl.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            {where_clause}
+            ORDER BY t.tx_date DESC, t.id
+        """
+
+        result = execute_query_all(query, tuple(params))
+
+        if not result:
+            return pd.DataFrame()
+
+        # Convert to DataFrame
+        df = pd.DataFrame(result)
 
         if df.empty:
             return pd.DataFrame()
@@ -363,7 +492,7 @@ class ReportsRepository(ReportsDataRepository):
             tax=("tax", "first"),  # Get once per transaction
             fees=("fees", "first"),  # Get once per transaction
             items_list=(
-            "Series", lambda s: ", ".join(f"{n}×{k}" for k, n in s.value_counts().items())),
+                "Series", lambda s: ", ".join(f"{n}×{k}" for k, n in s.value_counts().items())),
             line_count=("series", "count")
         ).reset_index()
 
