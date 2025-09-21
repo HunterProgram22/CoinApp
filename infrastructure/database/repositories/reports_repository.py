@@ -217,9 +217,12 @@ class ReportsRepository(ReportsDataRepository):
                         print(f"Warning: No asset_category field found in item: {item.keys()}")
                         continue
 
+                    # Handle 'coins' vs 'count' field - THIS IS THE FIX
+                    count_value = item.get('count', item.get('coins', 0))
+
                     result.append(CategoryValue(
                         asset_category=str(item[category_key]),
-                        count=int(item.get('count', 0)),
+                        count=int(count_value),  # Use the count_value variable here
                         cost=float(item.get('cost', 0)),
                         melt_value=float(item.get('melt_value', 0)),
                         estimated_value=float(item.get('estimated_value', 0)),

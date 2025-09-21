@@ -64,8 +64,18 @@ def format_category_dataframe(category_data: List[Any]) -> pd.DataFrame:
 
     df = pd.DataFrame([item.__dict__ for item in category_data])
 
+    # Rename columns for proper display
+    df = df.rename(columns={
+        'asset_category': 'Asset Category',
+        'count': 'Count',
+        'cost': 'Cost',
+        'melt_value': 'Melt Value',
+        'estimated_value': 'Estimated Value',
+        'unrealized_gl': 'Unrealized G/L'
+    })
+
     # Format money columns
-    money_cols = ['cost', 'melt_value', 'estimated_value', 'unrealized_gl']
+    money_cols = ['Cost', 'Melt Value', 'Estimated Value', 'Unrealized G/L']
     df = format_money_columns(df, money_cols)
 
     return df
@@ -78,13 +88,24 @@ def format_metal_dataframe(metal_data: List[Any]) -> pd.DataFrame:
 
     df = pd.DataFrame([item.__dict__ for item in metal_data])
 
+    # Rename columns for proper display
+    df = df.rename(columns={
+        'metal': 'Metal',
+        'count': 'Count',
+        'troy_oz_fine': 'Troy Oz (Fine)',
+        'cost': 'Cost',
+        'melt_value': 'Melt Value',
+        'estimated_value': 'Estimated Value',
+        'unrealized_gl': 'Unrealized G/L'
+    })
+
     # Format money columns
-    money_cols = ['cost', 'melt_value', 'estimated_value', 'unrealized_gl']
+    money_cols = ['Cost', 'Melt Value', 'Estimated Value', 'Unrealized G/L']
     df = format_money_columns(df, money_cols)
 
     # Format troy ounces
-    if 'troy_oz_fine' in df.columns:
-        df['troy_oz_fine'] = df['troy_oz_fine'].apply(lambda x: format_troy_oz_display(x))
+    if 'Troy Oz (Fine)' in df.columns:
+        df['Troy Oz (Fine)'] = df['Troy Oz (Fine)'].apply(lambda x: format_troy_oz_display(x))
 
     return df
 
@@ -97,16 +118,27 @@ def format_top_coins_dataframe(top_coins: List[Any]) -> pd.DataFrame:
     df = pd.DataFrame([coin.__dict__ for coin in top_coins])
 
     # Create display name
-    df['coin'] = df.apply(
+    df['Coin'] = df.apply(
         lambda r: format_coin_display_name(r.to_dict()),
         axis=1
     )
 
-    # Select and format columns
-    display_df = df[['coin', 'qty_remaining', 'grade', 'unit_cost',
+    # Select and rename columns for display
+    display_df = df[['Coin', 'qty_remaining', 'grade', 'unit_cost',
                      'unit_value', 'total_value', 'unrealized_gl']].copy()
 
-    money_cols = ['unit_cost', 'unit_value', 'total_value', 'unrealized_gl']
+    # Rename remaining columns
+    display_df = display_df.rename(columns={
+        'qty_remaining': 'Qty',
+        'grade': 'Grade',
+        'unit_cost': 'Unit Cost',
+        'unit_value': 'Unit Value',
+        'total_value': 'Total Value',
+        'unrealized_gl': 'Unrealized G/L'
+    })
+
+    # Format money columns
+    money_cols = ['Unit Cost', 'Unit Value', 'Total Value', 'Unrealized G/L']
     display_df = format_money_columns(display_df, money_cols)
 
     return display_df
