@@ -408,16 +408,15 @@ class StorageReportRenderer:
         st.markdown(f"### Select items to move from '{source_location}' to '{dest_location}'")
         st.caption(f"Found {len(lots)} lots in {source_location}")
 
-        # Use session state to track selections
-        if 'selected_lot_ids' not in st.session_state:
-            st.session_state.selected_lot_ids = []
-
         # Select/Deselect all buttons
         col1, col2, col3 = st.columns([1, 1, 4])
         if col1.button("Select All", key="select_all_btn"):
-            st.session_state.selected_lot_ids = [lot.id for lot in lots]
+            for lot in lots:
+                st.session_state[f"lot_select_{lot.id}"] = True
+
         if col2.button("Deselect All", key="deselect_all_btn"):
-            st.session_state.selected_lot_ids = []
+            for lot in lots:
+                st.session_state[f"lot_select_{lot.id}"] = False
 
         st.divider()
 
@@ -429,23 +428,18 @@ class StorageReportRenderer:
         for lot in lots:
             col1, col2, col3, col4 = st.columns([0.5, 4, 1, 1])
 
-            # Checkbox
+            # Checkbox - use session state directly
             is_selected = col1.checkbox(
                 "Select",
-                value=(lot.id in st.session_state.selected_lot_ids),
+                value=st.session_state.get(f"lot_select_{lot.id}", False),
                 key=f"lot_select_{lot.id}",
                 label_visibility="collapsed"
             )
 
             if is_selected:
-                if lot.id not in st.session_state.selected_lot_ids:
-                    st.session_state.selected_lot_ids.append(lot.id)
                 selected_lots.append(lot)
                 total_selected_items += lot.qty_remaining
                 total_selected_value += lot.total_value
-            else:
-                if lot.id in st.session_state.selected_lot_ids:
-                    st.session_state.selected_lot_ids.remove(lot.id)
 
             # Description
             col2.write(lot.description)
@@ -478,7 +472,9 @@ class StorageReportRenderer:
                     st.success(
                         f"✅ Successfully moved {len(selected_lot_ids)} lots to '{dest_location}'")
                     # Clear selections after successful move
-                    st.session_state.selected_lot_ids = []
+                    for lot in lots:
+                        if f"lot_select_{lot.id}" in st.session_state:
+                            del st.session_state[f"lot_select_{lot.id}"]
                     st.balloons()
                     st.rerun()
                 except Exception as e:
