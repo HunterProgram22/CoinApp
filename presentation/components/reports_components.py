@@ -144,6 +144,10 @@ class ReportsRenderer:
 
         col0, col1, col2 = st.columns([2, 2, 2])
 
+        # Initialize session state for dates if not present
+        if 'sp_preset_prev' not in st.session_state:
+            st.session_state.sp_preset_prev = None
+
         sp_preset = col0.selectbox(
             "Quick range",
             ["30d", "7d", "90d", "YTD", "1y", "All"],
@@ -151,11 +155,24 @@ class ReportsRenderer:
             key="sp_preset"
         )
 
-        sp_start, sp_end = calculate_spending_date_range(sp_preset)
+        # Calculate date range based on preset
+        sp_start_calc, sp_end_calc = calculate_spending_date_range(sp_preset)
+
+        # Check if preset changed and update session state
+        if sp_preset != st.session_state.sp_preset_prev:
+            st.session_state.sp_start = sp_start_calc
+            st.session_state.sp_end = sp_end_calc
+            st.session_state.sp_preset_prev = sp_preset
+
+        # Initialize session state if keys don't exist
+        if 'sp_start' not in st.session_state:
+            st.session_state.sp_start = sp_start_calc
+        if 'sp_end' not in st.session_state:
+            st.session_state.sp_end = sp_end_calc
 
         if sp_preset != "All":
-            sp_start = col1.date_input("Start", value=sp_start, key="sp_start")
-            sp_end = col2.date_input("End", value=sp_end, key="sp_end")
+            sp_start = col1.date_input("Start", value=st.session_state.sp_start, key="sp_start")
+            sp_end = col2.date_input("End", value=st.session_state.sp_end, key="sp_end")
         else:
             sp_start = col1.date_input(
                 "Start",
