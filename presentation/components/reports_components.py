@@ -13,7 +13,8 @@ from presentation.components.helpers.reports_helpers import (
     format_spending_period_display, validate_spending_date_range,
     prepare_export_data, create_download_filename, create_csv_download_data,
     validate_report_inputs, validate_top_coins_limit, convert_dataclass_list_to_dict_list,
-    get_available_report_types, should_show_spending_metrics, create_spending_info_message
+    get_available_report_types, should_show_spending_metrics, create_spending_info_message,
+    format_insurance_dataframe
 )
 
 
@@ -378,3 +379,100 @@ class ReportsRenderer:
             - Group transactions by date in the Seller Report to see logical purchase sessions
             - Use the Spending Log to track budget compliance and spending patterns
             """)
+
+    def render_insurance_report(self):
+        """Render the All Coin Insurance Report"""
+        st.subheader("🛡️ All Coin Insurance Report")
+        st.caption("Complete inventory listing for insurance documentation")
+
+        # Get all coins data
+        coins = self.repository.get_all_coins_for_insurance()
+
+        if not coins:
+            st.info("No coins found in inventory.")
+            return
+
+        # Summary metrics
+        total_coins = sum(coin.quantity for coin in coins)
+        total_cost = sum(coin.total_cost for coin in coins)
+        total_value = sum(coin.estimated_value for coin in coins)
+        unique_types = len(
+            set((coin.series, coin.year, coin.mint_mark, coin.variety) for coin in coins))
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Coins", f"{total_coins:,}")
+        col2.metric("Total Cost", format_money_display(total_cost))
+        col3.metric("Total Value", format_money_display(total_value))
+        col4.metric("Unique Types", f"{unique_types:,}")
+
+        # Filter options
+        with st.expander("🔍 Filter Options", expanded=False):
+            col1, col2, col3 = st.columns(3)
+
+            # Get unique values for filters
+            all_series = sorted(set(coin.series for coin in coins))
+            all_metals = sorted(set(coin.metal for coin in coins))
+            all_locations = sorted(
+                set(coin.storage_location for coin in coins if coin.storage_location))
+
+            selected_series = col1.multiselect("Series", all_series)
+            selected_metals = col2.multiselect("Metal", all_metals)
+            selected_locations = col3.multiselect("Storage Location", all_locations)
+
+            # Additional filters
+            col1, col2 = st.columns(2)
+            show_slabbed_only = col1.checkbox("Slabbed coins only")
+            min_value = col2.number_input("Min. value ($)", min_value=0.0, value=0.0, step=10.0)
+
+        # Apply filters
+        filtered_coins = coins
+        if selected_series:
+            filtered_coins = [c for c in filtered_coins if c.series in selected_series]
+        if selected_metals:
+            filtered_coins = [c for c in filtered_coins if c.metal in selected_metals]
+        if selected_locations:
+            filtered_coins = [c for c in filtered_coins if c.storage_location in selected_locations]
+        if show_slabbed_only:
+            filtered_coins = [c for c in filtered_coins if c.is_slabbed]
+        if min_value > 0:
+            filtered_coins = [c for c in filtered_coins if c.estimated_value >= min_value]
+
+        # Display the data
+        if filtered_coins:
+            # Create DataFrame for display
+            df = format_insurance_dataframe(filtered_coins)
+
+            # Show filtered stats if filters are applied
+            if filtered_coins != coins:
+                st.info(f"Showing {len(filtered_coins)} of {len(coins)} coins based on filters")
+
+            st.dataframe(df, hide_index=True, width='stretch')
+
+            # Export functionality
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # CSV export
+                csv_data = create_csv_download_data(df)
+                filename = create_download_filename("insurance_report", datetime.now())
+                st.download_button(
+                    "📥 Download Insurance Report (CSV)",
+                    data=csv_data,
+                    file_name=filename,
+                    mime="text/csv",
+                    use_container_width=True
+                )
+
+            with col2:
+                # Summary stats for the filtered data
+                filtered_total = sum(coin.total_cost for coin in filtered_coins)
+                filtered_value = sum(coin.estimated_value for coin in filtered_coins)
+                st.info(f"""
+                **Filtered Totals:**
+                - Cost: {format_money_display(filtered_total)}
+                - Value: {format_money_display(filtered_value)}
+                - Items: {len(filtered_coins)}
+                """)
+        else:
+            st.warning("No coins match the selected filters.")

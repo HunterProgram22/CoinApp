@@ -410,8 +410,57 @@ def get_available_report_types() -> List[str]:
     return [
         "Collection Value Report",
         "Seller Report",
-        "Spending Log"  # Added from Transactions
+        "Spending Log",
+        "All Coin Insurance Report",
     ]
+
+
+def format_insurance_dataframe(coins: List) -> pd.DataFrame:
+    """Format insurance coin details for display"""
+    data = []
+    for coin in coins:
+        # Build coin description
+        coin_desc = f"{coin.series} {coin.year}"
+        if coin.mint_mark:
+            coin_desc += f" {coin.mint_mark}"
+        if coin.variety:
+            coin_desc += f" • {coin.variety}"
+
+        # Format grade
+        grade_display = coin.grade
+        if coin.is_slabbed:
+            grade_display = f"🏆 {coin.grade}"  # Add icon for slabbed coins
+
+        data.append({
+            'Coin': coin_desc,
+            'Metal': coin.metal,
+            'Category': coin.asset_category,
+            'Tx Date': coin.tx_date,
+            'Seller': coin.seller,
+            'Qty': coin.quantity,
+            'Unit Cost': coin.unit_cost,
+            'Total Cost': coin.total_cost,
+            'Est. Value': coin.estimated_value,
+            'G/L': coin.unrealized_gl,
+            'G/L %': (coin.unrealized_gl / coin.total_cost * 100) if coin.total_cost > 0 else 0,
+            'Grade': grade_display,
+            'Location': coin.storage_location or 'Not specified',
+            'Notes': coin.notes or ''
+        })
+
+    df = pd.DataFrame(data)
+
+    # Format money columns
+    money_cols = ['Unit Cost', 'Total Cost', 'Est. Value', 'G/L']
+    for col in money_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(lambda x: f"${x:,.2f}")
+
+    # Format percentage
+    if 'G/L %' in df.columns:
+        df['G/L %'] = df['G/L %'].apply(lambda x: f"{x:.1f}%")
+
+    return df
 
 
 def should_show_spending_metrics(total_spent: float) -> bool:

@@ -115,6 +115,28 @@ class SpendingSummary:
     lines: int
 
 
+@dataclass
+class InsuranceCoinDetail:
+    coin_id: int
+    series: str
+    year: int
+    mint_mark: Optional[str]
+    variety: Optional[str]
+    metal: str
+    asset_category: str
+    tx_date: str
+    seller: str
+    quantity: int
+    unit_cost: float
+    total_cost: float
+    estimated_value: float
+    unrealized_gl: float
+    grade: str
+    is_slabbed: bool
+    storage_location: Optional[str]
+    notes: Optional[str]
+
+
 class ReportsDataRepository(ABC):
     """Abstract repository interface for Reports data access"""
 
@@ -170,6 +192,11 @@ class ReportsDataRepository(ABC):
     def get_spending_total(self, date_from: Optional[date] = None,
                            date_to: Optional[date] = None) -> float:
         """Get total spending for date range (moved from Transactions)"""
+        pass
+
+    @abstractmethod
+    def get_all_coins_for_insurance(self) -> List[InsuranceCoinDetail]:
+        """Get all coins with details for insurance report"""
         pass
 
 
@@ -549,3 +576,40 @@ class ReportsRepository(ReportsDataRepository):
 
         result = execute_query_single(query, tuple(params))
         return float(result['total']) if result and result['total'] else 0.0
+
+    def get_all_coins_for_insurance(self) -> List[InsuranceCoinDetail]:
+        """Get all coins with details for insurance report"""
+        import services.report_logic as rl
+        data = rl.get_all_coins_for_insurance()
+
+        if data:
+            result = []
+            for item in data:
+                try:
+                    result.append(InsuranceCoinDetail(
+                        coin_id=int(item.get('coin_id', 0)),
+                        series=str(item.get('series', '')),
+                        year=int(item.get('year', 0)),
+                        mint_mark=item.get('mint_mark'),
+                        variety=item.get('variety'),
+                        metal=str(item.get('metal', '')),
+                        asset_category=str(item.get('asset_category', '')),
+                        tx_date=str(item.get('tx_date', '')),
+                        seller=str(item.get('seller', 'Unknown')),
+                        quantity=int(item.get('quantity', 0)),
+                        unit_cost=float(item.get('unit_cost', 0)),
+                        total_cost=float(item.get('total_cost', 0)),
+                        estimated_value=float(item.get('estimated_value', 0)),
+                        unrealized_gl=float(item.get('unrealized_gl', 0)),
+                        grade=str(item.get('grade', '')),
+                        is_slabbed=bool(item.get('is_slabbed', 0)),
+                        storage_location=item.get('location'),
+                        notes=item.get('notes')
+                    ))
+                except (KeyError, TypeError, ValueError) as e:
+                    print(f"Error processing insurance coin detail: {e}")
+                    print(f"Item data: {item}")
+                    continue
+
+            return result
+        return []

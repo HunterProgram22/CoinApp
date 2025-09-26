@@ -294,6 +294,52 @@ def get_top_valued_coins(limit: int = 20) -> List[Dict[str, Any]]:
     return execute_query_all(query, (limit,))
 
 
+def get_all_coins_for_insurance():
+    """Get all coins with details for insurance report"""
+    query = """
+        SELECT 
+            l.id as coin_id,
+            cm.series,
+            ct.year,
+            ct.mint_mark,
+            ct.variety,
+            cm.metal,
+            cm.asset_category,
+            t.tx_date,
+            p.name as seller,
+            l.qty_remaining as quantity,
+            l.unit_cost,
+            (l.qty_remaining * l.unit_cost) as total_cost,
+            v.chosen_unit_value * l.qty_remaining as estimated_value,
+            COALESCE(l.estimated_grade_text, l.purchase_grade_text, '') as grade,
+            CASE WHEN l.slab_cert IS NOT NULL AND l.slab_cert != '' THEN 1 ELSE 0 END as is_slabbed,
+            sl.name as location,
+            l.notes
+        FROM lot l
+        JOIN coin_type ct ON ct.id = l.coin_type_id
+        JOIN coin_master cm ON cm.id = ct.master_id
+        JOIN v_lot_value_details v ON v.lot_id = l.id
+        LEFT JOIN tx_line tl ON tl.id = l.acquisition_line_id
+        LEFT JOIN tx t ON t.id = tl.tx_id
+        LEFT JOIN party p ON p.id = t.party_id
+        LEFT JOIN storage_location sl ON sl.id = l.storage_location_id
+        WHERE l.qty_remaining > 0  -- Only current inventory
+        ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, grade DESC
+    """
+
+    from infrastructure.database.db_operations import execute_query_all
+    result = execute_query_all(query)
+
+    if result:
+        # Calculate unrealized gain/loss for each item
+        for item in result:
+            total_cost = float(item.get('total_cost', 0))
+            estimated_value = float(item.get('estimated_value', 0))
+            item['unrealized_gl'] = estimated_value - total_cost if total_cost > 0 else 0
+
+    return result if result else []
+
+
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================

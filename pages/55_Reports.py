@@ -36,6 +36,9 @@ elif selected_report == "Seller Report":
     renderer.render_seller_report()
 elif selected_report == "Spending Log":
     renderer.render_spending_log()
+elif selected_report == "All Coin Insurance Report":
+    renderer.render_insurance_report()
+
 
 # Footer
 renderer.render_report_footer()
