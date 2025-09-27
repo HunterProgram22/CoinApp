@@ -14,7 +14,6 @@ st.caption("Generate comprehensive reports from your coin collection data")
 
 
 # === Dependency Injection ===
-@st.cache_resource
 def get_reports_dependencies():
     """Initialize dependencies for Reports page"""
     db_executor = DatabaseExecutor()

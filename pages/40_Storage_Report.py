@@ -15,7 +15,6 @@ st.caption("Overview of Storage Content and Bulk Movement of Coins.")
 
 
 # === Dependency Injection ===
-@st.cache_resource
 def get_storage_report_dependencies():
     """Create and cache storage report dependencies"""
     db_executor = DatabaseExecutor()

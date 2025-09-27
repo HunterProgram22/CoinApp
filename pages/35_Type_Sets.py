@@ -10,10 +10,10 @@ from presentation.components.type_sets_components import TypeSetsRenderer
 
 
 st.title("💼 Type Sets")
+st.caption("Create and Review Types Sets.")
 
 
 # === Dependency Injection  ===
-@st.cache_resource
 def get_type_sets_dependencies():
     """Initialize dependencies for Type Sets page"""
     db_executor = DatabaseExecutor()

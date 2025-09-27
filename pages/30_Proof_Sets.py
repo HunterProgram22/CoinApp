@@ -14,7 +14,6 @@ st.caption("A summary of Proof and Mint Sets not included in other summaries.")
 
 
 # === Dependency Injection ===
-@st.cache_resource
 def get_proof_sets_dependencies():
     """Create and cache proof sets dependencies"""
     db_executor = DatabaseExecutor()

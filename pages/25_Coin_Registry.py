@@ -16,7 +16,6 @@ st.caption("Browse coins by Slab or Flip ID.")
 
 
 # === Dependency Injection ===
-@st.cache_resource
 def get_coin_registry_dependencies():
     """Create and cache coin registry dependencies"""
     db_executor = DatabaseExecutor()

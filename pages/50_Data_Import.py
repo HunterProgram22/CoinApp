@@ -14,7 +14,6 @@ st.caption("Import Coin Masters, Coin Types and Transactions.")
 
 
 # === Dependency Injection ===
-@st.cache_resource
 def get_dependencies():
     """Initialize and cache dependencies"""
     db_executor = DatabaseExecutor()

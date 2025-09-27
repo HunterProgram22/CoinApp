@@ -14,7 +14,6 @@ st.caption("Browse Coins based on Country of Origin.")
 
 
 # === Dependency Injection ===
-@st.cache_resource
 def get_world_coins_dependencies():
     """Create and cache world coins dependencies"""
     db_executor = DatabaseExecutor()

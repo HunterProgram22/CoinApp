@@ -14,7 +14,6 @@ st.caption("Browse Master Coins and Coin Types with reference links.")
 
 
 # === Dependency Injection ===
-@st.cache_resource
 def get_coin_catalog_dependencies():
     """Create and cache coin catalog dependencies"""
     db_executor = DatabaseExecutor()

@@ -14,7 +14,6 @@ st.caption("A Snapshot of Coin Values and Costs.")
 
 
 # === Dependency Injection  ===
-@st.cache_resource
 def get_dashboard_dependencies():
     """Create and cache dashboard dependencies"""
     db_executor = DatabaseExecutor()

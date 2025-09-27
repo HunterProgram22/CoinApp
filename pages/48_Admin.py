@@ -9,12 +9,11 @@ from infrastructure.database.repositories.admin_repository import AdminRepositor
 from presentation.components.admin_components import AdminRenderer
 
 
-st.set_page_config(page_title="Admin", page_icon="🛠️", layout="wide")
 st.title("🛠️ Admin")
+st.caption("Add or Edit Coin Masters and Types, Update Metal Prices, Backup DB.")
 
 
 # Dependency injection with caching
-@st.cache_resource
 def get_dependencies():
     """Initialize and cache dependencies"""
     db_executor = DatabaseExecutor()

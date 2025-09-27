@@ -14,7 +14,6 @@ st.caption("Summary of Precious Metal Bars, Rounds, Bullion Coins and Junk Silve
 
 
 # === Dependency Injection ===
-@st.cache_resource
 def get_bullion_dependencies():
     """Create and cache bullion dependencies"""
     db_executor = DatabaseExecutor()

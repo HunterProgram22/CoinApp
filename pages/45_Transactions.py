@@ -14,7 +14,6 @@ st.caption("Review, Add or Edit transactions.")
 
 
 # === Dependency Injection ===
-@st.cache_resource
 def get_dependencies():
     """Initialize and cache dependencies"""
     db_executor = DatabaseExecutor()

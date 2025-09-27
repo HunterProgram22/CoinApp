@@ -14,7 +14,6 @@ st.caption("Review Coin Series Summaries and Details.")
 
 
 # === Dependency Injection ===
-@st.cache_resource
 def get_inventory_dependencies():
     """Create and cache inventory dependencies"""
     db_executor = DatabaseExecutor()
