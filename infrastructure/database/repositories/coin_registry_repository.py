@@ -93,6 +93,69 @@ class LotInfo:
     qty_remaining: int
 
 
+@dataclass
+class SpecimenFullDetails:
+    """Complete specimen details including all related information."""
+    # Basic specimen info
+    code: str
+    series: str
+    year: int
+    mint_mark: Optional[str]
+    variety: Optional[str]
+
+    # Lot and acquisition info
+    lot_id: Optional[int]
+    quantity_in_lot: Optional[int]
+    acquired_date: Optional[str]
+    acquired_from: Optional[str]
+
+    # Cost and value info
+    unit_cost: Optional[float]
+    total_lot_cost: Optional[float]
+    estimated_value: Optional[float]
+    pcgs_value: Optional[float]
+    ngc_value: Optional[float]
+    redbook_value: Optional[float]
+    melt_value: Optional[float]
+    chosen_value_source: Optional[str]
+
+    # Grade info
+    purchase_grade_text: Optional[str]
+    purchase_numeric_grade: Optional[float]
+    purchase_grade_company: Optional[str]
+    estimated_grade_text: Optional[str]
+    estimated_numeric_grade: Optional[float]
+
+    # Certification info
+    slab_cert: Optional[str]
+    cac_approved: bool
+    plus_grade: bool
+
+    # Metal content (for precious metals)
+    metal_type: Optional[str]
+    metal_content: Optional[float]
+    metal_unit: Optional[str]
+    current_metal_price: Optional[float]
+
+    # Transaction info
+    transaction_id: Optional[int]
+    transaction_date: Optional[str]
+    transaction_type: Optional[str]
+    invoice_number: Optional[str]
+
+    # Status info
+    is_sold: bool
+    sold_date: Optional[str]
+    sold_to: Optional[str]
+    sold_price: Optional[float]
+
+    # Additional info
+    notes: Optional[str]
+    lot_notes: Optional[str]
+    country: Optional[str]
+    denomination: Optional[str]
+
+
 # ==================== Repository Interface ====================
 class CoinRegistryDataRepository(ABC):
     """Abstract interface for coin registry data operations."""
@@ -188,6 +251,11 @@ class CoinRegistryDataRepository(ABC):
     def create_specimens_for_lot(self, lot_id: int, count: int, start_code: Optional[str] = None) -> \
     List[str]:
         """Auto-create specimens for a lot."""
+        pass
+
+    @abstractmethod
+    def get_specimen_full_details(self, code: str) -> Optional[SpecimenFullDetails]:
+        """Get complete details for a specimen including all related information."""
         pass
 
 
@@ -549,3 +617,138 @@ class CoinRegistryRepository(CoinRegistryDataRepository):
     List[str]:
         """Auto-create specimens for a lot."""
         return create_specimens_for_lot(lot_id, count, start_code)
+
+    def get_specimen_full_details(self, code: str) -> Optional[SpecimenFullDetails]:
+        """Get complete details for a specimen including all related information."""
+        query = """
+            SELECT 
+                -- Basic specimen info
+                s.code,
+                cm.series,
+                ct.year,
+                ct.mint_mark,
+                ct.variety,
+
+                -- Lot and acquisition info
+                s.lot_id,
+                l.qty_remaining as quantity_in_lot,
+                l.acquired_date,
+                COALESCE(p.name, 'Unknown') as acquired_from,
+
+                -- Cost and value info
+                ROUND(l.unit_cost, 2) as unit_cost,
+                ROUND(l.qty_acquired * l.unit_cost, 2) as total_lot_cost,
+                ROUND(v.chosen_unit_value, 2) as estimated_value,
+                ROUND(v.guide_unit_value, 2) as guide_value,
+                ROUND(v.melt_unit_value, 2) as melt_value,
+                v.valuation_method as chosen_value_source,
+
+                -- Grade info
+                l.purchase_grade_text,
+                l.purchase_numeric_grade,
+                l.purchase_grade_company,
+                l.estimated_grade_text,
+                l.estimated_numeric_grade,
+
+                -- Certification info
+                l.slab_cert,
+
+                -- Metal content (from coin_master)
+                cm.metal as metal_type,
+                cm.weight_grams,
+                cm.fineness,
+                mp.price_per_oz_usd as current_metal_price,
+
+                -- Transaction info
+                t.id as transaction_id,
+                t.tx_date as transaction_date,
+                t.tx_type as transaction_type,
+
+                -- Status info
+                CASE WHEN s.sold_line_id IS NOT NULL THEN 1 ELSE 0 END as is_sold,
+                st.tx_date as sold_date,
+                sp.name as sold_to,
+                stl.unit_price as sold_price,
+
+                -- Additional info
+                s.notes,
+                l.notes as lot_notes,
+                cm.country,
+                cm.denomination
+
+            FROM specimen s
+            JOIN coin_type ct ON ct.id = s.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            LEFT JOIN lot l ON l.id = s.lot_id
+            LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+            LEFT JOIN tx_line tl ON tl.id = l.acquisition_line_id
+            LEFT JOIN tx t ON t.id = tl.tx_id
+            LEFT JOIN party p ON p.id = t.party_id
+            LEFT JOIN (
+                SELECT metal, price_per_oz_usd
+                FROM metal_price mp1
+                WHERE quoted_at_utc = (
+                    SELECT MAX(quoted_at_utc) FROM metal_price mp2 WHERE mp2.metal = mp1.metal
+                )
+            ) mp ON mp.metal = cm.metal
+
+            -- Sold info joins
+            LEFT JOIN tx_line stl ON stl.id = s.sold_line_id
+            LEFT JOIN tx st ON st.id = stl.tx_id
+            LEFT JOIN party sp ON sp.id = st.party_id
+
+            WHERE UPPER(s.code) = UPPER(?)
+        """
+
+        result = execute_query_single(query, (code,))
+
+        if not result:
+            return None
+
+        # Handle metal content calculations
+        weight_grams = result.get('weight_grams')
+        fineness = result.get('fineness')
+
+        return SpecimenFullDetails(
+            code=result['code'],
+            series=result['series'],
+            year=result['year'],
+            mint_mark=result.get('mint_mark'),
+            variety=result.get('variety'),
+            lot_id=result.get('lot_id'),
+            quantity_in_lot=result.get('quantity_in_lot'),
+            acquired_date=result.get('acquired_date'),
+            acquired_from=result.get('acquired_from'),
+            unit_cost=result.get('unit_cost'),
+            total_lot_cost=result.get('total_lot_cost'),
+            estimated_value=result.get('estimated_value'),
+            pcgs_value=None,  # Would need separate query to guide_price table
+            ngc_value=None,  # Would need separate query to guide_price table
+            redbook_value=result.get('guide_value'),  # Using guide value as proxy
+            melt_value=result.get('melt_value'),
+            chosen_value_source=result.get('chosen_value_source'),
+            purchase_grade_text=result.get('purchase_grade_text'),
+            purchase_numeric_grade=result.get('purchase_numeric_grade'),
+            purchase_grade_company=result.get('purchase_grade_company'),
+            estimated_grade_text=result.get('estimated_grade_text'),
+            estimated_numeric_grade=result.get('estimated_numeric_grade'),
+            slab_cert=result.get('slab_cert'),
+            cac_approved=False,  # Not in current schema
+            plus_grade=False,  # Not in current schema
+            metal_type=result.get('metal_type'),
+            metal_content=weight_grams,  # Store weight in grams
+            metal_unit='grams' if weight_grams else None,
+            current_metal_price=result.get('current_metal_price'),
+            transaction_id=result.get('transaction_id'),
+            transaction_date=result.get('transaction_date'),
+            transaction_type=result.get('transaction_type'),
+            invoice_number=None,  # Not in current schema
+            is_sold=bool(result.get('is_sold', 0)),
+            sold_date=result.get('sold_date'),
+            sold_to=result.get('sold_to'),
+            sold_price=result.get('sold_price'),
+            notes=result.get('notes'),
+            lot_notes=result.get('lot_notes'),
+            country=result.get('country', 'USA'),
+            denomination=result.get('denomination')
+        )

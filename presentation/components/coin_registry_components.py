@@ -12,7 +12,8 @@ from presentation.components.helpers.coin_registry_helpers import (
     prepare_specimens_dataframe,
     prepare_enhanced_specimens_dataframe,
     format_specimen_details,
-    calculate_specimens_summary
+    calculate_specimens_summary,
+    format_value_for_display
 )
 
 
@@ -324,31 +325,231 @@ class CoinRegistryRenderer:
                 st.rerun()
 
     def render_lookup_flip_tab(self):
-        """Render the lookup by flip code tab."""
-        st.subheader("Lookup by Flip Code")
+        """Render the lookup by flip code tab with comprehensive details."""
+        st.subheader("🔍 Comprehensive Flip Code Lookup")
+        st.caption("View complete details for any specimen in your collection")
 
-        code = st.text_input(
-            "Flip code (e.g., P1, M23, CB7)",
-            help="Codes are series prefix + sequence, like P17 for Peace Dollars.",
-            key="lookup_code"
-        )
+        # Search input
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            code = st.text_input(
+                "Enter Flip Code",
+                placeholder="e.g., P1, M23, CB7",
+                help="Codes are series prefix + sequence, like P17 for Peace Dollars.",
+                key="lookup_code_enhanced"
+            )
 
-        col_search, col_clear = st.columns([1, 1])
+        with col2:
+            st.write("")  # Spacing
+            st.write("")  # Spacing
+            search_clicked = st.button("🔍 Search", key="lookup_search_enhanced",
+                                       width='stretch')
 
-        if col_search.button("Search", key="lookup_search") and code:
-            result = self.repo.get_specimen_by_code(code.strip())
+        # Search and display results
+        if search_clicked and code:
+            with st.spinner("Fetching complete coin details..."):
+                # Get full details using the new repository method
+                details = self.repo.get_specimen_full_details(code.strip())
 
-            if not result:
-                st.warning(f"No specimen found for code '{code}'.")
-            else:
-                left, right = st.columns([2, 1])
-                with left:
-                    st.write("**Details**")
-                    details = format_specimen_details(result)
-                    for key, value in details.items():
-                        st.write(f"• **{key}:** {value}")
-                with right:
-                    st.success("Match found ✅")
+                if not details:
+                    st.error(f"❌ No specimen found for code '{code}'")
+                    st.info("Please check the code and try again. Codes are case-insensitive.")
+                else:
+                    # Display header with status
+                    if details.is_sold:
+                        st.error(f"### 🔴 Specimen {details.code} - SOLD")
+                    else:
+                        st.success(f"### 🟢 Specimen {details.code} - In Collection")
 
-        if col_clear.button("Clear", key="lookup_clear"):
-            st.rerun()
+                    # First line - Coin identification
+                    coin_description = f"{details.series} {details.year}"
+                    if details.mint_mark:
+                        coin_description += f"-{details.mint_mark}"
+                    if details.variety:
+                        coin_description += f" {details.variety}"
+
+                    st.subheader(coin_description)
+
+                    # Second line - metrics row
+                    col1, col2, col3, col4 = st.columns(4)
+
+                    with col1:
+                        if details.unit_cost:
+                            st.metric("Cost", f"${details.unit_cost:,.2f}")
+                        else:
+                            st.metric("Cost", "—")
+
+                    with col2:
+                        if details.estimated_value:
+                            st.metric("Est. Value", f"${details.estimated_value:,.2f}")
+                        else:
+                            st.metric("Est. Value", "—")
+
+                    with col3:
+                        # Show grade or "Raw"
+                        grade = details.purchase_grade_text or details.estimated_grade_text or "Raw"
+                        if details.purchase_numeric_grade:
+                            grade = f"{grade} ({details.purchase_numeric_grade})"
+                        st.metric("Grade", grade)
+
+                    with col4:
+                        # Calculate profit/loss
+                        if details.unit_cost and details.estimated_value:
+                            pl = details.estimated_value - details.unit_cost
+                            pl_pct = (pl / details.unit_cost) * 100
+                            st.metric(
+                                "P/L",
+                                f"${pl:,.2f}",
+                                f"{pl_pct:.1f}%",
+                                delta_color="normal" if pl >= 0 else "inverse"
+                            )
+                        else:
+                            st.metric("P/L", "—")
+
+                    st.divider()
+
+                    # Format details into sections
+                    from presentation.components.helpers.coin_registry_helpers import (
+                        format_specimen_full_details,
+                        create_specimen_details_dataframe
+                    )
+
+                    sections = format_specimen_full_details(details)
+
+                    # Display as expandable sections or tabs based on amount of data
+                    if len(sections) <= 3:
+                        # For few sections, show all expanded
+                        for section_name, items in sections.items():
+                            with st.expander(section_name, expanded=True):
+                                # Create a nice grid layout
+                                for i in range(0, len(items), 2):
+                                    cols = st.columns(2)
+                                    for j in range(2):
+                                        if i + j < len(items):
+                                            label, value, format_type = items[i + j]
+                                            formatted_value = format_value_for_display(value,
+                                                                                       format_type)
+                                            with cols[j]:
+                                                st.write(f"**{label}:**")
+                                                if 'colored' in format_type:
+                                                    if '🟢' in formatted_value:
+                                                        st.success(
+                                                            formatted_value.replace('🟢 ', ''))
+                                                    elif '🔴' in formatted_value:
+                                                        st.error(formatted_value.replace('🔴 ', ''))
+                                                    else:
+                                                        st.write(formatted_value)
+                                                else:
+                                                    st.write(formatted_value)
+                    else:
+                        # For many sections, use tabs
+                        tab_names = list(sections.keys())
+                        tabs = st.tabs(tab_names)
+
+                        for tab, (section_name, items) in zip(tabs, sections.items()):
+                            with tab:
+                                # Create a nice grid layout
+                                for i in range(0, len(items), 2):
+                                    cols = st.columns(2)
+                                    for j in range(2):
+                                        if i + j < len(items):
+                                            label, value, format_type = items[i + j]
+                                            formatted_value = format_value_for_display(value,
+                                                                                       format_type)
+                                            with cols[j]:
+                                                st.write(f"**{label}:**")
+                                                if 'colored' in format_type:
+                                                    if '🟢' in formatted_value:
+                                                        st.success(
+                                                            formatted_value.replace('🟢 ', ''))
+                                                    elif '🔴' in formatted_value:
+                                                        st.error(formatted_value.replace('🔴 ', ''))
+                                                    else:
+                                                        st.write(formatted_value)
+                                                else:
+                                                    st.write(formatted_value)
+
+                    # Option to view as table
+                    with st.expander("📊 View as Data Table"):
+                        df = create_specimen_details_dataframe(sections)
+                        st.dataframe(
+                            df,
+                            hide_index=True,
+                            width='stretch',
+                            column_config={
+                                "Category": st.column_config.TextColumn(width="small"),
+                                "Field": st.column_config.TextColumn(width="medium"),
+                                "Value": st.column_config.TextColumn(width="medium"),
+                            }
+                        )
+
+                        # Export button
+                        csv = df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            "📥 Export Details as CSV",
+                            data=csv,
+                            file_name=f"specimen_{code.upper()}_details.csv",
+                            mime="text/csv"
+                        )
+
+        elif search_clicked and not code:
+            st.warning("Please enter a flip code to search")
+
+    # Import helper function needed for inline formatting
+    def format_value_for_display(value, format_type):
+        """Format a value based on its type for display."""
+        if value is None or (isinstance(value, str) and value == "—"):
+            return "—"
+
+        if format_type == "currency":
+            if isinstance(value, (int, float)) and value > 0:
+                return f"${value:,.2f}"
+            return "—"
+
+        elif format_type == "currency_colored":
+            if isinstance(value, (int, float)):
+                if value > 0:
+                    return f"🟢 ${value:,.2f}"
+                elif value < 0:
+                    return f"🔴 ${abs(value):,.2f}"
+                else:
+                    return "$0.00"
+            return "—"
+
+        elif format_type == "percent_colored":
+            if isinstance(value, str) and '%' in value:
+                pct_val = float(value.replace('%', ''))
+                if pct_val > 0:
+                    return f"🟢 {value}"
+                elif pct_val < 0:
+                    return f"🔴 {value}"
+                else:
+                    return value
+            return value
+
+        elif format_type == "number":
+            if isinstance(value, (int, float)):
+                return f"{value:.1f}" if value % 1 else str(int(value))
+            return str(value)
+
+        elif format_type == "boolean":
+            return value
+
+        elif format_type == "date":
+            if value and isinstance(value, str) and len(value) >= 10:
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(value[:10])
+                    return dt.strftime("%m/%d/%Y")
+                except:
+                    return value
+            return value
+
+        elif format_type == "text_red":
+            return f"🔴 {value}"
+
+        elif format_type == "text_green":
+            return f"🟢 {value}"
+
+        else:
+            return str(value) if value else "—"
