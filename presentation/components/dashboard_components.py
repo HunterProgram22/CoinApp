@@ -134,7 +134,8 @@ class DashboardRenderer:
         gain_loss_pct = (
                     gain_loss / summary.total_cost_usd * 100) if summary.total_cost_usd > 0 else 0
 
-        col1, col2, col3, col4 = st.columns(4)
+        # First row - 3 columns
+        col1, col2, col3 = st.columns(3)
 
         with col1:
             st.metric(
@@ -151,16 +152,31 @@ class DashboardRenderer:
 
         with col3:
             st.metric(
+                "Est. Sale Proceeds",
+                f"${summary.estimated_sale_proceeds:,.2f}"
+            )
+            st.caption("90% bullion/junk, 70% numismatic")
+
+        # Second row - 3 columns
+        col4, col5, col6 = st.columns(3)
+
+        with col4:
+            st.metric(
                 "Unrealized Gain/Loss",
                 f"${gain_loss:+,.2f}",
                 delta=f"{gain_loss_pct:+.1f}%"
             )
 
-        with col4:
+        with col5:
             st.metric(
                 "Total Coins",
-                f"{summary.total_coins:,}",
-                delta=f"{summary.total_lots} lots"
+                f"{summary.total_coins:,}"
+            )
+
+        with col6:
+            st.metric(
+                "Total Lots",
+                f"{summary.total_lots:,}"
             )
 
     def render_charts_tab(self):

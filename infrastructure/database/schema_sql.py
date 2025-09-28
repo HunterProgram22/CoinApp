@@ -370,8 +370,8 @@ WITH sale_values AS (
             -- Bullion and junk silver: 90% of value
             WHEN cm.asset_category IN ('ROUND', 'BAR', 'BULLION COIN') THEN v.chosen_unit_value * 0.90
             WHEN l.valuation_method = 'MELT_ONLY' THEN v.chosen_unit_value * 0.90
-            -- All other coins: 75% of value
-            ELSE v.chosen_unit_value * 0.75
+            -- All other coins: 70% of value
+            ELSE v.chosen_unit_value * 0.70
         END as sale_proceed_per_unit
     FROM lot l
     JOIN v_lot_value_details v ON v.lot_id = l.id
