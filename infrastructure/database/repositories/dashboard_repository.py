@@ -111,3 +111,103 @@ class SQLDashboardRepository(DashboardDataRepository):
         """
         results = self.db.execute_query_all(query)
         return [SeriesRollup(**r) for r in results] if results else []
+
+    # Add these new methods to SQLDashboardRepository class
+
+    def get_portfolio_composition(self) -> Dict[str, Any]:
+        """Get portfolio composition data for charts."""
+        query = """
+            SELECT 
+                CASE 
+                    WHEN cm.asset_category IN ('ROUND', 'BAR', 'BULLION COIN') THEN 'Bullion'
+                    WHEN l.valuation_method = 'MELT_ONLY' THEN 'Junk Silver'
+                    ELSE 'Numismatic'
+                END as category,
+                ROUND(SUM(l.qty_remaining * lvd.chosen_unit_value), 2) as value
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            JOIN v_lot_value_details lvd ON lvd.lot_id = l.id
+            WHERE l.qty_remaining > 0
+            GROUP BY category
+            HAVING value > 0
+        """
+        results = self.db.execute_query_all(query)
+        return results if results else []
+
+    def get_coins_by_metal(self) -> List[Dict]:
+        """Get coin distribution by metal type."""
+        query = """
+            SELECT 
+                COALESCE(cm.metal, 'Other') as metal,
+                SUM(l.qty_remaining) as count,
+                ROUND(SUM(l.qty_remaining * lvd.chosen_unit_value), 2) as value
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            JOIN v_lot_value_details lvd ON lvd.lot_id = l.id
+            WHERE l.qty_remaining > 0
+            GROUP BY cm.metal
+            ORDER BY value DESC
+        """
+        results = self.db.execute_query_all(query)
+        return results if results else []
+
+    def get_top_series_by_value(self, limit: int = 10) -> List[Dict]:
+        """Get top coin series by total value."""
+        query = """
+            SELECT 
+                cm.series,
+                SUM(l.qty_remaining) as coins,
+                ROUND(SUM(l.qty_remaining * lvd.chosen_unit_value), 2) as total_value
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            JOIN v_lot_value_details lvd ON lvd.lot_id = l.id
+            WHERE l.qty_remaining > 0
+            GROUP BY cm.series
+            ORDER BY total_value DESC
+            LIMIT ?
+        """
+        results = self.db.execute_query_all(query, (limit,))
+        return results if results else []
+
+    def get_value_vs_cost_by_series(self) -> List[Dict]:
+        """Get value vs cost comparison by series."""
+        query = """
+            SELECT 
+                cm.series,
+                ROUND(SUM(l.qty_remaining * l.unit_cost), 2) as total_cost,
+                ROUND(SUM(l.qty_remaining * lvd.chosen_unit_value), 2) as total_value
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            JOIN v_lot_value_details lvd ON lvd.lot_id = l.id
+            WHERE l.qty_remaining > 0
+            GROUP BY cm.series
+            HAVING total_cost > 0
+            ORDER BY total_value DESC
+            LIMIT 15
+        """
+        results = self.db.execute_query_all(query)
+        return results if results else []
+
+    def get_country_distribution(self) -> List[Dict]:
+        """Get distribution of coins by country."""
+        query = """
+            SELECT 
+                cm.country,
+                COUNT(DISTINCT ct.id) as types,
+                SUM(l.qty_remaining) as coins,
+                ROUND(SUM(l.qty_remaining * lvd.chosen_unit_value), 2) as value
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            JOIN v_lot_value_details lvd ON lvd.lot_id = l.id
+            WHERE l.qty_remaining > 0
+            GROUP BY cm.country
+            HAVING coins > 0
+            ORDER BY value DESC
+        """
+        results = self.db.execute_query_all(query)
+        return results if results else []

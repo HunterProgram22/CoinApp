@@ -1,6 +1,8 @@
 # ========== dashboard_components.py ==========
 """Dashboard UI components - Single Responsibility: Rendering dashboard UI"""
 import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
 import pandas as pd
 from typing import Dict, List
 from presentation.components.helpers.dashboard_helpers import (
@@ -122,3 +124,217 @@ class DashboardRenderer:
         with st.expander("Colorized view (static table)"):
             styled_df = apply_gain_loss_styling(df_display)
             st.table(styled_df)
+
+    def render_enhanced_metrics(self):
+        """Render enhanced portfolio metrics with visual indicators."""
+        summary = self.repo.get_portfolio_summary()
+
+        # Calculate gain/loss
+        gain_loss = summary.total_estimated_value_usd - summary.total_cost_usd
+        gain_loss_pct = (
+                    gain_loss / summary.total_cost_usd * 100) if summary.total_cost_usd > 0 else 0
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric(
+                "Portfolio Value",
+                f"${summary.total_estimated_value_usd:,.2f}",
+                delta=f"{gain_loss_pct:+.1f}%" if gain_loss_pct != 0 else None
+            )
+
+        with col2:
+            st.metric(
+                "Total Cost Basis",
+                f"${summary.total_cost_usd:,.2f}"
+            )
+
+        with col3:
+            st.metric(
+                "Unrealized Gain/Loss",
+                f"${gain_loss:+,.2f}",
+                delta=f"{gain_loss_pct:+.1f}%"
+            )
+
+        with col4:
+            st.metric(
+                "Total Coins",
+                f"{summary.total_coins:,}",
+                delta=f"{summary.total_lots} lots"
+            )
+
+    def render_charts_tab(self):
+        """Render the charts tab with multiple visualizations."""
+
+        # Portfolio Composition Pie Chart
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("📊 Portfolio Composition")
+            composition = self.repo.get_portfolio_composition()
+
+            if composition:
+                df_comp = pd.DataFrame(composition)
+                fig = px.pie(
+                    df_comp,
+                    values='value',
+                    names='category',
+                    title='Portfolio by Category',
+                    color_discrete_map={
+                        'Bullion': '#FFD700',
+                        'Junk Silver': '#C0C0C0',
+                        'Numismatic': '#B87333'
+                    }
+                )
+                fig.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No data available for portfolio composition")
+
+        with col2:
+            st.subheader("🏆 Metal Distribution")
+            metals = self.repo.get_coins_by_metal()
+
+            if metals:
+                df_metals = pd.DataFrame(metals)
+                fig = px.pie(
+                    df_metals,
+                    values='value',
+                    names='metal',
+                    title='Value by Metal Type',
+                    color_discrete_map={
+                        'Au': '#FFD700',
+                        'Ag': '#C0C0C0',
+                        'Pt': '#E5E4E2',
+                        'Cu': '#B87333'
+                    }
+                )
+                fig.update_traces(
+                    textposition='inside',
+                    textinfo='percent+label',
+                    hovertemplate='%{label}<br>Value: $%{value:,.2f}<br>Count: %{customdata[0]} coins<extra></extra>',
+                    customdata=df_metals[['count']]
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No metal data available")
+
+        # Top Series Bar Chart
+        st.subheader("💰 Top 10 Series by Value")
+        top_series = self.repo.get_top_series_by_value(10)
+
+        if top_series:
+            df_series = pd.DataFrame(top_series)
+            fig = px.bar(
+                df_series,
+                x='total_value',
+                y='series',
+                orientation='h',
+                title='Most Valuable Series in Collection',
+                labels={'total_value': 'Total Value (USD)', 'series': 'Series'},
+                text='total_value',
+                color='total_value',
+                color_continuous_scale='Blues'
+            )
+            fig.update_traces(
+                texttemplate='$%{text:,.0f}',
+                textposition='inside',
+                hovertemplate='%{y}<br>Value: $%{x:,.2f}<br>Coins: %{customdata[0]}<extra></extra>',
+                customdata=df_series[['coins']]
+            )
+            fig.update_layout(showlegend=False, height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No series data available")
+
+        # Value vs Cost Comparison
+        st.subheader("📈 Value vs Cost Analysis")
+        value_cost = self.repo.get_value_vs_cost_by_series()
+
+        if value_cost:
+            df_vc = pd.DataFrame(value_cost)
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                name='Cost Basis',
+                x=df_vc['series'],
+                y=df_vc['total_cost'],
+                marker_color='lightgray'
+            ))
+            fig.add_trace(go.Bar(
+                name='Current Value',
+                x=df_vc['series'],
+                y=df_vc['total_value'],
+                marker_color='green'
+            ))
+
+            fig.update_layout(
+                title='Cost Basis vs Current Value by Series',
+                xaxis_title='Series',
+                yaxis_title='Value (USD)',
+                barmode='group',
+                height=400,
+                xaxis={'tickangle': -45}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No value/cost data available")
+
+        # Country Distribution for World Coins
+        st.subheader("🌍 Geographic Distribution")
+        countries = self.repo.get_country_distribution()
+
+        if countries and len(countries) > 1:  # Only show if more than just USA
+            df_countries = pd.DataFrame(countries)
+
+            # Create two columns for the country data
+            col1, col2 = st.columns([2, 1])
+
+            with col1:
+                # Bar chart for top countries
+                fig = px.bar(
+                    df_countries.head(10),
+                    x='country',
+                    y='value',
+                    title='Top Countries by Value',
+                    labels={'value': 'Total Value (USD)', 'country': 'Country'},
+                    color='coins',
+                    color_continuous_scale='Viridis'
+                )
+                fig.update_layout(height=350)
+                st.plotly_chart(fig, use_container_width=True)
+
+            with col2:
+                # Summary metrics
+                st.metric("Countries", len(df_countries))
+                st.metric("Non-US Coins",
+                          df_countries[df_countries['country'] != 'USA']['coins'].sum())
+                non_us_value = df_countries[df_countries['country'] != 'USA']['value'].sum()
+                st.metric("Non-US Value", f"${non_us_value:,.2f}")
+        else:
+            st.info("No country distribution data available")
+
+        # Quick Stats Summary
+        st.subheader("📊 Quick Statistics")
+        col1, col2, col3 = st.columns(3)
+
+        summary = self.repo.get_portfolio_summary()
+        metals = self.repo.get_coins_by_metal()
+
+        with col1:
+            if summary.total_coins > 0:
+                avg_value = summary.total_estimated_value_usd / summary.total_coins
+                st.metric("Average Coin Value", f"${avg_value:.2f}")
+
+        with col2:
+            if metals:
+                precious_metals = ['Au', 'Ag', 'Pt', 'Pd']
+                precious_value = sum(
+                    m['value'] for m in metals if m['metal'] in precious_metals)
+                st.metric("Precious Metals Value", f"${precious_value:,.2f}")
+
+        with col3:
+            if summary.total_cost_usd > 0:
+                roi = ((
+                                   summary.total_estimated_value_usd - summary.total_cost_usd) / summary.total_cost_usd) * 100
+                st.metric("Return on Investment", f"{roi:+.1f}%")

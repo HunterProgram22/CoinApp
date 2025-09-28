@@ -27,16 +27,20 @@ renderer = get_dashboard_dependencies()
 # === Tab Navigation ===
 tabs = st.tabs([
     "📊 Overview",
-    "📚 Series Summary"
+    "📚 Series Summary",
+    "📈 Charts & Analytics",
 ])
 
 with tabs[0]:
-    renderer.render_portfolio_overview()
+    renderer.render_enhanced_metrics()
 
-    # ---- Custom cards/widgets can be added here ----
+    st.divider()
 
     spot_prices = renderer.render_spot_prices()
     renderer.render_silver_melt_reference(spot_prices)
 
 with tabs[1]:
     renderer.render_series_summary()
+
+with tabs[2]:
+    renderer.render_charts_tab()
