@@ -203,7 +203,7 @@ class DashboardRenderer:
                     }
                 )
                 fig.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             else:
                 st.info("No data available for portfolio composition")
 
@@ -231,7 +231,7 @@ class DashboardRenderer:
                     hovertemplate='%{label}<br>Value: $%{value:,.2f}<br>Count: %{customdata[0]} coins<extra></extra>',
                     customdata=df_metals[['count']]
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             else:
                 st.info("No metal data available")
 
@@ -259,7 +259,7 @@ class DashboardRenderer:
                 customdata=df_series[['coins']]
             )
             fig.update_layout(showlegend=False, height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("No series data available")
 
@@ -292,7 +292,7 @@ class DashboardRenderer:
                 height=400,
                 xaxis={'tickangle': -45}
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("No value/cost data available")
 
@@ -318,7 +318,7 @@ class DashboardRenderer:
                     color_continuous_scale='Viridis'
                 )
                 fig.update_layout(height=350)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
             with col2:
                 # Summary metrics
