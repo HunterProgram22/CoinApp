@@ -517,6 +517,7 @@ class TransactionRepository(TransactionDataRepository):
 
                 # Map the fields appropriately
                 lot_field_map = {
+                    'unit_price': 'unit_cost',
                     'grade_company': 'purchase_grade_company',
                     'grade_text': 'purchase_grade_text',
                     'numeric_grade': 'purchase_numeric_grade',
