@@ -466,6 +466,15 @@ class TransactionRepository(TransactionDataRepository):
             """, (header.tx_date, party_id, header.currency, header.shipping,
                   header.tax, header.fees, header.notes, tx_id))
 
+            # **FIX: Update lot acquired_date to match the new tx_date**
+            execute_update("""
+                UPDATE lot 
+                SET acquired_date = ?
+                WHERE acquisition_line_id IN (
+                    SELECT id FROM tx_line WHERE tx_id = ?
+                )
+            """, (header.tx_date, tx_id))
+
             return True
         except Exception as e:
             print(f"Failed to update transaction: {e}")
