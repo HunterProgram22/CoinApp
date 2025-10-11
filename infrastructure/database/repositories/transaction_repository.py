@@ -81,6 +81,13 @@ class TransactionDataRepository(ABC):
         pass
 
     @abstractmethod
+    def search_transactions_for_edit(self, date_from: Optional[date], date_to: Optional[date],
+                                     tx_types: Optional[List[str]], party: Optional[str],
+                                     search_text: Optional[str]) -> List[TransactionHeader]:
+        """Search transactions for editing with filters"""
+        pass
+
+    @abstractmethod
     def check_inventory_availability(self, coin_type_id: int,
                                      quantity: int) -> Tuple[bool, str, List[InventoryLot]]:
         """Check if enough inventory is available for sale"""
@@ -204,6 +211,81 @@ class TransactionRepository(TransactionDataRepository):
         except Exception as e:
             print(f"Error searching transactions: {e}")
             return pd.DataFrame()
+
+    def search_transactions_for_edit(self, date_from: Optional[date] = None,
+                                     date_to: Optional[date] = None,
+                                     tx_types: Optional[List[str]] = None,
+                                     party: Optional[str] = None,
+                                     search_text: Optional[str] = None) -> List[TransactionHeader]:
+        """Search transactions for editing with filters"""
+        try:
+            from infrastructure.database.db_operations import execute_query_all
+
+            conditions = []
+            params = []
+
+            if date_from and date_to:
+                conditions.append("DATE(t.tx_date) BETWEEN DATE(?) AND DATE(?)")
+                params.extend([date_from.isoformat(), date_to.isoformat()])
+
+            if tx_types and len(tx_types) < 2:  # Only filter if not both BUY and SELL
+                conditions.append("t.tx_type = ?")
+                params.append(tx_types[0])
+
+            if party:
+                conditions.append("COALESCE(p.name, '') = ?")
+                params.append(party)
+
+            if search_text:
+                search_pattern = f"%{search_text.strip()}%"
+                conditions.append(
+                    "(cm.series LIKE ? OR ct.variety LIKE ? OR "
+                    "COALESCE(p.name, '') LIKE ? OR COALESCE(t.notes, '') LIKE ?)"
+                )
+                params.extend([search_pattern] * 4)
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+            query = f"""
+                SELECT 
+                    t.id, t.tx_date, t.tx_type, 
+                    COALESCE(p.name, '') AS party,
+                    t.currency, t.shipping, t.tax, t.fees, t.notes,
+                    COUNT(DISTINCT tl.id) AS line_count,
+                    SUM(ABS(tl.quantity)) AS total_quantity
+                FROM tx t
+                LEFT JOIN party p ON p.id = t.party_id
+                LEFT JOIN tx_line tl ON tl.tx_id = t.id
+                LEFT JOIN coin_type ct ON ct.id = tl.coin_type_id
+                LEFT JOIN coin_master cm ON cm.id = ct.master_id
+                {where_clause}
+                GROUP BY t.id, t.tx_date, t.tx_type, p.name, t.currency, 
+                         t.shipping, t.tax, t.fees, t.notes
+                ORDER BY t.tx_date DESC, t.id DESC
+            """
+
+            results = execute_query_all(query, tuple(params))
+
+            transactions = []
+            for r in results:
+                transactions.append(TransactionHeader(
+                    id=r['id'],
+                    tx_date=r['tx_date'],
+                    tx_type=r['tx_type'],
+                    party_name=r['party'] or '',
+                    currency=r['currency'],
+                    shipping=float(r['shipping'] or 0),
+                    tax=float(r['tax'] or 0),
+                    fees=float(r['fees'] or 0),
+                    notes=r['notes'],
+                    line_count=r['line_count'],
+                    total_quantity=r['total_quantity']
+                ))
+
+            return transactions
+        except Exception as e:
+            print(f"Error searching transactions for edit: {e}")
+            return []
 
     def check_inventory_availability(self, coin_type_id: int,
                                      quantity: int) -> Tuple[bool, str, List[InventoryLot]]:

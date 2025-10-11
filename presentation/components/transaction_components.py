@@ -491,27 +491,99 @@ class TransactionRenderer:
             st.error(f"Error saving transaction: {e}")
 
     def render_edit_transaction_tab(self):
-        """Render the Edit Transaction tab"""
-        st.subheader("Select Transaction to Edit")
+        """Render the Edit Transaction tab with search filters"""
+        st.subheader("Find Transaction to Edit")
 
-        transactions = self.repository.get_recent_transactions(100)
+        # Search filters
+        col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
 
-        if not transactions:
-            st.info("No transactions found.")
-            return
-
-        # Create display options
-        selected_idx = st.selectbox(
-            "Select transaction",
-            range(len(transactions)),
-            format_func=lambda x: format_transaction_label(transactions[x]),
-            key="tx_select"
+        preset = col1.selectbox(
+            "Quick range",
+            ["30d", "90d", "YTD", "1y", "All"],
+            index=2,  # Default to YTD
+            key="tx_edit_preset"
         )
 
-        selected_tx_id = transactions[selected_idx].id
+        start_dt, end_dt = calculate_date_range(preset)
+
+        if preset != "All":
+            start_dt = col2.date_input("Start", value=start_dt, key="tx_edit_start")
+            end_dt = col3.date_input("End", value=end_dt, key="tx_edit_end")
+        else:
+            start_dt = col2.date_input(
+                "Start",
+                value=date.today() - timedelta(days=365 * 5),
+                key="tx_edit_start"
+            )
+            end_dt = col3.date_input("End", value=date.today(), key="tx_edit_end")
+
+        tx_types = col4.multiselect(
+            "Type",
+            ["BUY", "SELL"],
+            default=["BUY", "SELL"],
+            key="tx_edit_types"
+        )
+
+        col5, col6, col7 = st.columns([2, 2, 2])
+
+        parties = self.repository.get_parties()
+        party_selection = col5.selectbox(
+            "Party (optional)",
+            ["(any)"] + parties,
+            index=0,
+            key="tx_edit_party"
+        )
+        party = None if party_selection == "(any)" else party_selection
+
+        search_text = col6.text_input(
+            "Search text",
+            key="tx_edit_search",
+            placeholder="series, variety, notes..."
+        )
+
+        run_search = col7.button("🔍 Search", type="primary", key="tx_edit_run")
+
+        # Store search results in session state
+        if 'edit_search_results' not in st.session_state:
+            st.session_state.edit_search_results = None
+
+        if run_search:
+            # Handle "All" preset
+            if preset == "All":
+                search_start, search_end = None, None
+            else:
+                search_start, search_end = start_dt, end_dt
+
+            # Get matching transactions
+            st.session_state.edit_search_results = self.repository.search_transactions_for_edit(
+                search_start, search_end, tx_types, party, search_text
+            )
 
         st.divider()
-        self._render_transaction_editor(selected_tx_id)
+
+        # Show results and selection
+        if st.session_state.edit_search_results is not None:
+            transactions = st.session_state.edit_search_results
+
+            if not transactions:
+                st.info("No transactions matched your filters. Try adjusting your search criteria.")
+            else:
+                st.success(f"Found {len(transactions)} transaction(s)")
+
+                # Transaction selector
+                selected_idx = st.selectbox(
+                    "Select transaction to edit:",
+                    range(len(transactions)),
+                    format_func=lambda x: format_transaction_label(transactions[x]),
+                    key="tx_edit_select"
+                )
+
+                selected_tx_id = transactions[selected_idx].id
+
+                st.divider()
+                self._render_transaction_editor(selected_tx_id)
+        else:
+            st.info("👆 Use the filters above to search for a transaction to edit")
 
     def _render_transaction_editor(self, tx_id: int):
         """Render the transaction editing interface"""
