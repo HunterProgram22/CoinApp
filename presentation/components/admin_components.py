@@ -163,6 +163,7 @@ class AdminRenderer:
                 except Exception as e:
                     st.error(f"Reset failed: {e}")
 
+
     def _render_weight_helper(self):
         """Render weight conversion helper"""
         with st.expander("Weight Conversion Helper"):
