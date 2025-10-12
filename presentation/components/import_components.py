@@ -28,7 +28,7 @@ class ImportRenderer:
             df = read_uploaded_file(uploaded)
 
             st.write("**Preview**")
-            st.dataframe(df.head(20), use_container_width=True)
+            st.dataframe(df.head(20), width='stretch')
 
             importer = TransactionImporter(df)
 
@@ -65,7 +65,7 @@ class ImportRenderer:
             src_df = read_uploaded_file(uploaded)
 
             st.write("**Preview**")
-            st.dataframe(src_df.head(20), use_container_width=True)
+            st.dataframe(src_df.head(20), width='stretch')
 
             src_cols = ["(none)"] + list(src_df.columns)
 
@@ -122,7 +122,7 @@ class ImportRenderer:
 
         if cm_file is not None:
             df = read_uploaded_file(cm_file)
-            st.dataframe(df.head(20), use_container_width=True)
+            st.dataframe(df.head(20), width='stretch')
 
             # Validate data
             validation = self.repository.validate_master_data(df)
@@ -161,7 +161,7 @@ class ImportRenderer:
 
         if ct_file is not None:
             df = read_uploaded_file(ct_file)
-            st.dataframe(df.head(20), use_container_width=True)
+            st.dataframe(df.head(20), width='stretch')
 
             # Validate data
             validation = self.repository.validate_type_data(df)

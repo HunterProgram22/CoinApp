@@ -223,7 +223,7 @@ class TransactionRenderer:
             else:
                 self._save_sell_transaction(tx_date, party_name, currency, shipping, tax, fees,
                                             notes)
-    
+                
     def render_add_transaction_tab(self):
         """Render the Add Transaction tab"""
         try:
