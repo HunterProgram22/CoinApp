@@ -1,4 +1,4 @@
-# db_turso.py - Turso Database Connection (HTTP Mode)
+# db.py - Turso Database Connection (HTTP Mode)
 """Database connection module with Turso support using HTTP."""
 
 import os
@@ -17,8 +17,7 @@ except ImportError:
 # Database configuration
 DEFAULT_DB_PATH = "data/coinapp.sqlite"
 DB_TYPE = "turso"
-# Export DB_PATH for backward compatibility (even though we use Turso now)
-DB_PATH = Path(DEFAULT_DB_PATH)
+
 
 def get_secret(name: str, default=None):
     """Get configuration value from environment or Streamlit secrets."""
@@ -36,8 +35,8 @@ def get_secret(name: str, default=None):
                 return getattr(st.secrets, name)
         except (KeyError, AttributeError, FileNotFoundError):
             pass
-        except Exception as e:
-            print(f"Warning: Error reading secret '{name}': {e}")
+        except Exception:
+            pass
 
     return default
 
@@ -49,23 +48,12 @@ def get_turso_config():
 
     # Convert WebSocket URL to HTTP if needed
     if url:
-        # Replace wss:// or ws:// with https:// or http://
         if url.startswith("libsql://"):
-            # libsql:// should work as-is, but we'll convert to https:// for HTTP mode
             url = url.replace("libsql://", "https://")
         elif url.startswith("wss://"):
             url = url.replace("wss://", "https://")
         elif url.startswith("ws://"):
             url = url.replace("ws://", "http://")
-
-        print(f"✓ Turso URL (HTTP mode): {url[:40]}...")
-    else:
-        print("✗ TURSO_DATABASE_URL not found")
-
-    if token:
-        print(f"✓ Found TURSO_AUTH_TOKEN: {token[:20]}...")
-    else:
-        print("✗ TURSO_AUTH_TOKEN not found")
 
     return {'url': url, 'auth_token': token}
 
@@ -88,6 +76,9 @@ class TursoConnection:
 
     def execute(self, sql: str, params=None):
         """Execute a SQL statement."""
+        if self._closed:
+            raise Exception("Cannot execute on a closed connection")
+
         if params is None:
             params = []
 
@@ -95,11 +86,17 @@ class TursoConnection:
         if isinstance(params, tuple):
             params = list(params)
 
+        # Handle transaction control statements (Turso auto-commits)
+        sql_upper = sql.strip().upper()
+        if sql_upper in ('BEGIN', 'COMMIT', 'ROLLBACK', 'BEGIN TRANSACTION'):
+            # Return a dummy cursor for transaction control statements
+            return TursoCursor(None, self._row_factory)
+
         try:
             result = self.client.execute(sql, params)
             return TursoCursor(result, self._row_factory)
         except Exception as e:
-            raise Exception(f"Turso execute error: {e}")
+            raise Exception(f"Turso execute error: {type(e).__name__}: {str(e)}")
 
     def executescript(self, sql_script: str):
         """Execute multiple SQL statements."""
@@ -126,7 +123,7 @@ class TursoConnection:
         return TursoCursor(results[-1] if results else None, self._row_factory)
 
     def commit(self):
-        """Commit (no-op for Turso)."""
+        """Commit (no-op for Turso - auto-commits)."""
         pass
 
     def close(self):
@@ -135,15 +132,15 @@ class TursoConnection:
             try:
                 self.client.close()
                 self._closed = True
-            except Exception as e:
-                print(f"Warning: Error closing Turso connection: {e}")
+            except Exception:
+                pass
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.commit()
-        self.close()  # Explicitly close on exit
+        self.close()
         return False
 
     def __del__(self):
@@ -158,33 +155,33 @@ class TursoCursor:
     def __init__(self, result, row_factory):
         self.result = result
         self.row_factory = row_factory
-        self._rows = None
+        self._rows = []
         self._current_index = 0
 
-        if result:
-            # Convert Turso result to list (only for SELECT queries)
-            self._rows = []
+        try:
+            if result is None:
+                return
+
             # Check if this is a SELECT result with rows
-            try:
-                if hasattr(result, 'rows') and result.rows is not None:
-                    columns = getattr(result, 'columns', [])
-                    for row_data in result.rows:
-                        if self.row_factory:
-                            self._rows.append(TursoRow(columns, row_data))
-                        else:
-                            self._rows.append(tuple(row_data))
-            except (AttributeError, TypeError, KeyError):
-                # For INSERT/UPDATE/DELETE, result might not have rows
-                # This is fine - just leave _rows as empty list
-                pass
+            if hasattr(result, 'rows') and result.rows is not None:
+                columns = getattr(result, 'columns', [])
+                for row_data in result.rows:
+                    if self.row_factory:
+                        self._rows.append(TursoRow(columns, row_data))
+                    else:
+                        self._rows.append(tuple(row_data))
+        except Exception:
+            # Initialize with empty list if any error occurs
+            self._rows = []
 
     @property
     def rowcount(self):
         """Return number of affected rows."""
         try:
-            if self.result and hasattr(self.result, 'rows_affected'):
+            # CRITICAL: Check if result is not None, not if result is truthy
+            if self.result is not None and hasattr(self.result, 'rows_affected'):
                 return self.result.rows_affected
-        except (AttributeError, TypeError):
+        except Exception:
             pass
         return -1
 
@@ -192,9 +189,12 @@ class TursoCursor:
     def lastrowid(self):
         """Return last inserted row ID."""
         try:
-            if self.result and hasattr(self.result, 'last_insert_rowid'):
-                return self.result.last_insert_rowid
-        except (AttributeError, TypeError):
+            # CRITICAL: Check if result is not None, not if result is truthy
+            # The Turso ResultSet has a __bool__ that returns False
+            if self.result is not None:
+                if hasattr(self.result, 'last_insert_rowid'):
+                    return self.result.last_insert_rowid
+        except Exception:
             pass
         return None
 
@@ -254,23 +254,17 @@ def get_conn():
     """Get a database connection (Turso or SQLite)."""
     db_type = get_secret("DB_TYPE", DB_TYPE)
 
-    print(f"DB_TYPE: {db_type}")
-
     if db_type == "turso":
         config = get_turso_config()
 
         if not config['url'] or not config['auth_token']:
-            error_msg = "Turso credentials not found. Check secrets.toml:\n"
-            error_msg += "  DB_TYPE = \"turso\"\n"
-            error_msg += "  TURSO_DATABASE_URL = \"libsql://...\"\n"
-            error_msg += "  TURSO_AUTH_TOKEN = \"your-token\"\n"
-            raise ValueError(error_msg)
+            raise ValueError(
+                "Turso credentials not found. Set DB_TYPE, TURSO_DATABASE_URL, "
+                "and TURSO_AUTH_TOKEN in secrets.toml or environment variables."
+            )
 
         try:
-            print(f"Connecting to Turso via HTTP: {config['url'][:50]}...")
-
             # Create client using HTTP mode (sync)
-            # The key is to use the converted HTTPS URL
             client = libsql_client.create_client_sync(
                 url=config['url'],
                 auth_token=config['auth_token']
@@ -279,26 +273,13 @@ def get_conn():
             conn = TursoConnection(client)
             conn.row_factory = True
 
-            print("✓ Turso connection created")
-
-            # Test the connection
-            try:
-                test_result = conn.execute("SELECT 1 as test")
-                test_row = test_result.fetchone()
-                print(f"✓ Test query successful: {test_row}")
-            except Exception as e:
-                print(f"⚠ Test query failed: {e}")
-                raise
-
             return conn
 
         except Exception as e:
-            print(f"✗ Connection failed: {type(e).__name__}: {e}")
             raise Exception(f"Failed to connect to Turso: {e}")
 
     else:
         # Use local SQLite
-        print("Using SQLite")
         import sqlite3
         db_path = Path(get_secret("COINAPP_DB_PATH", DEFAULT_DB_PATH))
         db_path.parent.mkdir(parents=True, exist_ok=True)
