@@ -119,50 +119,93 @@ class AdminRenderer:
     def render_database_tab(self):
         """Render Database Management tab"""
         st.subheader("Database Management")
-        from infrastructure.database.db import DB_PATH, get_secret
+
+        from infrastructure.database.db import get_secret, create_backup_data, get_backup_filename
 
         db_type = get_secret("DB_TYPE", "sqlite")
 
         if db_type == "turso":
-            st.info("🌩️ Using Turso Cloud Database")
-            turso_url = get_secret("TURSO_DATABASE_URL", "Not configured")
-            st.caption(f"Database: `{turso_url}`")
+            # Turso database - show instructions
+            st.info("🌐 **Connected to Turso Cloud Database**")
+
+            st.markdown("### Database Operations")
+            st.write("For Turso database operations, use the Turso CLI:")
+
+            with st.expander("📥 Backup Database"):
+                st.code("""
+    # Export database to SQL file
+    turso db shell cointracker-db .dump > backup.sql
+
+    # Or export to a local SQLite file
+    turso db shell cointracker-db .backup backup.db
+                """, language="bash")
+
+            with st.expander("📊 View Database Info"):
+                st.code("""
+    # Show database information
+    turso db show cointracker-db
+
+    # List all databases
+    turso db list
+                """, language="bash")
+
+            with st.expander("🔗 Database URL & Token"):
+                st.code("""
+    # Get database URL
+    turso db show cointracker-db --url
+
+    # Create a new auth token
+    turso db tokens create cointracker-db
+                """, language="bash")
+
+            st.markdown("### Learn More")
+            st.markdown("""
+            - [Turso CLI Documentation](https://docs.turso.tech/cli/introduction)
+            - [Turso Dashboard](https://turso.tech/app)
+            """)
+
         else:
-            st.caption(f"Database location: `{DB_PATH}`")
+            # SQLite database - show backup/restore
+            try:
+                from pathlib import Path
+                db_path = Path(get_secret("COINAPP_DB_PATH", "data/coinapp.sqlite"))
+                st.caption(f"Database location: `{db_path}`")
+            except Exception:
+                st.caption("Local SQLite database")
 
-        col1, col2 = st.columns(2)
+            col1, col2 = st.columns(2)
 
-        with col1:
-            st.markdown("### Backup")
-            st.write("Download a complete backup of your database.")
+            with col1:
+                st.markdown("### 📥 Backup")
+                st.write("Download a complete backup of your database.")
 
-            if st.button("Create Backup", type="primary"):
-                try:
-                    backup_data = create_backup_data()
-                    st.download_button(
-                        label="📥 Download Backup",
-                        data=backup_data,
-                        file_name=get_backup_filename(),
-                        mime="application/octet-stream",
-                        width='stretch'
-                    )
-                except Exception as e:
-                    st.error(f"Backup failed: {e}")
+                if st.button("Create Backup", type="primary"):
+                    try:
+                        backup_data = create_backup_data()
+                        st.download_button(
+                            label="📥 Download Backup",
+                            data=backup_data,
+                            file_name=get_backup_filename(),
+                            mime="application/octet-stream",
+                            use_container_width=True
+                        )
+                        st.success("Backup created successfully!")
+                    except Exception as e:
+                        st.error(f"Backup failed: {e}")
 
-        with col2:
-            st.markdown("### Reset Database")
-            st.warning("⚠️ This will delete ALL data and cannot be undone!")
+            with col2:
+                st.markdown("### ⚠️ Reset Database")
+                st.warning("This will delete ALL data and cannot be undone!")
 
-            confirm = st.checkbox("I understand this will delete all data")
+                confirm = st.checkbox("I understand this will delete all data")
 
-            if st.button("🔥 Reset Database", type="primary", disabled=not confirm):
-                try:
-                    self.repository.reset_database()
-                    st.success("Database reset complete!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Reset failed: {e}")
-
+                if st.button("🔥 Reset Database", type="primary", disabled=not confirm):
+                    try:
+                        self.repository.reset_database()
+                        st.success("Database reset complete!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Reset failed: {e}")
 
     def _render_weight_helper(self):
         """Render weight conversion helper"""
