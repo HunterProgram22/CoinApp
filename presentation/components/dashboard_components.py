@@ -239,28 +239,94 @@ class DashboardRenderer:
                 )
                 fig.update_traces(
                     textposition='inside',
-                    textinfo='percent+label'
+                    textinfo='percent+label',
+                    hovertemplate='%{label}<br>Value: $%{value:,.2f}<br>Count: %{customdata[0]} coins<extra></extra>',
+                    customdata=df_metals[['count']]
                 )
                 st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("No metal distribution data available")
+                st.info("No metal data available")
 
-        # Country Distribution
-        st.subheader("🌍 Country Distribution")
+        # Top Series Bar Chart
+        st.subheader("💰 Top 10 Series by Value")
+        top_series = self.repo.get_top_series_by_value(10)
+
+        if top_series:
+            df_series = pd.DataFrame(top_series)
+            fig = px.bar(
+                df_series,
+                x='total_value',
+                y='series',
+                orientation='h',
+                title='Most Valuable Series in Collection',
+                labels={'total_value': 'Total Value (USD)', 'series': 'Series'},
+                text='total_value',
+                color='total_value',
+                color_continuous_scale='Blues'
+            )
+            fig.update_traces(
+                texttemplate='$%{text:,.0f}',
+                textposition='inside',
+                hovertemplate='%{y}<br>Value: $%{x:,.2f}<br>Coins: %{customdata[0]}<extra></extra>',
+                customdata=df_series[['coins']]
+            )
+            fig.update_layout(showlegend=False, height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No series data available")
+
+        # Value vs Cost Comparison
+        st.subheader("📈 Value vs Cost Analysis")
+        value_cost = self.repo.get_value_vs_cost_by_series()
+
+        if value_cost:
+            df_vc = pd.DataFrame(value_cost)
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                name='Cost Basis',
+                x=df_vc['series'],
+                y=df_vc['total_cost'],
+                marker_color='lightgray'
+            ))
+            fig.add_trace(go.Bar(
+                name='Current Value',
+                x=df_vc['series'],
+                y=df_vc['total_value'],
+                marker_color='green'
+            ))
+
+            fig.update_layout(
+                title='Cost Basis vs Current Value by Series',
+                xaxis_title='Series',
+                yaxis_title='Value (USD)',
+                barmode='group',
+                height=400,
+                xaxis={'tickangle': -45}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No value/cost data available")
+
+        # Country Distribution for World Coins
+        st.subheader("🌍 Geographic Distribution")
         countries = self.repo.get_coins_by_country()
 
-        if countries:
+        if countries and len(countries) > 1:  # Only show if more than just USA
             df_countries = pd.DataFrame(countries)
 
+            # Create two columns for the country data
             col1, col2 = st.columns([2, 1])
 
             with col1:
-                fig = px.treemap(
-                    df_countries,
-                    path=['country'],
-                    values='value',
-                    title='Portfolio by Country',
-                    color='value',
+                # Bar chart for top countries
+                fig = px.bar(
+                    df_countries.head(10),
+                    x='country',
+                    y='value',
+                    title='Top Countries by Value',
+                    labels={'value': 'Total Value (USD)', 'country': 'Country'},
+                    color='coins',
                     color_continuous_scale='Viridis'
                 )
                 fig.update_layout(height=350)

@@ -87,9 +87,6 @@ class TursoConnection:
 
     def execute(self, sql: str, params=None):
         """Execute a SQL statement."""
-        if self._closed:
-            raise Exception("Cannot execute on a closed connection")
-
         if params is None:
             params = []
 
@@ -164,28 +161,40 @@ class TursoCursor:
         self._current_index = 0
 
         if result:
-            # Convert Turso result to list
+            # Convert Turso result to list (only for SELECT queries)
             self._rows = []
-            if hasattr(result, 'rows') and result.rows:
-                columns = result.columns if hasattr(result, 'columns') else []
-                for row_data in result.rows:
-                    if self.row_factory:
-                        self._rows.append(TursoRow(columns, row_data))
-                    else:
-                        self._rows.append(tuple(row_data))
+            # Check if this is a SELECT result with rows
+            try:
+                if hasattr(result, 'rows') and result.rows is not None:
+                    columns = getattr(result, 'columns', [])
+                    for row_data in result.rows:
+                        if self.row_factory:
+                            self._rows.append(TursoRow(columns, row_data))
+                        else:
+                            self._rows.append(tuple(row_data))
+            except (AttributeError, TypeError, KeyError):
+                # For INSERT/UPDATE/DELETE, result might not have rows
+                # This is fine - just leave _rows as empty list
+                pass
 
     @property
     def rowcount(self):
         """Return number of affected rows."""
-        if self.result and hasattr(self.result, 'rows_affected'):
-            return self.result.rows_affected
+        try:
+            if self.result and hasattr(self.result, 'rows_affected'):
+                return self.result.rows_affected
+        except (AttributeError, TypeError):
+            pass
         return -1
 
     @property
     def lastrowid(self):
         """Return last inserted row ID."""
-        if self.result and hasattr(self.result, 'last_insert_rowid'):
-            return self.result.last_insert_rowid
+        try:
+            if self.result and hasattr(self.result, 'last_insert_rowid'):
+                return self.result.last_insert_rowid
+        except (AttributeError, TypeError):
+            pass
         return None
 
     def fetchone(self):
