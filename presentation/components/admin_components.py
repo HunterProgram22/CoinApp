@@ -119,8 +119,16 @@ class AdminRenderer:
     def render_database_tab(self):
         """Render Database Management tab"""
         st.subheader("Database Management")
-        from infrastructure.database.db import DB_PATH
-        st.caption(f"Database location: `{DB_PATH}`")
+        from infrastructure.database.db import DB_PATH, get_secret
+
+        db_type = get_secret("DB_TYPE", "sqlite")
+
+        if db_type == "turso":
+            st.info("🌩️ Using Turso Cloud Database")
+            turso_url = get_secret("TURSO_DATABASE_URL", "Not configured")
+            st.caption(f"Database: `{turso_url}`")
+        else:
+            st.caption(f"Database location: `{DB_PATH}`")
 
         col1, col2 = st.columns(2)
 

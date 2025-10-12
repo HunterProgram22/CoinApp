@@ -17,7 +17,8 @@ except ImportError:
 # Database configuration
 DEFAULT_DB_PATH = "data/coinapp.sqlite"
 DB_TYPE = "turso"
-
+# Export DB_PATH for backward compatibility (even though we use Turso now)
+DB_PATH = Path(DEFAULT_DB_PATH)
 
 def get_secret(name: str, default=None):
     """Get configuration value from environment or Streamlit secrets."""
