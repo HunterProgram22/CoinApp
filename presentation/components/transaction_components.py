@@ -15,6 +15,34 @@ from core.constants import GRADE_COMPANIES, VALUATION_METHODS
 from core.queries import create_buy_transaction, create_sell_transaction
 
 
+# Cache decorator for expensive queries
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def get_cached_coin_types(repo_id):
+    """Cache coin types to avoid repeated queries - ttl=300 means refresh every 5 minutes"""
+    from infrastructure.database.database_executor import DatabaseExecutor
+    from infrastructure.database.repositories.transaction_repository import TransactionRepository
+    repo = TransactionRepository(DatabaseExecutor())
+    return repo.get_all_coin_types()
+
+
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def get_cached_storage_locations(repo_id):
+    """Cache storage locations to avoid repeated queries"""
+    from infrastructure.database.database_executor import DatabaseExecutor
+    from infrastructure.database.repositories.transaction_repository import TransactionRepository
+    repo = TransactionRepository(DatabaseExecutor())
+    return repo.get_storage_locations()
+
+
+@st.cache_data(ttl=60)  # Cache for 1 minute (shorter since this might change frequently)
+def get_cached_parties(repo_id):
+    """Cache parties list to avoid repeated queries"""
+    from infrastructure.database.database_executor import DatabaseExecutor
+    from infrastructure.database.repositories.transaction_repository import TransactionRepository
+    repo = TransactionRepository(DatabaseExecutor())
+    return repo.get_parties()
+
+
 class TransactionRenderer:
     """UI rendering for transactions with dependency injection"""
 
@@ -98,36 +126,17 @@ class TransactionRenderer:
                     mime="text/csv"
                 )
 
-    def render_add_transaction_tab(self):
-        """Render the Add Transaction tab"""
-        try:
-            tx_mode = st.segmented_control(
-                "Transaction Type",
-                options=["BUY", "SELL"],
-                default="BUY",
-                key="tx_mode"
-            )
-        except AttributeError:
-            tx_mode = st.radio(
-                "Transaction Type",
-                ["BUY", "SELL"],
-                index=0,
-                horizontal=True,
-                key="tx_mode"
-            )
-
-        if tx_mode == "BUY":
-            self._render_buy_form()
-        else:
-            self._render_sell_form()
-
     def _render_buy_form(self):
         """Render the buy transaction form"""
         # Ensure session state is initialized at the start of the method
         if 'buy_line_items' not in st.session_state:
             st.session_state.buy_line_items = []
-        coin_types = self.repository.get_all_coin_types()
-        storage_options = self.repository.get_storage_locations()
+
+        # USE CACHED DATA - this is the key change!
+        # Use a unique repo ID to cache per instance
+        repo_id = id(self.repository)
+        coin_types = get_cached_coin_types(repo_id)
+        storage_options = get_cached_storage_locations(repo_id)
 
         # Transaction Header
         st.subheader("Transaction Details")
@@ -172,7 +181,10 @@ class TransactionRenderer:
         # Ensure session state is initialized at the start of the method
         if 'sell_line_items' not in st.session_state:
             st.session_state.sell_line_items = []
-        coin_types = self.repository.get_all_coin_types()
+
+        # USE CACHED DATA - this is the key change!
+        repo_id = id(self.repository)
+        coin_types = get_cached_coin_types(repo_id)
 
         # Transaction Header
         st.subheader("Transaction Details")
@@ -211,6 +223,29 @@ class TransactionRenderer:
             else:
                 self._save_sell_transaction(tx_date, party_name, currency, shipping, tax, fees,
                                             notes)
+    
+    def render_add_transaction_tab(self):
+        """Render the Add Transaction tab"""
+        try:
+            tx_mode = st.segmented_control(
+                "Transaction Type",
+                options=["BUY", "SELL"],
+                default="BUY",
+                key="tx_mode"
+            )
+        except AttributeError:
+            tx_mode = st.radio(
+                "Transaction Type",
+                ["BUY", "SELL"],
+                index=0,
+                horizontal=True,
+                key="tx_mode"
+            )
+
+        if tx_mode == "BUY":
+            self._render_buy_form()
+        else:
+            self._render_sell_form()
 
     def _display_line_items(self, tx_type: str):
         """Display current line items for buy or sell"""
