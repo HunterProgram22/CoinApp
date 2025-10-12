@@ -75,6 +75,7 @@ class TursoConnection:
     def __init__(self, client):
         self.client = client
         self._row_factory = None
+        self._closed = False
 
     @property
     def row_factory(self):
@@ -86,6 +87,9 @@ class TursoConnection:
 
     def execute(self, sql: str, params=None):
         """Execute a SQL statement."""
+        if self._closed:
+            raise Exception("Cannot execute on a closed connection")
+
         if params is None:
             params = []
 
@@ -101,6 +105,9 @@ class TursoConnection:
 
     def executescript(self, sql_script: str):
         """Execute multiple SQL statements."""
+        if self._closed:
+            raise Exception("Cannot execute on a closed connection")
+
         statements = [s.strip() for s in sql_script.split(';') if s.strip()]
         for statement in statements:
             if statement:
@@ -109,6 +116,9 @@ class TursoConnection:
 
     def executemany(self, sql: str, params_list):
         """Execute SQL multiple times."""
+        if self._closed:
+            raise Exception("Cannot execute on a closed connection")
+
         results = []
         for params in params_list:
             if isinstance(params, tuple):
@@ -122,15 +132,26 @@ class TursoConnection:
         pass
 
     def close(self):
-        """Close connection."""
-        self.client.close()
+        """Close connection and cleanup resources."""
+        if not self._closed:
+            try:
+                self.client.close()
+                self._closed = True
+            except Exception as e:
+                print(f"Warning: Error closing Turso connection: {e}")
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.commit()
+        self.close()  # Explicitly close on exit
         return False
+
+    def __del__(self):
+        """Cleanup on deletion."""
+        if not self._closed:
+            self.close()
 
 
 class TursoCursor:

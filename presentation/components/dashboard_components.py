@@ -188,6 +188,12 @@ class DashboardRenderer:
     def render_charts_tab(self):
         """Render the charts tab with multiple visualizations."""
 
+        # Get summary and handle None values upfront
+        summary = self.repo.get_portfolio_summary()
+        total_value = summary.total_estimated_value_usd or 0
+        total_cost = summary.total_cost_usd or 0
+        total_coins = summary.total_coins or 0
+
         # Portfolio Composition Pie Chart
         col1, col2 = st.columns(2)
 
@@ -233,94 +239,28 @@ class DashboardRenderer:
                 )
                 fig.update_traces(
                     textposition='inside',
-                    textinfo='percent+label',
-                    hovertemplate='%{label}<br>Value: $%{value:,.2f}<br>Count: %{customdata[0]} coins<extra></extra>',
-                    customdata=df_metals[['count']]
+                    textinfo='percent+label'
                 )
                 st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("No metal data available")
+                st.info("No metal distribution data available")
 
-        # Top Series Bar Chart
-        st.subheader("💰 Top 10 Series by Value")
-        top_series = self.repo.get_top_series_by_value(10)
+        # Country Distribution
+        st.subheader("🌍 Country Distribution")
+        countries = self.repo.get_coins_by_country()
 
-        if top_series:
-            df_series = pd.DataFrame(top_series)
-            fig = px.bar(
-                df_series,
-                x='total_value',
-                y='series',
-                orientation='h',
-                title='Most Valuable Series in Collection',
-                labels={'total_value': 'Total Value (USD)', 'series': 'Series'},
-                text='total_value',
-                color='total_value',
-                color_continuous_scale='Blues'
-            )
-            fig.update_traces(
-                texttemplate='$%{text:,.0f}',
-                textposition='inside',
-                hovertemplate='%{y}<br>Value: $%{x:,.2f}<br>Coins: %{customdata[0]}<extra></extra>',
-                customdata=df_series[['coins']]
-            )
-            fig.update_layout(showlegend=False, height=400)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No series data available")
-
-        # Value vs Cost Comparison
-        st.subheader("📈 Value vs Cost Analysis")
-        value_cost = self.repo.get_value_vs_cost_by_series()
-
-        if value_cost:
-            df_vc = pd.DataFrame(value_cost)
-
-            fig = go.Figure()
-            fig.add_trace(go.Bar(
-                name='Cost Basis',
-                x=df_vc['series'],
-                y=df_vc['total_cost'],
-                marker_color='lightgray'
-            ))
-            fig.add_trace(go.Bar(
-                name='Current Value',
-                x=df_vc['series'],
-                y=df_vc['total_value'],
-                marker_color='green'
-            ))
-
-            fig.update_layout(
-                title='Cost Basis vs Current Value by Series',
-                xaxis_title='Series',
-                yaxis_title='Value (USD)',
-                barmode='group',
-                height=400,
-                xaxis={'tickangle': -45}
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No value/cost data available")
-
-        # Country Distribution for World Coins
-        st.subheader("🌍 Geographic Distribution")
-        countries = self.repo.get_country_distribution()
-
-        if countries and len(countries) > 1:  # Only show if more than just USA
+        if countries:
             df_countries = pd.DataFrame(countries)
 
-            # Create two columns for the country data
             col1, col2 = st.columns([2, 1])
 
             with col1:
-                # Bar chart for top countries
-                fig = px.bar(
-                    df_countries.head(10),
-                    x='country',
-                    y='value',
-                    title='Top Countries by Value',
-                    labels={'value': 'Total Value (USD)', 'country': 'Country'},
-                    color='coins',
+                fig = px.treemap(
+                    df_countries,
+                    path=['country'],
+                    values='value',
+                    title='Portfolio by Country',
+                    color='value',
                     color_continuous_scale='Viridis'
                 )
                 fig.update_layout(height=350)
@@ -340,12 +280,9 @@ class DashboardRenderer:
         st.subheader("📊 Quick Statistics")
         col1, col2, col3 = st.columns(3)
 
-        summary = self.repo.get_portfolio_summary()
-        metals = self.repo.get_coins_by_metal()
-
         with col1:
-            if summary.total_coins > 0:
-                avg_value = summary.total_estimated_value_usd / summary.total_coins
+            if total_coins > 0:
+                avg_value = total_value / total_coins
                 st.metric("Average Coin Value", f"${avg_value:.2f}")
 
         with col2:
@@ -356,7 +293,6 @@ class DashboardRenderer:
                 st.metric("Precious Metals Value", f"${precious_value:,.2f}")
 
         with col3:
-            if summary.total_cost_usd > 0:
-                roi = ((
-                                   summary.total_estimated_value_usd - summary.total_cost_usd) / summary.total_cost_usd) * 100
+            if total_cost > 0:
+                roi = ((total_value - total_cost) / total_cost) * 100
                 st.metric("Return on Investment", f"{roi:+.1f}%")

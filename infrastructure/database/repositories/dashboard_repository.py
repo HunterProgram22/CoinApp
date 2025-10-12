@@ -153,6 +153,25 @@ class SQLDashboardRepository(DashboardDataRepository):
         results = self.db.execute_query_all(query)
         return results if results else []
 
+    def get_coins_by_country(self) -> List[Dict]:
+        """Get distribution of coins by country."""
+        query = """
+            SELECT 
+                cm.country,
+                SUM(l.qty_remaining) as coins,
+                ROUND(SUM(l.qty_remaining * lvd.chosen_unit_value), 2) as value
+            FROM lot l
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            JOIN v_lot_value_details lvd ON lvd.lot_id = l.id
+            WHERE l.qty_remaining > 0 AND cm.country IS NOT NULL
+            GROUP BY cm.country
+            HAVING coins > 0
+            ORDER BY value DESC
+        """
+        results = self.db.execute_query_all(query)
+        return results if results else []
+
     def get_top_series_by_value(self, limit: int = 10) -> List[Dict]:
         """Get top coin series by total value."""
         query = """
