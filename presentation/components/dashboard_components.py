@@ -129,10 +129,16 @@ class DashboardRenderer:
         """Render enhanced portfolio metrics with visual indicators."""
         summary = self.repo.get_portfolio_summary()
 
+        # Handle None values for empty database
+        total_value = summary.total_estimated_value_usd or 0
+        total_cost = summary.total_cost_usd or 0
+        total_coins = summary.total_coins or 0
+        total_lots = summary.total_lots or 0
+        sale_proceeds = summary.estimated_sale_proceeds or 0
+
         # Calculate gain/loss
-        gain_loss = summary.total_estimated_value_usd - summary.total_cost_usd
-        gain_loss_pct = (
-                    gain_loss / summary.total_cost_usd * 100) if summary.total_cost_usd > 0 else 0
+        gain_loss = total_value - total_cost
+        gain_loss_pct = (gain_loss / total_cost * 100) if total_cost > 0 else 0
 
         # First row - 3 columns
         col1, col2, col3 = st.columns(3)
@@ -140,20 +146,20 @@ class DashboardRenderer:
         with col1:
             st.metric(
                 "Portfolio Value",
-                f"${summary.total_estimated_value_usd:,.2f}",
+                f"${total_value:,.2f}",
                 delta=f"{gain_loss_pct:+.1f}%" if gain_loss_pct != 0 else None
             )
 
         with col2:
             st.metric(
                 "Total Cost Basis",
-                f"${summary.total_cost_usd:,.2f}"
+                f"${total_cost:,.2f}"
             )
 
         with col3:
             st.metric(
                 "Est. Sale Proceeds",
-                f"${summary.estimated_sale_proceeds:,.2f}"
+                f"${sale_proceeds:,.2f}"
             )
             st.caption("90% bullion/junk, 70% numismatic")
 
@@ -170,13 +176,13 @@ class DashboardRenderer:
         with col5:
             st.metric(
                 "Total Coins",
-                f"{summary.total_coins:,}"
+                f"{total_coins:,}"
             )
 
         with col6:
             st.metric(
                 "Total Lots",
-                f"{summary.total_lots:,}"
+                f"{total_lots:,}"
             )
 
     def render_charts_tab(self):
