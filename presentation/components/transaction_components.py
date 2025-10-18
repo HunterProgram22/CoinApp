@@ -68,33 +68,20 @@ class TransactionRenderer:
             key="tx_preset"
         )
 
-        # Track preset changes to update dates
-        if 'last_tx_preset' not in st.session_state:
-            st.session_state.last_tx_preset = preset
-
-        # If preset changed, clear the date inputs and force rerun
-        if st.session_state.last_tx_preset != preset:
-            st.session_state.last_tx_preset = preset
-            # Clear the date keys to force update
-            if 'tx_rev_start' in st.session_state:
-                del st.session_state['tx_rev_start']
-            if 'tx_rev_end' in st.session_state:
-                del st.session_state['tx_rev_end']
-            # Force rerun so dates refresh
-            st.rerun()
-
         start_dt, end_dt = calculate_date_range(preset)
 
+        # Use preset in the key to force new widgets when preset changes
+        # This ensures date_input uses the fresh value parameter
         if preset != "All":
-            start_dt = col1.date_input("Start", value=start_dt, key="tx_rev_start")
-            end_dt = col2.date_input("End", value=end_dt, key="tx_rev_end")
+            start_dt = col1.date_input("Start", value=start_dt, key=f"tx_rev_start_{preset}")
+            end_dt = col2.date_input("End", value=end_dt, key=f"tx_rev_end_{preset}")
         else:
             start_dt = col1.date_input(
                 "Start",
                 value=date.today() - timedelta(days=365 * 5),
-                key="tx_rev_start"
+                key=f"tx_rev_start_{preset}"
             )
-            end_dt = col2.date_input("End", value=date.today(), key="tx_rev_end")
+            end_dt = col2.date_input("End", value=date.today(), key=f"tx_rev_end_{preset}")
 
         tx_types = col3.multiselect(
             "Type",
@@ -559,33 +546,20 @@ class TransactionRenderer:
             key="tx_edit_preset"
         )
 
-        # Track preset changes to update dates
-        if 'last_tx_edit_preset' not in st.session_state:
-            st.session_state.last_tx_edit_preset = preset
-
-        # If preset changed, clear the date inputs and force rerun
-        if st.session_state.last_tx_edit_preset != preset:
-            st.session_state.last_tx_edit_preset = preset
-            # Clear the date keys to force update
-            if 'tx_edit_start' in st.session_state:
-                del st.session_state['tx_edit_start']
-            if 'tx_edit_end' in st.session_state:
-                del st.session_state['tx_edit_end']
-            # Force rerun so dates refresh
-            st.rerun()
-
         start_dt, end_dt = calculate_date_range(preset)
 
+        # Use preset in the key to force new widgets when preset changes
+        # This ensures date_input uses the fresh value parameter
         if preset != "All":
-            start_dt = col2.date_input("Start", value=start_dt, key="tx_edit_start")
-            end_dt = col3.date_input("End", value=end_dt, key="tx_edit_end")
+            start_dt = col2.date_input("Start", value=start_dt, key=f"tx_edit_start_{preset}")
+            end_dt = col3.date_input("End", value=end_dt, key=f"tx_edit_end_{preset}")
         else:
             start_dt = col2.date_input(
                 "Start",
                 value=date.today() - timedelta(days=365 * 5),
-                key="tx_edit_start"
+                key=f"tx_edit_start_{preset}"
             )
-            end_dt = col3.date_input("End", value=date.today(), key="tx_edit_end")
+            end_dt = col3.date_input("End", value=date.today(), key=f"tx_edit_end_{preset}")
 
         tx_types = col4.multiselect(
             "Type",
