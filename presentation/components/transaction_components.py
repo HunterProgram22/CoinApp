@@ -72,7 +72,7 @@ class TransactionRenderer:
         if 'last_tx_preset' not in st.session_state:
             st.session_state.last_tx_preset = preset
 
-        # If preset changed, clear the date inputs so they update
+        # If preset changed, clear the date inputs and force rerun
         if st.session_state.last_tx_preset != preset:
             st.session_state.last_tx_preset = preset
             # Clear the date keys to force update
@@ -80,6 +80,8 @@ class TransactionRenderer:
                 del st.session_state['tx_rev_start']
             if 'tx_rev_end' in st.session_state:
                 del st.session_state['tx_rev_end']
+            # Force rerun so dates refresh
+            st.rerun()
 
         start_dt, end_dt = calculate_date_range(preset)
 
@@ -561,7 +563,7 @@ class TransactionRenderer:
         if 'last_tx_edit_preset' not in st.session_state:
             st.session_state.last_tx_edit_preset = preset
 
-        # If preset changed, clear the date inputs so they update
+        # If preset changed, clear the date inputs and force rerun
         if st.session_state.last_tx_edit_preset != preset:
             st.session_state.last_tx_edit_preset = preset
             # Clear the date keys to force update
@@ -569,6 +571,8 @@ class TransactionRenderer:
                 del st.session_state['tx_edit_start']
             if 'tx_edit_end' in st.session_state:
                 del st.session_state['tx_edit_end']
+            # Force rerun so dates refresh
+            st.rerun()
 
         start_dt, end_dt = calculate_date_range(preset)
 
