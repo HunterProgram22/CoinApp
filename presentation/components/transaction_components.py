@@ -1,7 +1,7 @@
 # presentation/components/transaction_components.py
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional, List, Dict, Any
 from infrastructure.database.repositories.transaction_repository import (
     TransactionDataRepository, TransactionHeader
@@ -57,6 +57,7 @@ class TransactionRenderer:
 
     def render_search_tab(self):
         """Render the Review/Search tab"""
+
         # Search filters
         col0, col1, col2, col3 = st.columns([2, 2, 2, 2])
 
@@ -66,6 +67,19 @@ class TransactionRenderer:
             index=0,
             key="tx_preset"
         )
+
+        # Track preset changes to update dates
+        if 'last_tx_preset' not in st.session_state:
+            st.session_state.last_tx_preset = preset
+
+        # If preset changed, clear the date inputs so they update
+        if st.session_state.last_tx_preset != preset:
+            st.session_state.last_tx_preset = preset
+            # Clear the date keys to force update
+            if 'tx_rev_start' in st.session_state:
+                del st.session_state['tx_rev_start']
+            if 'tx_rev_end' in st.session_state:
+                del st.session_state['tx_rev_end']
 
         start_dt, end_dt = calculate_date_range(preset)
 
@@ -89,7 +103,10 @@ class TransactionRenderer:
 
         col4, col5, col6 = st.columns([2, 2, 3])
 
-        parties = self.repository.get_parties()
+        # Use cached parties to avoid repeated queries
+        repo_id = id(self.repository)
+        parties = get_cached_parties(repo_id)
+
         party_selection = col4.selectbox(
             "Party (optional)",
             ["(any)"] + parties,
@@ -527,6 +544,7 @@ class TransactionRenderer:
 
     def render_edit_transaction_tab(self):
         """Render the Edit Transaction tab with search filters"""
+
         st.subheader("Find Transaction to Edit")
 
         # Search filters
@@ -538,6 +556,19 @@ class TransactionRenderer:
             index=2,  # Default to YTD
             key="tx_edit_preset"
         )
+
+        # Track preset changes to update dates
+        if 'last_tx_edit_preset' not in st.session_state:
+            st.session_state.last_tx_edit_preset = preset
+
+        # If preset changed, clear the date inputs so they update
+        if st.session_state.last_tx_edit_preset != preset:
+            st.session_state.last_tx_edit_preset = preset
+            # Clear the date keys to force update
+            if 'tx_edit_start' in st.session_state:
+                del st.session_state['tx_edit_start']
+            if 'tx_edit_end' in st.session_state:
+                del st.session_state['tx_edit_end']
 
         start_dt, end_dt = calculate_date_range(preset)
 
@@ -561,7 +592,10 @@ class TransactionRenderer:
 
         col5, col6, col7 = st.columns([2, 2, 2])
 
-        parties = self.repository.get_parties()
+        # Use cached parties to avoid repeated queries
+        repo_id = id(self.repository)
+        parties = get_cached_parties(repo_id)
+
         party_selection = col5.selectbox(
             "Party (optional)",
             ["(any)"] + parties,
