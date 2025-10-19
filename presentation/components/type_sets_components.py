@@ -198,50 +198,57 @@ class TypeSetsRenderer:
         """Render the Define Set tab - Create new sets with criteria"""
         st.subheader("Define a New Type Set")
 
-        # Basic set information
-        st.markdown("### Basic Information")
-        new_name = st.text_input("Set Name*", placeholder="e.g., Susan B Anthony NGC PF70 Set")
-        new_desc = st.text_area("Description", placeholder="Optional description of your set goals")
+        # Wrap entire form in st.form() to prevent reruns on tab
+        with st.form("define_new_set_form", clear_on_submit=False):
+            # Basic set information
+            st.markdown("### Basic Information")
+            new_name = st.text_input("Set Name*", placeholder="e.g., Susan B Anthony NGC PF70 Set")
+            new_desc = st.text_area("Description",
+                                    placeholder="Optional description of your set goals")
 
-        # Set criteria
-        st.markdown("### Set Criteria")
-        st.caption("Define which coins should be included in this set")
+            # Set criteria
+            st.markdown("### Set Criteria")
+            st.caption("Define which coins should be included in this set")
 
-        col1, col2 = st.columns(2)
+            col1, col2 = st.columns(2)
 
-        with col1:
-            # Series selection
-            all_series = self.repository.get_all_series()
-            selected_series = st.multiselect("Series", all_series, help="Which series to include")
+            with col1:
+                # Series selection - Query only once when form loads
+                all_series = self.repository.get_all_series()
+                selected_series = st.multiselect("Series", all_series,
+                                                 help="Which series to include")
 
-            # Year range
-            st.markdown("**Year Range**")
-            c1, c2 = st.columns(2)
-            start_year = c1.number_input("From", min_value=0, value=0, step=1, help="0 = no limit")
-            end_year = c2.number_input("To", min_value=0, value=0, step=1, help="0 = no limit")
+                # Year range
+                st.markdown("**Year Range**")
+                c1, c2 = st.columns(2)
+                start_year = c1.number_input("From", min_value=0, value=0, step=1,
+                                             help="0 = no limit")
+                end_year = c2.number_input("To", min_value=0, value=0, step=1, help="0 = no limit")
 
-        with col2:
-            # Proof filter
-            proof_filter = st.selectbox("Type", ["Any", "Proofs only", "Business strikes only"])
+            with col2:
+                # Proof filter
+                proof_filter = st.selectbox("Type", ["Any", "Proofs only", "Business strikes only"])
 
-            # Grade requirements
-            st.markdown("**Grade Requirements (Optional)**")
-            grade_company_filter = st.selectbox("Grading Company", ["Any"] + GRADE_COMPANIES)
+                # Grade requirements
+                st.markdown("**Grade Requirements (Optional)**")
+                grade_company_filter = st.selectbox("Grading Company", ["Any"] + GRADE_COMPANIES)
 
-            c1, c2 = st.columns(2)
-            min_grade_filter = c1.selectbox("Min Grade", ["Any"] + GRADE_TEXT_VALUES)
-            max_grade_filter = c2.selectbox("Max Grade", ["Any"] + GRADE_TEXT_VALUES)
+                c1, c2 = st.columns(2)
+                min_grade_filter = c1.selectbox("Min Grade", ["Any"] + GRADE_TEXT_VALUES)
+                max_grade_filter = c2.selectbox("Max Grade", ["Any"] + GRADE_TEXT_VALUES)
 
-        # Additional requirements
-        st.markdown("### Additional Requirements")
-        col1, col2 = st.columns(2)
-        require_slab = col1.checkbox("Must be slabbed (have cert #)")
-        specific_varieties = col2.checkbox("Include specific varieties")
+            # Additional requirements
+            st.markdown("### Additional Requirements")
+            col1, col2 = st.columns(2)
+            require_slab = col1.checkbox("Must be slabbed (have cert #)")
+            specific_varieties = col2.checkbox("Include specific varieties")
 
-        # Preview section
-        st.markdown("### Preview Set Contents")
+            # Preview button - this is what triggers form submission
+            preview_clicked = st.form_submit_button("🔍 Preview Coins That Will Be In This Set",
+                                                    type="secondary")
 
-        if st.button("Preview Coins That Will Be In This Set", type="secondary"):
+        # Process form OUTSIDE the form block (important!)
+        if preview_clicked:
             if not validate_set_name(new_name):
                 st.error("Please enter a set name first")
             elif not selected_series:
@@ -275,8 +282,10 @@ class TypeSetsRenderer:
                     else:
                         st.dataframe(preview_df[['coin']], width='stretch', hide_index=True)
 
-                    # Store in session state for creation
+                    # Store EVERYTHING in session state for creation (including form values!)
                     st.session_state['new_set_coins'] = catalog_matches
+                    st.session_state['new_set_name'] = new_name
+                    st.session_state['new_set_desc'] = new_desc
                     st.session_state['new_set_metadata'] = build_new_set_metadata(
                         grade_company_filter, min_grade_filter, max_grade_filter,
                         require_slab, proof_filter, specific_varieties, start_year, end_year
@@ -284,31 +293,36 @@ class TypeSetsRenderer:
                 else:
                     st.warning("No coins found matching these criteria in the catalog")
 
-        # Create button
+        # Create button - OUTSIDE the form, shows only after preview
         if 'new_set_coins' in st.session_state and st.session_state['new_set_coins']:
             st.markdown("---")
-            if st.button(f"✅ Create Set with {len(st.session_state['new_set_coins'])} coins",
-                         type="primary"):
-                if not validate_set_name(new_name):
-                    st.error("Please enter a set name")
-                else:
+
+            if st.button(
+                    f"✅ Create Set '{st.session_state.get('new_set_name', '')}' with {len(st.session_state['new_set_coins'])} coins",
+                    type="primary", key="create_set_btn"):
+                if validate_set_name(st.session_state.get('new_set_name', '')):
                     # Create the set with metadata
                     set_id = self.repository.create_type_set(
-                        new_name, new_desc, st.session_state.get('new_set_metadata')
+                        st.session_state['new_set_name'],
+                        st.session_state.get('new_set_desc', ''),
+                        st.session_state.get('new_set_metadata')
                     )
 
                     # Add all the coins to the set
                     coin_type_ids = [c.id for c in st.session_state['new_set_coins']]
                     added = self.repository.add_type_set_members(set_id, coin_type_ids)
 
-                    st.success(f"Created '{new_name}' with {added} coins!")
+                    st.success(f"Created '{st.session_state['new_set_name']}' with {added} coins!")
 
                     # Clear session state
-                    del st.session_state['new_set_coins']
-                    if 'new_set_metadata' in st.session_state:
-                        del st.session_state['new_set_metadata']
+                    for key in ['new_set_coins', 'new_set_metadata', 'new_set_name',
+                                'new_set_desc']:
+                        if key in st.session_state:
+                            del st.session_state[key]
 
                     st.rerun()
+                else:
+                    st.error("Please enter a set name")
 
     def render_modify_set_tab(self):
         """Render the Modify Set tab - Add/remove coins from existing sets"""
@@ -320,19 +334,24 @@ class TypeSetsRenderer:
 
         st.subheader("Modify Existing Set")
 
-        # Select set to modify
+        # Select set to modify (OUTSIDE form - we want this to trigger rerun)
         type_set_options = prepare_type_set_options(type_sets)
         selected_set_label = st.selectbox("Select set to modify", list(type_set_options.keys()))
         selected_set = type_set_options[selected_set_label]
         work_set_id = selected_set.id
 
-        # Edit basic details
+        # Edit basic details - WRAP IN FORM
         with st.expander("Edit Set Details"):
-            edit_name = st.text_input("Set name", value=selected_set.name)
-            edit_desc = st.text_area("Description", value=selected_set.description or '')
+            with st.form("edit_set_details_form"):
+                edit_name = st.text_input("Set name", value=selected_set.name)
+                edit_desc = st.text_area("Description", value=selected_set.description or '')
 
-            col1, col2 = st.columns(2)
-            if col1.button("Save Changes", type="primary"):
+                col1, col2 = st.columns(2)
+                save_clicked = col1.form_submit_button("Save Changes", type="primary")
+                delete_clicked = col2.form_submit_button("Delete Set", type="secondary")
+
+            # Process form submissions OUTSIDE the form
+            if save_clicked:
                 if validate_set_name(edit_name):
                     self.repository.update_type_set(work_set_id, edit_name, edit_desc)
                     st.success("Updated!")
@@ -340,11 +359,10 @@ class TypeSetsRenderer:
                 else:
                     st.error("Please enter a valid set name")
 
-            # Use session state for delete confirmation
-            if col2.button("Delete Set", type="secondary"):
+            if delete_clicked:
                 st.session_state['confirm_delete'] = work_set_id
 
-            # Show confirmation outside of button click
+            # Show confirmation outside of form
             if st.session_state.get('confirm_delete') == work_set_id:
                 st.warning("⚠️ Are you sure you want to delete this set? This cannot be undone.")
                 col_confirm, col_cancel = st.columns(2)
@@ -384,66 +402,60 @@ class TypeSetsRenderer:
             st.markdown("### Remove Coins")
             self._render_remove_coins_section(work_set_id, current_members)
 
-    def _render_add_coins_section(self, work_set_id: int, current_members: list):
-        """Render the add coins section of modify tab"""
-        add_method = st.radio("Add method", ["By Filter", "Individual Selection"])
-
-        if add_method == "By Filter":
-            self._render_add_by_filter(work_set_id, current_members)
-        else:
-            self._render_add_individual(work_set_id, current_members)
-
     def _render_add_by_filter(self, work_set_id: int, current_members: list):
-        """Render add coins by filter interface"""
-        col1, col2 = st.columns(2)
+        """Render add coins by filter interface - WRAPPED IN FORM"""
+        with st.form("add_by_filter_form"):
+            col1, col2 = st.columns(2)
 
-        with col1:
-            all_series = self.repository.get_all_series()
-            add_series = st.multiselect("Filter by series", all_series, key="add_series")
+            with col1:
+                all_series = self.repository.get_all_series()
+                add_series = st.multiselect("Filter by series", all_series, key="add_series")
 
-        with col2:
-            c1, c2 = st.columns(2)
-            add_start_year = c1.number_input("Start year", 0, step=1, key="add_start")
-            add_end_year = c2.number_input("End year", 0, step=1, key="add_end")
+            with col2:
+                c1, c2 = st.columns(2)
+                add_start_year = c1.number_input("Start year", 0, step=1, key="add_start")
+                add_end_year = c2.number_input("End year", 0, step=1, key="add_end")
 
-            add_proof_filter = st.selectbox("Type filter",
-                                            ["Any", "Proofs only", "Non-proof only"],
-                                            key="add_proof")
+                add_proof_filter = st.selectbox("Type filter",
+                                                ["Any", "Proofs only", "Non-proof only"],
+                                                key="add_proof")
 
-        # Build year range
-        add_year_range = build_year_range_from_inputs(add_start_year, add_end_year)
+            # Preview button inside form
+            preview_clicked = st.form_submit_button("Preview Coins to Add")
 
-        # Preview matches
-        if st.button("Preview Coins to Add", key="preview_add"):
+        # Process OUTSIDE form
+        if preview_clicked:
+            # Build year range
+            add_year_range = build_year_range_from_inputs(add_start_year, add_end_year)
+
             if not validate_year_range(add_start_year, add_end_year):
                 st.error("Invalid year range")
-                return
-
-            matches = self.repository.search_coin_types(
-                series=add_series if add_series else None,
-                year_range=add_year_range,
-                proof_filter=add_proof_filter
-            )
-
-            # Filter out already added
-            current_ids = {m.coin_type_id for m in current_members}
-            new_matches = [m for m in matches if m.id not in current_ids]
-
-            if new_matches:
-                st.session_state['add_matches'] = new_matches
-                st.write(f"Found {len(new_matches)} new coins to add:")
-
-                matches_data = convert_dataclass_list_to_dict_list(new_matches)
-                matches_df = pd.DataFrame(matches_data)
-                matches_df['coin'] = matches_df.apply(
-                    lambda r: format_coin_type_label(r.to_dict()),
-                    axis=1
-                )
-                st.dataframe(matches_df[['coin']], width='stretch', hide_index=True)
             else:
-                st.info("No new coins found with those filters (or all are already in the set)")
+                matches = self.repository.search_coin_types(
+                    series=add_series if add_series else None,
+                    year_range=add_year_range,
+                    proof_filter=add_proof_filter
+                )
 
-        # Add button
+                # Filter out already added
+                current_ids = {m.coin_type_id for m in current_members}
+                new_matches = [m for m in matches if m.id not in current_ids]
+
+                if new_matches:
+                    st.session_state['add_matches'] = new_matches
+                    st.write(f"Found {len(new_matches)} new coins to add:")
+
+                    matches_data = convert_dataclass_list_to_dict_list(new_matches)
+                    matches_df = pd.DataFrame(matches_data)
+                    matches_df['coin'] = matches_df.apply(
+                        lambda r: format_coin_type_label(r.to_dict()),
+                        axis=1
+                    )
+                    st.dataframe(matches_df[['coin']], width='stretch', hide_index=True)
+                else:
+                    st.info("No new coins found with those filters (or all are already in the set)")
+
+        # Add button - OUTSIDE form
         if 'add_matches' in st.session_state and st.session_state['add_matches']:
             if st.button(f"Add {len(st.session_state['add_matches'])} coins to set",
                          type="primary", key="do_add"):
@@ -452,6 +464,15 @@ class TypeSetsRenderer:
                 st.success(f"Added {added} coins!")
                 del st.session_state['add_matches']
                 st.rerun()
+
+    def _render_add_coins_section(self, work_set_id: int, current_members: list):
+        """Render the add coins section of modify tab"""
+        add_method = st.radio("Add method", ["By Filter", "Individual Selection"])
+
+        if add_method == "By Filter":
+            self._render_add_by_filter(work_set_id, current_members)
+        else:
+            self._render_add_individual(work_set_id, current_members)
 
     def _render_add_individual(self, work_set_id: int, current_members: list):
         """Render add individual coins interface"""
