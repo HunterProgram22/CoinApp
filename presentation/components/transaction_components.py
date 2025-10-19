@@ -6,6 +6,11 @@ from typing import Optional, List, Dict, Any
 from infrastructure.database.repositories.transaction_repository import (
     TransactionDataRepository, TransactionHeader
 )
+from infrastructure.database.cached_queries import (
+    get_cached_coin_types,
+    get_cached_storage_locations,
+    get_cached_parties
+)
 from presentation.components.helpers.transaction_helpers import (
     calculate_date_range, format_coin_type_label, format_storage_label,
     format_transaction_dataframe, safe_float, format_float,
@@ -13,34 +18,6 @@ from presentation.components.helpers.transaction_helpers import (
 )
 from core.constants import GRADE_COMPANIES, VALUATION_METHODS
 from core.queries import create_buy_transaction, create_sell_transaction
-
-
-# Cache decorator for expensive queries
-@st.cache_data(ttl=300)  # Cache for 5 minutes
-def get_cached_coin_types(repo_id):
-    """Cache coin types to avoid repeated queries - ttl=300 means refresh every 5 minutes"""
-    from infrastructure.database.database_executor import DatabaseExecutor
-    from infrastructure.database.repositories.transaction_repository import TransactionRepository
-    repo = TransactionRepository(DatabaseExecutor())
-    return repo.get_all_coin_types()
-
-
-@st.cache_data(ttl=300)  # Cache for 5 minutes
-def get_cached_storage_locations(repo_id):
-    """Cache storage locations to avoid repeated queries"""
-    from infrastructure.database.database_executor import DatabaseExecutor
-    from infrastructure.database.repositories.transaction_repository import TransactionRepository
-    repo = TransactionRepository(DatabaseExecutor())
-    return repo.get_storage_locations()
-
-
-@st.cache_data(ttl=60)  # Cache for 1 minute (shorter since this might change frequently)
-def get_cached_parties(repo_id):
-    """Cache parties list to avoid repeated queries"""
-    from infrastructure.database.database_executor import DatabaseExecutor
-    from infrastructure.database.repositories.transaction_repository import TransactionRepository
-    repo = TransactionRepository(DatabaseExecutor())
-    return repo.get_parties()
 
 
 class TransactionRenderer:

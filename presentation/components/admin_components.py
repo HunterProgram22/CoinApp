@@ -14,6 +14,10 @@ from presentation.components.helpers.admin_helpers import (
 )
 from core.constants import ASSET_CATEGORIES
 from infrastructure.database.db import create_backup_data, get_backup_filename
+from infrastructure.database.cached_queries import get_cached_coin_masters, \
+    clear_coin_caches, get_cached_admin_coin_types, get_cached_metal_prices, \
+    get_cached_recent_transactions, clear_transaction_caches, get_cached_open_lots, \
+    clear_inventory_caches
 
 
 class AdminRenderer:
@@ -29,7 +33,8 @@ class AdminRenderer:
         # Weight conversion helper
         self._render_weight_helper()
 
-        masters = self.repository.get_coin_masters()
+        repo_id = id(self.repository)
+        masters = get_cached_coin_masters(repo_id)
 
         # Add new master form
         with st.expander("➕ Add a Coin Master", expanded=False):
@@ -46,7 +51,8 @@ class AdminRenderer:
         """Render Coin Type Editor tab"""
         st.subheader("Coin Type Editor")
 
-        masters = self.repository.get_coin_masters()
+        repo_id = id(self.repository)
+        masters = get_cached_coin_masters(repo_id)
         if not masters:
             st.info("Add a Coin Master first.")
             return
@@ -68,8 +74,8 @@ class AdminRenderer:
         """Render Metal Prices tab"""
         st.subheader("Metal Prices")
 
-        # Display current prices
-        prices = self.repository.get_latest_metal_prices()
+        repo_id = id(self.repository)
+        prices = get_cached_metal_prices(repo_id)
         if prices:
             df = pd.DataFrame(format_price_display(prices))
             st.dataframe(df, width='stretch', hide_index=True)
@@ -551,7 +557,8 @@ class AdminRenderer:
 
     def _render_void_transaction(self):
         """Render transaction void interface"""
-        transactions = self.repository.get_recent_transactions(100)
+        repo_id = id(self.repository)
+        transactions = get_cached_recent_transactions(repo_id, 100)
         if not transactions:
             st.info("No transactions found.")
         else:
@@ -569,7 +576,8 @@ class AdminRenderer:
 
     def _render_delete_lot(self):
         """Render lot deletion interface"""
-        lots = self.repository.get_open_lots()
+        repo_id = id(self.repository)
+        lots = get_cached_open_lots(repo_id)
         if not lots:
             st.info("No lots available.")
         else:
