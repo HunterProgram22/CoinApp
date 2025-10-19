@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from typing import Optional
 from infrastructure.database.repositories.type_sets_repository import TypeSetsDataRepository
+from infrastructure.database.cached_queries import get_cached_all_series
 from presentation.components.helpers.type_sets_helpers import (
     format_coin_type_label, format_progress_display_dataframe, filter_progress_data,
     prepare_progress_display_columns, format_summary_display_dataframe,
@@ -214,7 +215,8 @@ class TypeSetsRenderer:
 
             with col1:
                 # Series selection - Query only once when form loads
-                all_series = self.repository.get_all_series()
+                repo_id = id(self.repository)
+                all_series = get_cached_all_series(repo_id)
                 selected_series = st.multiselect("Series", all_series,
                                                  help="Which series to include")
 
@@ -408,7 +410,8 @@ class TypeSetsRenderer:
             col1, col2 = st.columns(2)
 
             with col1:
-                all_series = self.repository.get_all_series()
+                repo_id = id(self.repository)
+                all_series = get_cached_all_series(repo_id)
                 add_series = st.multiselect("Filter by series", all_series, key="add_series")
 
             with col2:
