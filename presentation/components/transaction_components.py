@@ -26,12 +26,6 @@ class TransactionRenderer:
     def __init__(self, repository: TransactionDataRepository):
         self.repository = repository
 
-        # Initialize session state for line items if not exists
-        # if 'buy_line_items' not in st.session_state:
-        #     st.session_state.buy_line_items = []
-        # if 'sell_line_items' not in st.session_state:
-        #     st.session_state.sell_line_items = []
-
     def render_search_tab(self):
         """Render the Review/Search tab"""
 
