@@ -149,39 +149,65 @@ class StorageReportRepository(StorageReportDataRepository):
 
     def get_storage_locations(self, category_filter: Optional[str] = None) -> List[StorageLocation]:
         """Get all storage locations with inventory counts."""
+        # OPTIMIZED: Use CTEs to avoid expensive v_lot_value_details view
+        base_query = """
+            WITH spot_prices AS (
+                SELECT metal, price_per_oz_usd FROM v_latest_spot
+            ),
+            guide_prices AS (
+                SELECT coin_type_id, grade_text, price_usd FROM v_latest_guide
+            )
+            SELECT 
+                sl.id,
+                sl.name,
+                COALESCE(sl.category, '') AS category,
+                COALESCE(sl.description, '') AS description,
+                COUNT(l.id) AS lot_count,
+                COALESCE(SUM(l.qty_remaining), 0) AS total_coins,
+                COALESCE(SUM(l.qty_remaining * l.unit_cost), 0) AS total_cost_usd,
+                COALESCE(SUM(
+                    l.qty_remaining * 
+                    CASE l.valuation_method
+                        WHEN 'MELT_ONLY' THEN 
+                            (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
+                            * COALESCE(sp.price_per_oz_usd, 0)
+                        WHEN 'GUIDE_ONLY' THEN 
+                            COALESCE(gp.price_usd, 0)
+                        WHEN 'MANUAL' THEN 
+                            COALESCE(l.manual_est_unit_value, 0)
+                        ELSE 
+                            COALESCE(
+                                gp.price_usd,
+                                CASE 
+                                    WHEN cm.metal IN ('Ag','Au','Pt','Pd') THEN
+                                        (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
+                                        * COALESCE(sp.price_per_oz_usd, 0)
+                                    ELSE 0
+                                END,
+                                l.manual_est_unit_value,
+                                l.unit_cost,
+                                0
+                            )
+                    END
+                ), 0) AS total_value_usd
+            FROM storage_location sl
+            LEFT JOIN lot l ON l.storage_location_id = sl.id AND l.qty_remaining > 0
+            LEFT JOIN coin_type ct ON ct.id = l.coin_type_id
+            LEFT JOIN coin_master cm ON cm.id = ct.master_id
+            LEFT JOIN spot_prices sp ON sp.metal = cm.metal
+            LEFT JOIN guide_prices gp ON gp.coin_type_id = l.coin_type_id 
+                AND gp.grade_text = COALESCE(l.estimated_grade_text, l.purchase_grade_text)
+        """
+
         if category_filter and category_filter != "All":
-            query = """
-                SELECT 
-                    sl.id,
-                    sl.name,
-                    COALESCE(sl.category, '') AS category,
-                    COALESCE(sl.description, '') AS description,
-                    COUNT(l.id) AS lot_count,
-                    COALESCE(SUM(l.qty_remaining), 0) AS total_coins,
-                    COALESCE(SUM(l.qty_remaining * l.unit_cost), 0) AS total_cost_usd,
-                    COALESCE(SUM(l.qty_remaining * COALESCE(v.chosen_unit_value, l.unit_cost)), 0) AS total_value_usd
-                FROM storage_location sl
-                LEFT JOIN lot l ON l.storage_location_id = sl.id AND l.qty_remaining > 0
-                LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+            query = base_query + """
                 WHERE sl.category = ?
                 GROUP BY sl.id, sl.name, sl.category, sl.description
                 ORDER BY sl.name
             """
             results = execute_query_all(query, (category_filter,))
         else:
-            query = """
-                SELECT 
-                    sl.id,
-                    sl.name,
-                    COALESCE(sl.category, '') AS category,
-                    COALESCE(sl.description, '') AS description,
-                    COUNT(l.id) AS lot_count,
-                    COALESCE(SUM(l.qty_remaining), 0) AS total_coins,
-                    COALESCE(SUM(l.qty_remaining * l.unit_cost), 0) AS total_cost_usd,
-                    COALESCE(SUM(l.qty_remaining * COALESCE(v.chosen_unit_value, l.unit_cost)), 0) AS total_value_usd
-                FROM storage_location sl
-                LEFT JOIN lot l ON l.storage_location_id = sl.id AND l.qty_remaining > 0
-                LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+            query = base_query + """
                 GROUP BY sl.id, sl.name, sl.category, sl.description
                 ORDER BY sl.name
             """
