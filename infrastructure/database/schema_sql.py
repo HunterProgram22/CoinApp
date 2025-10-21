@@ -930,4 +930,11 @@ CREATE INDEX IF NOT EXISTS idx_proof_set_inventory_sold ON proof_set_inventory(s
 CREATE INDEX IF NOT EXISTS idx_proof_set_contents_master ON proof_set_contents(set_master_id);
 CREATE INDEX IF NOT EXISTS idx_proof_set_values_master ON proof_set_values(set_master_id);
 
+-- Critical indexes for Type Sets performance
+CREATE INDEX IF NOT EXISTS idx_lot_coin_type_qty ON lot(coin_type_id, qty_remaining) WHERE qty_remaining > 0;
+CREATE INDEX IF NOT EXISTS idx_type_set_member_set_id ON type_set_member(set_id, coin_type_id);
+
+-- Also add these if not already there:
+CREATE INDEX IF NOT EXISTS idx_lot_coin_type_id ON lot(coin_type_id);
+CREATE INDEX IF NOT EXISTS idx_lot_qty_remaining ON lot(qty_remaining) WHERE qty_remaining > 0;
 """
