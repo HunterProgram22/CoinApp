@@ -393,13 +393,48 @@ class SQLTypeSetsRepository(TypeSetsDataRepository):
 
     def get_type_set_value_data(self, set_id: int) -> TypeSetValue:
         """Get value and cost data for a type set"""
+        # OPTIMIZED: Avoid v_lot_value_details view to reduce row reads
         query = """
+            WITH spot_prices AS (
+                SELECT metal, price_per_oz_usd FROM v_latest_spot
+            ),
+            guide_prices AS (
+                SELECT coin_type_id, grade_text, price_usd FROM v_latest_guide
+            )
             SELECT 
-                COALESCE(SUM(l.qty_remaining * v.chosen_unit_value), 0) as total_est_value,
+                COALESCE(SUM(
+                    l.qty_remaining * 
+                    CASE l.valuation_method
+                        WHEN 'MELT_ONLY' THEN 
+                            (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
+                            * COALESCE(sp.price_per_oz_usd, 0)
+                        WHEN 'GUIDE_ONLY' THEN 
+                            COALESCE(gp.price_usd, 0)
+                        WHEN 'MANUAL' THEN 
+                            COALESCE(l.manual_est_unit_value, 0)
+                        ELSE 
+                            COALESCE(
+                                gp.price_usd,
+                                CASE 
+                                    WHEN cm.metal IN ('Ag','Au','Pt','Pd') THEN
+                                        (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
+                                        * COALESCE(sp.price_per_oz_usd, 0)
+                                    ELSE 0
+                                END,
+                                l.manual_est_unit_value,
+                                l.unit_cost,
+                                0
+                            )
+                    END
+                ), 0) as total_est_value,
                 COALESCE(SUM(l.qty_remaining * l.unit_cost), 0) as total_cost
             FROM type_set_member tsm
             JOIN lot l ON l.coin_type_id = tsm.coin_type_id AND l.qty_remaining > 0
-            LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+            JOIN coin_type ct ON ct.id = l.coin_type_id
+            JOIN coin_master cm ON cm.id = ct.master_id
+            LEFT JOIN spot_prices sp ON sp.metal = cm.metal
+            LEFT JOIN guide_prices gp ON gp.coin_type_id = l.coin_type_id 
+                AND gp.grade_text = COALESCE(l.estimated_grade_text, l.purchase_grade_text)
             WHERE tsm.set_id = ?
         """
         result = execute_query_single(query, (set_id,))
@@ -410,7 +445,6 @@ class SQLTypeSetsRepository(TypeSetsDataRepository):
                 total_cost=result.get('total_cost', 0)
             )
         return TypeSetValue(total_est_value=0, total_cost=0)
-
     def get_type_set_metadata(self, set_id: int) -> Dict[str, Any]:
         """Get metadata/criteria for a type set."""
         query = "SELECT * FROM type_set_metadata WHERE set_id=?"
