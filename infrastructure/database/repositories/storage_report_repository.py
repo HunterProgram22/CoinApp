@@ -244,7 +244,14 @@ class StorageReportRepository(StorageReportDataRepository):
 
     def get_inventory_by_storage(self, storage_id: int) -> List[StorageInventory]:
         """Get detailed inventory for a specific storage location."""
+        # OPTIMIZED: Use CTEs to avoid expensive v_lot_value_details view
         query = """
+            WITH spot_prices AS (
+                SELECT metal, price_per_oz_usd FROM v_latest_spot
+            ),
+            guide_prices AS (
+                SELECT coin_type_id, grade_text, price_usd FROM v_latest_guide
+            )
             SELECT
                 l.id AS lot_id,
                 cm.series,
@@ -261,14 +268,39 @@ class StorageReportRepository(StorageReportDataRepository):
                 COALESCE(l.slab_cert, '') AS cert_number,
                 l.valuation_method,
                 COALESCE(l.notes, '') AS notes,
-                ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value, l.unit_cost), 2) AS est_value_usd
+                ROUND(l.qty_remaining * 
+                    CASE l.valuation_method
+                        WHEN 'MELT_ONLY' THEN 
+                            (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
+                            * COALESCE(sp.price_per_oz_usd, 0)
+                        WHEN 'GUIDE_ONLY' THEN 
+                            COALESCE(gp.price_usd, 0)
+                        WHEN 'MANUAL' THEN 
+                            COALESCE(l.manual_est_unit_value, 0)
+                        ELSE 
+                            COALESCE(
+                                gp.price_usd,
+                                CASE 
+                                    WHEN cm.metal IN ('Ag','Au','Pt','Pd') THEN
+                                        (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
+                                        * COALESCE(sp.price_per_oz_usd, 0)
+                                    ELSE 0
+                                END,
+                                l.manual_est_unit_value,
+                                l.unit_cost,
+                                0
+                            )
+                    END
+                , 2) AS est_value_usd
             FROM lot l
             JOIN coin_type ct ON ct.id = l.coin_type_id
             JOIN coin_master cm ON cm.id = ct.master_id
             JOIN tx_line tl ON tl.id = l.acquisition_line_id
             JOIN tx t ON t.id = tl.tx_id
             LEFT JOIN party p ON p.id = t.party_id
-            LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+            LEFT JOIN spot_prices sp ON sp.metal = cm.metal
+            LEFT JOIN guide_prices gp ON gp.coin_type_id = l.coin_type_id 
+                AND gp.grade_text = COALESCE(l.estimated_grade_text, l.purchase_grade_text)
             WHERE l.storage_location_id = ? AND l.qty_remaining > 0
             ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, l.acquired_date
         """
@@ -277,7 +309,14 @@ class StorageReportRepository(StorageReportDataRepository):
 
     def get_unassigned_inventory(self) -> List[StorageInventory]:
         """Get inventory not assigned to any storage location."""
+        # OPTIMIZED: Use CTEs to avoid expensive v_lot_value_details view
         query = """
+            WITH spot_prices AS (
+                SELECT metal, price_per_oz_usd FROM v_latest_spot
+            ),
+            guide_prices AS (
+                SELECT coin_type_id, grade_text, price_usd FROM v_latest_guide
+            )
             SELECT
                 l.id AS lot_id,
                 cm.series,
@@ -294,14 +333,39 @@ class StorageReportRepository(StorageReportDataRepository):
                 COALESCE(l.slab_cert, '') AS cert_number,
                 l.valuation_method,
                 COALESCE(l.notes, '') AS notes,
-                ROUND(l.qty_remaining * COALESCE(v.chosen_unit_value, l.unit_cost), 2) AS est_value_usd
+                ROUND(l.qty_remaining * 
+                    CASE l.valuation_method
+                        WHEN 'MELT_ONLY' THEN 
+                            (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
+                            * COALESCE(sp.price_per_oz_usd, 0)
+                        WHEN 'GUIDE_ONLY' THEN 
+                            COALESCE(gp.price_usd, 0)
+                        WHEN 'MANUAL' THEN 
+                            COALESCE(l.manual_est_unit_value, 0)
+                        ELSE 
+                            COALESCE(
+                                gp.price_usd,
+                                CASE 
+                                    WHEN cm.metal IN ('Ag','Au','Pt','Pd') THEN
+                                        (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
+                                        * COALESCE(sp.price_per_oz_usd, 0)
+                                    ELSE 0
+                                END,
+                                l.manual_est_unit_value,
+                                l.unit_cost,
+                                0
+                            )
+                    END
+                , 2) AS est_value_usd
             FROM lot l
             JOIN coin_type ct ON ct.id = l.coin_type_id
             JOIN coin_master cm ON cm.id = ct.master_id
             JOIN tx_line tl ON tl.id = l.acquisition_line_id
             JOIN tx t ON t.id = tl.tx_id
             LEFT JOIN party p ON p.id = t.party_id
-            LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
+            LEFT JOIN spot_prices sp ON sp.metal = cm.metal
+            LEFT JOIN guide_prices gp ON gp.coin_type_id = l.coin_type_id 
+                AND gp.grade_text = COALESCE(l.estimated_grade_text, l.purchase_grade_text)
             WHERE l.storage_location_id IS NULL AND l.qty_remaining > 0
             ORDER BY cm.series, ct.year, ct.mint_mark, ct.variety, l.acquired_date
         """
