@@ -28,108 +28,6 @@ class TypeSetsRenderer:
     def __init__(self, repository: TypeSetsDataRepository):
         self.repository = repository
 
-    def render_my_sets_tab(self):
-        """Render the My Sets tab - View Progress"""
-        type_sets = self.repository.get_all_type_sets()
-
-        if not type_sets:
-            st.info("No Type Sets yet. Use 'Define Set' tab to create one.")
-            return
-
-        # Convert dataclass to dict for helpers
-        type_set_options = prepare_type_set_options(type_sets)
-        sorted_names = sort_type_sets_alphabetically(convert_dataclass_list_to_dict_list(type_sets))
-
-        selected_label = st.selectbox(
-            "Choose a Type Set",
-            [""] + sorted_names,
-            index=0
-        )
-
-        # Only proceed if a set is selected
-        if not selected_label:
-            st.info("👆 Select a Type Set above to view progress")
-            return
-
-        selected_set = type_set_options[selected_label]
-        set_id = selected_set.id
-
-        # Show set details and metadata
-        st.subheader(f"📚 {selected_set.name}")
-        if selected_set.description:
-            st.caption(selected_set.description)
-
-        # Get and display set metadata/criteria if it exists
-        metadata = self.repository.get_type_set_metadata(set_id)
-        if metadata:
-            formatted_metadata = format_metadata_for_display(metadata)
-            with st.expander("Set Criteria", expanded=False):
-                criteria_text = build_criteria_text(formatted_metadata)
-                for line in criteria_text:
-                    st.markdown(line)
-
-        # Progress section
-        st.subheader("Collection Progress")
-
-        # Get progress using the repository
-        progress_df = self.repository.get_type_set_progress(set_id)
-
-        if progress_df.empty:
-            st.warning("This set has no coins defined yet. Use 'Modify Set' tab to add coins.")
-            return
-
-        # Format the dataframe for display
-        formatted_df = format_progress_display_dataframe(progress_df)
-
-        # Calculate statistics using summary
-        summary = self.repository.get_type_set_summary(set_id)
-        if summary:
-            # Display metrics
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Coins in Set", summary.total_coins)
-            col2.metric("Coins Owned", summary.coins_owned)
-            col3.metric("Meeting Requirements", summary.coins_meeting_requirements)
-            col4.metric("Complete", format_percentage_display(summary.percent_complete))
-
-            # Progress bar
-            st.progress(summary.percent_complete / 100 if summary.percent_complete else 0)
-
-        # Legend for status icons
-        st.caption(get_status_legend_text())
-
-        # Display the full list
-        st.subheader("Detailed Progress")
-
-        # Filter options
-        col1, col2 = st.columns(2)
-        show_filter = col1.selectbox("Show", ["All", "Have", "Need", "Need Upgrade"], index=0)
-
-        # Apply filter
-        filtered_df = filter_progress_data(formatted_df, show_filter)
-        display_df = prepare_progress_display_columns(filtered_df)
-
-        st.dataframe(display_df, width='stretch', hide_index=True)
-
-        # Download buttons
-        col1, col2 = st.columns(2)
-
-        # Full progress CSV
-        csv = progress_df.to_csv(index=False).encode('utf-8')
-        col1.download_button(
-            "📥 Download Full Progress",
-            data=csv,
-            file_name=prepare_download_filename(set_id, "progress"),
-            mime="text/csv"
-        )
-
-        # Missing/upgrade analysis
-        if col2.button("Show Upgrade Targets"):
-            upgrade_targets = self.repository.get_type_set_upgrade_targets(set_id)
-            if upgrade_targets:
-                st.subheader("Coins Needing Upgrade")
-                upgrade_df = pd.DataFrame(upgrade_targets)
-                st.dataframe(upgrade_df, width='stretch', hide_index=True)
-
     def render_set_summary_tab(self):
         """Render the Set Summary tab"""
         st.subheader("Type Set Summary")
@@ -309,6 +207,138 @@ class TypeSetsRenderer:
                 st.subheader("Coins Needing Upgrade")
                 upgrade_df = pd.DataFrame(upgrade_targets)
                 st.dataframe(upgrade_df, width='stretch', hide_index=True)
+
+    def render_define_set_tab(self):
+        """Render the Define Set tab - Create new sets with criteria"""
+        st.subheader("Define a New Type Set")
+
+        # Wrap entire form in st.form() to prevent reruns on tab
+        with st.form("define_new_set_form", clear_on_submit=False):
+            # Basic set information
+            st.markdown("### Basic Information")
+            new_name = st.text_input("Set Name*", placeholder="e.g., Susan B Anthony NGC PF70 Set")
+            new_desc = st.text_area("Description",
+                                    placeholder="Optional description of your set goals")
+
+            # Set criteria
+            st.markdown("### Set Criteria")
+            st.caption("Define which coins should be included in this set")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Series selection - USE CACHED VERSION
+                from infrastructure.database.cached_queries import get_cached_all_series
+                repo_id = id(self.repository)
+                all_series = get_cached_all_series(repo_id)
+                selected_series = st.multiselect("Series", all_series,
+                                                 help="Which series to include")
+
+                # Year range
+                st.markdown("**Year Range**")
+                c1, c2 = st.columns(2)
+                start_year = c1.number_input("From", min_value=0, value=0, step=1,
+                                             help="0 = no limit")
+                end_year = c2.number_input("To", min_value=0, value=0, step=1, help="0 = no limit")
+
+            with col2:
+                # Proof filter
+                proof_filter = st.selectbox("Type", ["Any", "Proofs only", "Business strikes only"])
+
+                # Grade requirements
+                st.markdown("**Grade Requirements (Optional)**")
+                grade_company_filter = st.selectbox("Grading Company", ["Any"] + GRADE_COMPANIES)
+
+                c1, c2 = st.columns(2)
+                min_grade_filter = c1.selectbox("Min Grade", ["Any"] + GRADE_TEXT_VALUES)
+                max_grade_filter = c2.selectbox("Max Grade", ["Any"] + GRADE_TEXT_VALUES)
+
+            # Additional requirements
+            st.markdown("### Additional Requirements")
+            col1, col2 = st.columns(2)
+            require_slab = col1.checkbox("Must be slabbed (have cert #)")
+            specific_varieties = col2.checkbox("Include specific varieties")
+
+            # Preview button - this is what triggers form submission
+            preview_clicked = st.form_submit_button("🔍 Preview Coins That Will Be In This Set",
+                                                    type="secondary")
+
+        # Process form OUTSIDE the form block (important!)
+        if preview_clicked:
+            if not validate_set_name(new_name):
+                st.error("Please enter a set name first")
+            elif not selected_series:
+                st.error("Please select at least one series")
+            elif not validate_year_range(start_year, end_year):
+                st.error("Invalid year range: end year must be greater than or equal to start year")
+            else:
+                # Build year range
+                year_range = build_year_range_from_inputs(start_year, end_year)
+
+                # Search catalog for coins that match criteria
+                catalog_matches = self.repository.search_coin_types_catalog(
+                    series=selected_series,
+                    year_range=year_range,
+                    proof_filter=proof_filter,
+                    include_varieties=specific_varieties
+                )
+
+                if catalog_matches:
+                    st.success(f"This set will contain {len(catalog_matches)} coins")
+
+                    # Show preview
+                    matches_dict = convert_dataclass_list_to_dict_list(catalog_matches)
+                    preview_df = format_coin_preview_dataframe(matches_dict)
+
+                    # Show first 20 and total count
+                    if len(preview_df) > 20:
+                        st.dataframe(preview_df[['coin']].head(20), width='stretch',
+                                     hide_index=True)
+                        st.caption(f"Showing first 20 of {len(catalog_matches)} coins")
+                    else:
+                        st.dataframe(preview_df[['coin']], width='stretch', hide_index=True)
+
+                    # Store EVERYTHING in session state for creation (including form values!)
+                    st.session_state['new_set_coins'] = catalog_matches
+                    st.session_state['new_set_name'] = new_name
+                    st.session_state['new_set_desc'] = new_desc
+                    st.session_state['new_set_metadata'] = build_new_set_metadata(
+                        grade_company_filter, min_grade_filter, max_grade_filter,
+                        require_slab, proof_filter, specific_varieties, start_year, end_year
+                    )
+                else:
+                    st.warning("No coins found matching these criteria in the catalog")
+
+        # Create button - OUTSIDE the form, shows only after preview
+        if 'new_set_coins' in st.session_state and st.session_state['new_set_coins']:
+            st.markdown("---")
+
+            if st.button(
+                    f"✅ Create Set '{st.session_state.get('new_set_name', '')}' with {len(st.session_state['new_set_coins'])} coins",
+                    type="primary", key="create_set_btn"):
+                if validate_set_name(st.session_state.get('new_set_name', '')):
+                    # Create the set with metadata
+                    set_id = self.repository.create_type_set(
+                        st.session_state['new_set_name'],
+                        st.session_state.get('new_set_desc', ''),
+                        st.session_state.get('new_set_metadata')
+                    )
+
+                    # Add all the coins to the set
+                    coin_type_ids = [c.id for c in st.session_state['new_set_coins']]
+                    added = self.repository.add_type_set_members(set_id, coin_type_ids)
+
+                    st.success(f"Created '{st.session_state['new_set_name']}' with {added} coins!")
+
+                    # Clear session state
+                    for key in ['new_set_coins', 'new_set_metadata', 'new_set_name',
+                                'new_set_desc']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+
+                    st.rerun()
+                else:
+                    st.error("Please enter a set name")
 
     def render_modify_set_tab(self):
         """Render the Modify Set tab - Add/remove coins from existing sets"""
