@@ -195,23 +195,76 @@ class SQLTypeSetsRepository(TypeSetsDataRepository):
         self.db = db_executor
 
     def get_all_type_sets(self) -> List[TypeSet]:
-        """Get all type sets with summary information."""
+        """Get all type sets with summary information - optimized with CTEs."""
         query = """
+            WITH 
+            -- Pre-aggregate lot data once (instead of in nested view)
+            lot_summary AS (
+                SELECT 
+                    l.coin_type_id,
+                    SUM(l.qty_remaining) as qty_on_hand,
+                    MAX(l.purchase_grade_company) as best_grade_company,
+                    MAX(COALESCE(l.estimated_grade_text, l.purchase_grade_text)) as best_grade_text,
+                    MAX(COALESCE(l.estimated_numeric_grade, l.purchase_numeric_grade)) as best_numeric_grade,
+                    MAX(CASE WHEN l.slab_cert IS NOT NULL AND l.slab_cert != '' THEN 1 ELSE 0 END) as has_slab_cert
+                FROM lot l
+                WHERE l.qty_remaining > 0
+                GROUP BY l.coin_type_id
+            ),
+            -- Calculate progress for each set member
+            member_progress AS (
+                SELECT 
+                    tsm.set_id,
+                    tsm.coin_type_id,
+                    COALESCE(ls.qty_on_hand, 0) as qty_on_hand,
+                    meta.grade_company as required_grade_company,
+                    meta.min_numeric_grade,
+                    meta.max_numeric_grade,
+                    meta.require_slab,
+                    ls.best_grade_company,
+                    ls.best_numeric_grade,
+                    ls.has_slab_cert,
+                    -- Calculate if requirements are met inline
+                    CASE 
+                        WHEN ls.qty_on_hand IS NULL OR ls.qty_on_hand = 0 THEN 0
+                        WHEN meta.grade_company IS NOT NULL AND ls.best_grade_company != meta.grade_company THEN 0
+                        WHEN meta.min_numeric_grade IS NOT NULL AND ls.best_numeric_grade < meta.min_numeric_grade THEN 0
+                        WHEN meta.max_numeric_grade IS NOT NULL AND ls.best_numeric_grade > meta.max_numeric_grade THEN 0
+                        WHEN meta.require_slab = 1 AND ls.has_slab_cert = 0 THEN 0
+                        ELSE 1
+                    END as meets_requirements
+                FROM type_set_member tsm
+                LEFT JOIN lot_summary ls ON ls.coin_type_id = tsm.coin_type_id
+                LEFT JOIN type_set_metadata meta ON meta.set_id = tsm.set_id
+            )
+            -- Final aggregation by set
             SELECT 
-                s.set_id,
-                s.name,
-                s.description,
-                s.total_coins,
-                s.coins_owned,
-                s.coins_meeting_requirements,
-                s.percent_owned,
-                s.percent_complete,
-                s.grade_company,
-                s.min_grade,
-                s.max_grade,
-                s.require_slab
-            FROM v_type_set_summary s
-            ORDER BY s.name
+                ts.id as set_id,
+                ts.name,
+                ts.description,
+                COUNT(DISTINCT mp.coin_type_id) as total_coins,
+                COUNT(DISTINCT CASE WHEN mp.qty_on_hand > 0 THEN mp.coin_type_id END) as coins_owned,
+                COUNT(DISTINCT CASE WHEN mp.meets_requirements = 1 THEN mp.coin_type_id END) as coins_meeting_requirements,
+                ROUND(
+                    100.0 * COUNT(DISTINCT CASE WHEN mp.qty_on_hand > 0 THEN mp.coin_type_id END) / 
+                    NULLIF(COUNT(DISTINCT mp.coin_type_id), 0), 
+                    1
+                ) as percent_owned,
+                ROUND(
+                    100.0 * COUNT(DISTINCT CASE WHEN mp.meets_requirements = 1 THEN mp.coin_type_id END) / 
+                    NULLIF(COUNT(DISTINCT mp.coin_type_id), 0), 
+                    1
+                ) as percent_complete,
+                meta.grade_company,
+                meta.min_grade,
+                meta.max_grade,
+                meta.require_slab
+            FROM type_set ts
+            LEFT JOIN member_progress mp ON mp.set_id = ts.id
+            LEFT JOIN type_set_metadata meta ON meta.set_id = ts.id
+            GROUP BY ts.id, ts.name, ts.description,
+                     meta.grade_company, meta.min_grade, meta.max_grade, meta.require_slab
+            ORDER BY ts.name
         """
         results = execute_query_all(query)
 
