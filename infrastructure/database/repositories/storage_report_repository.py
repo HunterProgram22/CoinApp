@@ -182,9 +182,8 @@ class StorageReportRepository(StorageReportDataRepository):
                                     WHEN cm.metal IN ('Ag','Au','Pt','Pd') THEN
                                         (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
                                         * COALESCE(sp.price_per_oz_usd, 0)
-                                    ELSE 0
+                                    ELSE l.manual_est_unit_value
                                 END,
-                                l.manual_est_unit_value,
                                 l.unit_cost,
                                 0
                             )
@@ -284,9 +283,8 @@ class StorageReportRepository(StorageReportDataRepository):
                                     WHEN cm.metal IN ('Ag','Au','Pt','Pd') THEN
                                         (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
                                         * COALESCE(sp.price_per_oz_usd, 0)
-                                    ELSE 0
+                                    ELSE l.manual_est_unit_value
                                 END,
-                                l.manual_est_unit_value,
                                 l.unit_cost,
                                 0
                             )
@@ -349,9 +347,8 @@ class StorageReportRepository(StorageReportDataRepository):
                                     WHEN cm.metal IN ('Ag','Au','Pt','Pd') THEN
                                         (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
                                         * COALESCE(sp.price_per_oz_usd, 0)
-                                    ELSE 0
+                                    ELSE l.manual_est_unit_value
                                 END,
-                                l.manual_est_unit_value,
                                 l.unit_cost,
                                 0
                             )
