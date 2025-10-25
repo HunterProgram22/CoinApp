@@ -462,9 +462,9 @@ class SQLTypeSetsRepository(TypeSetsDataRepository):
                             (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
                             * COALESCE(sp.price_per_oz_usd, 0)
                         WHEN 'GUIDE_ONLY' THEN 
-                            COALESCE(gp.price_usd, 0)
+                            gp.price_usd
                         WHEN 'MANUAL' THEN 
-                            COALESCE(l.manual_est_unit_value, 0)
+                            l.manual_est_unit_value
                         ELSE 
                             COALESCE(
                                 gp.price_usd,
@@ -472,9 +472,8 @@ class SQLTypeSetsRepository(TypeSetsDataRepository):
                                     WHEN cm.metal IN ('Ag','Au','Pt','Pd') THEN
                                         (cm.weight_grams * COALESCE(cm.fineness, 0)) / 31.1034768 
                                         * COALESCE(sp.price_per_oz_usd, 0)
-                                    ELSE 0
+                                    ELSE l.manual_est_unit_value
                                 END,
-                                l.manual_est_unit_value,
                                 l.unit_cost,
                                 0
                             )
