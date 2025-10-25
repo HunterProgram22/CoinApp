@@ -155,13 +155,13 @@ class SeriesAnalysisRenderer:
             height=400
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Also show as table
         with st.expander("View Grade Distribution Table"):
             display_df = df[['grade_text', 'count']].copy()
             display_df.columns = ['Grade', 'Count']
-            st.dataframe(display_df, hide_index=True, use_container_width=True)
+            st.dataframe(display_df, hide_index=True, width='stretch')
 
     def render_financial_analysis(self, series: str):
         """Render financial analysis section"""
@@ -227,14 +227,14 @@ class SeriesAnalysisRenderer:
             height=400
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Show detailed breakdown
         with st.expander("View Acquisition Details"):
             display_df = df[['acquisition_date', 'coins_acquired', 'total_spent']].copy()
             display_df.columns = ['Date', 'Coins Acquired', 'Amount Spent']
             display_df['Amount Spent'] = display_df['Amount Spent'].apply(lambda x: f"${x:,.2f}")
-            st.dataframe(display_df, hide_index=True, use_container_width=True)
+            st.dataframe(display_df, hide_index=True, width='stretch')
 
     def render_seller_breakdown(self, series: str):
         """Render seller/dealer breakdown"""
@@ -262,7 +262,7 @@ class SeriesAnalysisRenderer:
                 hole=0.3
             )
             fig.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with col2:
             # Pie chart by quantity
@@ -274,7 +274,7 @@ class SeriesAnalysisRenderer:
                 hole=0.3
             )
             fig.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         # Detailed table
         st.markdown("**Detailed Breakdown**")
@@ -284,7 +284,7 @@ class SeriesAnalysisRenderer:
             lambda x: f"${x:,.2f}")
         display_df.columns = ['Seller', 'Coins Purchased', 'Total Spent', 'Avg Cost/Coin']
 
-        st.dataframe(display_df, hide_index=True, use_container_width=True)
+        st.dataframe(display_df, hide_index=True, width='stretch')
 
     def render_location_breakdown(self, series: str):
         """Render storage location breakdown"""
@@ -316,7 +316,7 @@ class SeriesAnalysisRenderer:
             height=max(300, len(df) * 40)  # Dynamic height based on number of locations
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Detailed table
         with st.expander("View Location Details"):
@@ -324,7 +324,7 @@ class SeriesAnalysisRenderer:
             display_df['total_value_usd'] = display_df['total_value_usd'].apply(
                 lambda x: f"${x:,.2f}")
             display_df.columns = ['Location', 'Coins Stored', 'Total Value']
-            st.dataframe(display_df, hide_index=True, use_container_width=True)
+            st.dataframe(display_df, hide_index=True, width='stretch')
 
     def render_type_breakdown(self, series: str):
         """Render breakdown by coin type (year/mint/variety)"""
@@ -368,7 +368,7 @@ class SeriesAnalysisRenderer:
         st.dataframe(
             display_df,
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
             height=min(600, (len(display_df) + 1) * 35 + 3)  # Dynamic height
         )
 
@@ -407,9 +407,9 @@ class SeriesAnalysisRenderer:
         col1, col2 = st.columns(2)
 
         with col1:
-            if st.button("📊 Generate PDF Report", use_container_width=True):
+            if st.button("📊 Generate PDF Report", width='stretch'):
                 st.info("PDF export functionality coming soon!")
 
         with col2:
-            if st.button("📧 Email Report", use_container_width=True):
+            if st.button("📧 Email Report", width='stretch'):
                 st.info("Email functionality coming soon!")
