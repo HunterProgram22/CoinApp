@@ -155,7 +155,7 @@ class SeriesAnalysisRenderer:
             height=400
         )
 
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
         # Also show as table
         with st.expander("View Grade Distribution Table"):
@@ -227,7 +227,7 @@ class SeriesAnalysisRenderer:
             height=400
         )
 
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
         # Show detailed breakdown
         with st.expander("View Acquisition Details"):
@@ -262,7 +262,7 @@ class SeriesAnalysisRenderer:
                 hole=0.3
             )
             fig.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
 
         with col2:
             # Pie chart by quantity
@@ -274,7 +274,7 @@ class SeriesAnalysisRenderer:
                 hole=0.3
             )
             fig.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
 
         # Detailed table
         st.markdown("**Detailed Breakdown**")
@@ -316,7 +316,7 @@ class SeriesAnalysisRenderer:
             height=max(300, len(df) * 40)  # Dynamic height based on number of locations
         )
 
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
         # Detailed table
         with st.expander("View Location Details"):
