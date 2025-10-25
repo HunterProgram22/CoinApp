@@ -457,66 +457,50 @@ JOIN coin_master cm ON cm.id = ct.master_id
 WHERE l.qty_remaining > 0 AND cm.metal IN ('Ag','Au','Pt','Pd')
 GROUP BY cm.metal;
 
-/* Per Lot chosen valuation*/
+
+-- NOTE: v_lot_value_details is now a materialized table (lot_value_cache) 
+-- instead of an expensive view. Cache is refreshed automatically on app startup
+-- and can be manually refreshed via Admin page.
+
+
+-- Materialized lot values cache (replaces expensive view)
+CREATE TABLE IF NOT EXISTS lot_value_cache (
+    lot_id INTEGER PRIMARY KEY,
+    series TEXT NOT NULL,
+    year INTEGER,
+    mint_mark TEXT DEFAULT '',
+    variety TEXT DEFAULT '',
+    qty_remaining INTEGER NOT NULL,
+    valuation_method TEXT,
+    grade_for_pricing TEXT,
+    melt_unit_value REAL,
+    guide_unit_value REAL,
+    chosen_unit_value REAL NOT NULL,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (lot_id) REFERENCES lot(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_lvc_series ON lot_value_cache(series);
+CREATE INDEX IF NOT EXISTS idx_lvc_qty_remaining ON lot_value_cache(qty_remaining);
+CREATE INDEX IF NOT EXISTS idx_lvc_last_updated ON lot_value_cache(last_updated);
+CREATE INDEX IF NOT EXISTS idx_lvc_valuation_method ON lot_value_cache(valuation_method);
+
+-- Compatibility view (keeps existing queries working)
 CREATE VIEW IF NOT EXISTS v_lot_value_details AS
-SELECT
-  l.id AS lot_id,
-  cm.series, ct.year, ct.mint_mark, ct.variety,
-  l.qty_remaining,
-  l.valuation_method,
-  COALESCE(l.estimated_grade_text, l.purchase_grade_text) AS grade_for_pricing,
+SELECT 
+    lot_id,
+    series,
+    year,
+    mint_mark,
+    variety,
+    qty_remaining,
+    valuation_method,
+    grade_for_pricing,
+    melt_unit_value,
+    guide_unit_value,
+    chosen_unit_value
+FROM lot_value_cache;
 
-  (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
-    * (SELECT price_per_oz_usd FROM v_latest_spot s WHERE s.metal = cm.metal) AS melt_unit_value,
-
-  (SELECT g.price_usd
-     FROM v_latest_guide g
-    WHERE g.coin_type_id = l.coin_type_id
-      AND g.grade_text   = COALESCE(l.estimated_grade_text, l.purchase_grade_text)) AS guide_unit_value,
-
-  CASE l.valuation_method
-    WHEN 'MELT_ONLY'  THEN (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
-                         * (SELECT price_per_oz_usd FROM v_latest_spot s WHERE s.metal = cm.metal)
-
-    WHEN 'GUIDE_ONLY' THEN (SELECT g.price_usd
-                              FROM v_latest_guide g
-                             WHERE g.coin_type_id = l.coin_type_id
-                               AND g.grade_text   = COALESCE(l.estimated_grade_text, l.purchase_grade_text))
-
-    WHEN 'MANUAL'     THEN l.manual_est_unit_value
-
-    ELSE -- AUTO mode: hierarchical selection based on available data
-      COALESCE(
-        -- First priority: Guide price if available
-        (SELECT g.price_usd
-         FROM v_latest_guide g
-         WHERE g.coin_type_id = l.coin_type_id
-           AND g.grade_text = COALESCE(l.estimated_grade_text, l.purchase_grade_text)),
-        
-        -- Second priority: If has melt value, use MAX(melt, manual)
-        CASE 
-          WHEN (cm.weight_grams * COALESCE(cm.fineness,0)) > 0 
-               AND cm.metal IN ('Ag','Au','Pt','Pd')
-          THEN (SELECT MAX(val) FROM (
-            SELECT (cm.weight_grams * COALESCE(cm.fineness,0)) / 31.1034768
-              * COALESCE((SELECT price_per_oz_usd FROM v_latest_spot s WHERE s.metal = cm.metal), 0) AS val
-            UNION ALL
-            SELECT COALESCE(l.manual_est_unit_value, 0) AS val
-          ))
-          -- Third priority: No melt value, use manual if available
-          ELSE l.manual_est_unit_value
-        END,
-        
-        -- Last resort: unit cost
-        l.unit_cost,
-        0
-      )
-  END AS chosen_unit_value
-
-FROM lot l
-JOIN coin_type  ct ON ct.id = l.coin_type_id
-JOIN coin_master cm ON cm.id = ct.master_id
-WHERE l.qty_remaining > 0;
 
 /* Portfolio summary */
 CREATE VIEW IF NOT EXISTS v_portfolio_value_summary AS
