@@ -27,7 +27,9 @@ class AppCoordinator:
 
     def _handle_authenticated_user(self):
         """Handle authenticated user flow"""
-        from infrastructure.database.db import init_db
+        from infrastructure.database.db import init_db, get_conn
+        from infrastructure.database.cache_manager import LotValueCacheManager
+        from infrastructure.database.database_executor import DatabaseExecutor
         from core.constants import NAVIGATION_ITEMS, APP_TITLE, APP_SUBTITLE
 
         # Logout button and welcome message
@@ -36,6 +38,24 @@ class AppCoordinator:
 
         # Initialize database
         init_db()
+
+        # Initialize cache
+        @st.cache_resource
+        def init_cache():
+            """Initialize lot value cache on app startup"""
+            try:
+                with get_conn() as conn:
+                    executor = DatabaseExecutor()
+                    cache_mgr = LotValueCacheManager(executor)
+
+                    if cache_mgr.needs_refresh(max_age_minutes=60):
+                        cache_mgr.refresh_cache()
+                return True
+            except Exception as e:
+                st.error(f"Cache initialization failed: {e}")
+                return False
+
+        init_cache()
 
         # Render main content
         self.nav_ui.render_title(APP_TITLE, APP_SUBTITLE)

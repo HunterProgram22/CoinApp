@@ -4,7 +4,7 @@
 import time
 from datetime import datetime
 from typing import Optional, Dict, List
-from db_operations import DatabaseExecutor
+from infrastructure.database.database_executor import DatabaseExecutor
 
 
 class LotValueCacheManager:

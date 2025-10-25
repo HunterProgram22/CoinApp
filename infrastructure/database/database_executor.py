@@ -19,3 +19,18 @@ class DatabaseExecutor:
         if params is None:
             return execute_query_single(query)
         return execute_query_single(query, params)
+
+    def execute_query(self, query: str, params=None):
+        """Execute query without returning results (for DELETE, etc)"""
+        from infrastructure.database.db import get_conn
+        with get_conn() as conn:
+            if params is None:
+                conn.execute(query)
+            else:
+                conn.execute(query, params)
+
+    def execute_many(self, query: str, params_list):
+        """Execute query with multiple parameter sets (for bulk inserts)"""
+        from infrastructure.database.db import get_conn
+        with get_conn() as conn:
+            conn.executemany(query, params_list)
