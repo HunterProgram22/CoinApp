@@ -358,7 +358,7 @@ CREATE TABLE IF NOT EXISTS proof_set_values (
 
 /* ---------- Views ---------- */
 /* Estimated Sale Proceeds View */
-CREATE VIEW IF NOT EXISTS v_portfolio_sale_proceeds AS
+CREATE VIEW v_portfolio_sale_proceeds AS
 WITH sale_values AS (
     SELECT 
         l.id,
@@ -367,20 +367,17 @@ WITH sale_values AS (
         cm.asset_category,
         l.valuation_method,
         CASE 
-            -- Bullion and junk silver: 90% of value
             WHEN cm.asset_category IN ('ROUND', 'BAR', 'BULLION COIN') THEN v.chosen_unit_value * 0.90
             WHEN l.valuation_method = 'MELT_ONLY' THEN v.chosen_unit_value * 0.90
-            -- All other coins: 70% of value
-            ELSE v.chosen_unit_value * 0.70
-        END as sale_proceed_per_unit
+            ELSE v.chosen_unit_value * 0.75
+        END AS sale_proceeds_per_coin
     FROM lot l
-    JOIN v_lot_value_details v ON v.lot_id = l.id
     JOIN coin_type ct ON ct.id = l.coin_type_id
     JOIN coin_master cm ON cm.id = ct.master_id
+    LEFT JOIN v_lot_value_details v ON v.lot_id = l.id
     WHERE l.qty_remaining > 0
 )
-SELECT 
-    ROUND(SUM(qty_remaining * sale_proceed_per_unit), 2) as estimated_sale_proceeds
+SELECT ROUND(COALESCE(SUM(qty_remaining * sale_proceeds_per_coin), 0), 2) AS estimated_sale_proceeds
 FROM sale_values;
 
 
