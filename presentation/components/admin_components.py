@@ -114,8 +114,12 @@ class AdminRenderer:
         """Render Maintenance Tools tab"""
         st.subheader("Maintenance Tools")
 
+        # Cache refresh
+        with st.expander("🔄 Refresh Lot Value Cache", expanded=True):
+            self._render_cache_refresh()
+
         # Transaction void
-        with st.expander("Void Transaction", expanded=True):
+        with st.expander("Void Transaction"):
             self._render_void_transaction()
 
         # Lot deletion
@@ -573,6 +577,70 @@ class AdminRenderer:
                     st.rerun()
                 except Exception as e:
                     st.error(f"Void failed: {e}")
+
+    def _render_cache_refresh(self):
+        """Render cache refresh interface"""
+        st.markdown("**Lot Value Cache Management**")
+        st.write("The cache stores pre-calculated lot values to improve performance. Refresh when:")
+        st.write("- You manually update lot data (unit_cost, valuation_method, manual values)")
+        st.write("- Guide prices or metal prices are updated")
+        st.write("- Values appear incorrect or outdated")
+
+        # Show cache stats
+        try:
+            from infrastructure.database.cache_manager import LotValueCacheManager
+            from infrastructure.database.database_executor import DatabaseExecutor
+
+            db_executor = DatabaseExecutor()
+            cache_mgr = LotValueCacheManager(db_executor)
+
+            stats = cache_mgr.get_cache_stats()
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Cached Lots", f"{stats['count']:,}")
+
+            if stats['last_updated']:
+                from datetime import datetime
+                try:
+                    last_update = datetime.fromisoformat(stats['last_updated'])
+                    col2.metric("Last Updated", last_update.strftime("%m/%d/%Y %I:%M %p"))
+                except:
+                    col2.metric("Last Updated", "Unknown")
+            else:
+                col2.metric("Last Updated", "Never")
+
+            if stats['age_minutes'] is not None:
+                if stats['age_minutes'] < 60:
+                    age_text = f"{int(stats['age_minutes'])} min ago"
+                elif stats['age_minutes'] < 1440:
+                    age_text = f"{int(stats['age_minutes'] / 60)} hr ago"
+                else:
+                    age_text = f"{int(stats['age_minutes'] / 1440)} days ago"
+                col3.metric("Cache Age", age_text)
+
+        except Exception as e:
+            st.warning(f"Could not load cache stats: {e}")
+
+        st.divider()
+
+        # Refresh button
+        if st.button("🔄 Refresh Cache Now", type="primary", use_container_width=True):
+            try:
+                from infrastructure.database.cache_manager import LotValueCacheManager
+                from infrastructure.database.database_executor import DatabaseExecutor
+
+                with st.spinner("Refreshing cache... This may take a moment."):
+                    db_executor = DatabaseExecutor()
+                    cache_mgr = LotValueCacheManager(db_executor)
+
+                    rows_updated = cache_mgr.refresh_cache(force=True)
+
+                    st.success(f"✅ Cache refreshed successfully! Updated {rows_updated:,} lots.")
+                    st.balloons()
+                    st.rerun()
+
+            except Exception as e:
+                st.error(f"Cache refresh failed: {e}")
 
     def _render_delete_lot(self):
         """Render lot deletion interface"""
